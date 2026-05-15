@@ -1,34 +1,83 @@
-.App-logo {
-    height: 40vmin;
-    pointer-events: none;
+/* Ciltarasa Brand Styles */
+
+/* Pulse animation for active order step */
+@keyframes pulse-dot {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.2); opacity: 0.8; }
+}
+.pulse-dot { animation: pulse-dot 1.5s ease-in-out infinite; }
+
+/* Stagger fade-in for product cards */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.fade-in-up { animation: fadeInUp 0.5s ease-out both; }
+.stagger-1 { animation-delay: 0.1s; }
+.stagger-2 { animation-delay: 0.2s; }
+.stagger-3 { animation-delay: 0.3s; }
+.stagger-4 { animation-delay: 0.4s; }
+.stagger-5 { animation-delay: 0.5s; }
+.stagger-6 { animation-delay: 0.6s; }
+.stagger-7 { animation-delay: 0.7s; }
+.stagger-8 { animation-delay: 0.8s; }
+
+/* Product card hover */
+.product-card {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.product-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 32px rgba(120, 53, 15, 0.15);
 }
 
-@media (prefers-reduced-motion: no-preference) {
-    .App-logo {
-        animation: App-logo-spin infinite 20s linear;
-    }
+/* Cart badge bounce */
+@keyframes badge-bounce {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.4); }
+}
+.badge-bounce { animation: badge-bounce 0.3s ease-in-out; }
+
+/* Add to cart checkmark */
+@keyframes check-pop {
+  0% { transform: scale(0); }
+  70% { transform: scale(1.2); }
+  100% { transform: scale(1); }
+}
+.check-pop { animation: check-pop 0.3s ease-out; }
+
+/* Tracking step pulse */
+@keyframes step-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(217, 119, 6, 0.6); }
+  50% { box-shadow: 0 0 0 8px rgba(217, 119, 6, 0); }
+}
+.step-active { animation: step-pulse 2s ease-in-out infinite; }
+
+/* Seller sidebar */
+.sidebar-item {
+  transition: all 0.15s ease;
+}
+.sidebar-item:hover {
+  background-color: rgba(217, 119, 6, 0.15);
+}
+.sidebar-item.active {
+  background-color: #D97706;
+  color: white;
 }
 
-.App-header {
-    background-color: #0f0f10;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    font-size: calc(10px + 2vmin);
-    color: white;
-}
+/* Status badges */
+.status-menunggu { background-color: #FEF3C7; color: #92400E; border: 1px solid #F59E0B; }
+.status-diproses { background-color: #DBEAFE; color: #1E40AF; border: 1px solid #3B82F6; }
+.status-siap { background-color: #FED7AA; color: #92400E; border: 1px solid #F97316; }
+.status-selesai { background-color: #D1FAE5; color: #065F46; border: 1px solid #10B981; }
+.status-dibatalkan { background-color: #FEE2E2; color: #991B1B; border: 1px solid #EF4444; }
 
-.App-link {
-    color: #61dafb;
-}
+/* Chart tooltips */
+.recharts-tooltip-wrapper { font-family: 'Nunito', sans-serif; font-size: 13px; }
 
-@keyframes App-logo-spin {
-    from {
-        transform: rotate(0deg);
-    }
-    to {
-        transform: rotate(360deg);
-    }
+/* Mobile cart FAB */
+@keyframes fab-bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
 }
+.fab-bounce { animation: fab-bounce 0.4s ease-in-out; }
