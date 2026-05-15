@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
-import { ShoppingCart, Search, MapPin, Phone, Clock, Instagram, Menu, X } from 'lucide-react';
+import { Routes, Route, useNavigate } from 'react-router-dom';
+import { ShoppingCart, MapPin, Phone, Clock, Instagram, Menu, X, User, LogOut, Package, ChevronDown } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { LogoWithText } from '../shared/Logo';
 import Hero from './Hero';
@@ -8,6 +8,68 @@ import Catalog from './Catalog';
 import CartDrawer from './CartDrawer';
 import Checkout from './Checkout';
 import OrderTracking from './OrderTracking';
+import OnboardingModal from './OnboardingModal';
+
+function ProfileMenu() {
+  const { authUser, logout, setAuthMode } = useApp();
+  const [open, setOpen] = useState(false);
+  const navigate = useNavigate();
+
+  if (!authUser) {
+    return (
+      <button
+        data-testid="header-login-btn"
+        onClick={() => setAuthMode(null)}
+        className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white text-[#7C2D12] border border-[#FED7AA] hover:bg-[#FED7AA] font-semibold text-xs transition-all"
+      >
+        <User size={14} /> Masuk
+      </button>
+    );
+  }
+
+  return (
+    <div className="relative">
+      <button
+        data-testid="profile-menu-btn"
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-2 px-2 py-1.5 rounded-full hover:bg-[#FED7AA]/60 transition-all"
+      >
+        <div className="w-8 h-8 bg-gradient-to-br from-[#F97316] to-[#EA580C] rounded-full flex items-center justify-center text-white font-bold text-sm shadow">
+          {(authUser.name || 'U').charAt(0).toUpperCase()}
+        </div>
+        <span className="hidden sm:inline text-sm font-semibold text-[#7C2D12] max-w-[100px] truncate">{authUser.name || 'User'}</span>
+        <ChevronDown size={14} className="hidden sm:inline text-[#9A3412]" />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
+          <div data-testid="profile-dropdown" className="absolute right-0 top-full mt-2 w-60 bg-white rounded-2xl shadow-2xl border border-[#FED7AA] overflow-hidden z-40">
+            <div className="p-4 bg-gradient-to-br from-[#FFF7ED] to-[#FEF3C7] border-b border-[#FED7AA]">
+              <p className="text-xs uppercase tracking-wide text-[#9A3412] font-bold">Halo,</p>
+              <p className="font-bold text-[#7C2D12] truncate">{authUser.name || 'Bunda'}</p>
+              <p className="text-xs text-[#9A3412] mt-0.5">+{authUser.phone}</p>
+            </div>
+            <button
+              onClick={() => { navigate('/buyer/track'); setOpen(false); }}
+              className="w-full px-4 py-3 flex items-center gap-3 hover:bg-[#FFF7ED] text-left transition-colors"
+            >
+              <Package size={16} className="text-[#EA580C]" />
+              <span className="text-sm font-semibold text-[#7C2D12]">Pesananku</span>
+            </button>
+            <button
+              data-testid="logout-btn"
+              onClick={() => { logout(); setOpen(false); }}
+              className="w-full px-4 py-3 flex items-center gap-3 hover:bg-red-50 text-left transition-colors border-t border-[#FED7AA]"
+            >
+              <LogOut size={16} className="text-red-500" />
+              <span className="text-sm font-semibold text-red-600">Keluar</span>
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 function BuyerHeader({ onCartClick }) {
   const { cartCount } = useApp();
@@ -36,11 +98,12 @@ function BuyerHeader({ onCartClick }) {
             <button onClick={() => navigate('/buyer')} className="text-[#78350F] hover:text-[#D97706] font-body font-semibold text-sm transition-colors">Menu</button>
             <button onClick={() => navigate('/buyer/track')} className="text-[#78350F] hover:text-[#D97706] font-body font-semibold text-sm transition-colors">Lacak Pesanan</button>
           </nav>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <ProfileMenu />
             <button
               data-testid="cart-button"
               onClick={onCartClick}
-              className="relative p-2 rounded-full bg-[#D97706] text-white hover:bg-[#B45309] transition-all shadow-md"
+              className="relative p-2 rounded-full bg-gradient-to-br from-[#F97316] to-[#EA580C] text-white hover:shadow-lg transition-all shadow-md"
             >
               <ShoppingCart size={20} />
               {cartCount > 0 && (
@@ -67,14 +130,16 @@ function BuyerHeader({ onCartClick }) {
 }
 
 function BuyerFooter() {
+  const { storeConfig } = useApp();
+  const sc = storeConfig || {};
   return (
     <footer className="bg-[#78350F] text-white mt-16">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           <div>
-            <h3 className="font-heading text-xl font-bold mb-3 text-[#FED7AA]">Ciltarasa</h3>
+            <h3 className="font-heading text-xl font-bold mb-3 text-[#FED7AA]">{sc.name || 'Ciltarasa'}</h3>
             <p className="text-sm text-orange-200 font-body leading-relaxed">
-              Frozen snack premium dan Bebek Pawon Ayu khas Malang. Tinggal goreng, langsung nikmat!
+              {sc.tagline || 'Frozen snack premium dan Bebek Pawon Ayu khas Malang.'}
             </p>
           </div>
           <div>
@@ -82,16 +147,18 @@ function BuyerFooter() {
             <div className="space-y-2 text-sm text-orange-200">
               <div className="flex items-center gap-2">
                 <Phone size={14} />
-                <span>0852-4968-2337</span>
+                <span>+{sc.whatsapp || '6281912853950'}</span>
               </div>
               <div className="flex items-center gap-2">
                 <MapPin size={14} />
-                <span>Malang, Jawa Timur</span>
+                <span>{sc.address || 'Malang, Jawa Timur'}</span>
               </div>
-              <div className="flex items-center gap-2">
-                <Instagram size={14} />
-                <span>@ciltarasa.official</span>
-              </div>
+              {sc.social_links?.instagram && (
+                <div className="flex items-center gap-2">
+                  <Instagram size={14} />
+                  <span>@ciltarasa</span>
+                </div>
+              )}
             </div>
           </div>
           <div>
@@ -99,17 +166,13 @@ function BuyerFooter() {
             <div className="space-y-1 text-sm text-orange-200">
               <div className="flex items-center gap-2">
                 <Clock size={14} />
-                <span>Senin - Sabtu: 08.00 - 20.00</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Clock size={14} />
-                <span>Minggu: 09.00 - 17.00</span>
+                <span>{sc.operating_hours || 'Setiap Hari • 08.00 - 21.00 WIB'}</span>
               </div>
             </div>
           </div>
         </div>
         <div className="border-t border-amber-700 mt-8 pt-6 text-center text-xs text-orange-300">
-          © 2025 Ciltarasa. Premium Frozen Snacks & Bebek Pawon Ayu.
+          © 2026 Ciltarasa. Premium Frozen Snacks & Bebek Pawon Ayu.
         </div>
       </div>
     </footer>
@@ -129,6 +192,7 @@ export default function BuyerApp() {
   const [cartOpen, setCartOpen] = useState(false);
   return (
     <div className="min-h-screen bg-[#FDF8F0] font-body">
+      <OnboardingModal />
       <BuyerHeader onCartClick={() => setCartOpen(true)} />
       <CartDrawer open={cartOpen} onClose={() => setCartOpen(false)} />
       <Routes>

@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Search, MessageCircle, RefreshCw, ArrowLeft, Phone } from 'lucide-react';
+import { Search, MessageCircle, RefreshCw, ArrowLeft, CheckCircle2, AlertTriangle, Star } from 'lucide-react';
 import axios from 'axios';
 import { useApp } from '../../context/AppContext';
 import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
+import ReviewModal from './ReviewModal';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -10,7 +12,8 @@ const STATUS_STEPS = [
   { key: 'menunggu', label: 'Pesanan Diterima', icon: '📋', desc: 'Pesananmu sudah kami terima' },
   { key: 'diproses', label: 'Diproses Penjual', icon: '👨‍🍳', desc: 'Sedang dipersiapkan oleh seller' },
   { key: 'siap', label: 'Siap Diambil/Dikirim', icon: '📦', desc: 'Pesananmu siap!' },
-  { key: 'selesai', label: 'Pesanan Selesai', icon: '🎉', desc: 'Terima kasih sudah berbelanja!' },
+  { key: 'selesai', label: 'Pesanan Selesai', icon: '🎉', desc: 'Sudah sampai di tangan kamu' },
+  { key: 'diterima', label: 'Konfirmasi Penerimaan', icon: '✅', desc: 'Kamu sudah konfirmasi terima pesanan' },
 ];
 
 const STATUS_PIPELINE = ['menunggu', 'diproses', 'siap', 'selesai'];
@@ -23,9 +26,93 @@ function formatTs(ts) {
 
 function formatRp(n) { return `Rp ${Number(n).toLocaleString('id-ID')}`; }
 
-function OrderCard({ order, settings }) {
+function ConfirmReceivedBanner({ order, onRefresh }) {
+  const [loading, setLoading] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
+
+  const handleReceived = async (received) => {
+    setLoading(true);
+    try {
+      await axios.put(`${API}/api/orders/${order.id}/received`, { received });
+      if (received) {
+        toast.success('Terima kasih sudah konfirmasi! Yuk kasih review 💝');
+        setReviewOpen(true);
+      } else {
+        toast('Kami catat. Tim kami akan menghubungi kamu segera 📞', { icon: '📞' });
+      }
+      onRefresh?.();
+    } catch {
+      toast.error('Gagal update status');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (order.received) {
+    return (
+      <div className="bg-gradient-to-br from-green-50 to-emerald-50 border-2 border-green-200 rounded-2xl p-4 mt-4">
+        <div className="flex items-center gap-3 mb-2">
+          <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-emerald-500 rounded-full flex items-center justify-center">
+            <CheckCircle2 size={20} className="text-white" />
+          </div>
+          <div className="flex-1">
+            <p className="font-bold text-sm text-green-900">Pesanan Sudah Diterima ✨</p>
+            <p className="text-xs text-green-700">Terima kasih sudah konfirmasi penerimaan</p>
+          </div>
+        </div>
+        <button
+          data-testid="open-review-btn"
+          onClick={() => setReviewOpen(true)}
+          className="w-full mt-2 bg-white border-2 border-amber-300 text-amber-700 font-bold py-2.5 rounded-xl hover:bg-amber-50 transition-all flex items-center justify-center gap-2"
+        >
+          <Star size={16} className="fill-amber-400 text-amber-400" /> Tulis / Edit Review
+        </button>
+        {reviewOpen && <ReviewModal order={order} onClose={() => setReviewOpen(false)} onSubmitted={onRefresh} />}
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-300 rounded-2xl p-4 mt-4">
+      <div className="flex items-start gap-3 mb-3">
+        <div className="w-10 h-10 bg-gradient-to-br from-amber-500 to-orange-500 rounded-full flex items-center justify-center flex-shrink-0">
+          <AlertTriangle size={18} className="text-white" />
+        </div>
+        <div className="flex-1">
+          <p className="font-bold text-sm text-amber-900">Sudah Terima Pesanan?</p>
+          <p className="text-xs text-amber-700 mt-0.5">Konfirmasi penerimaan biar kami tau pesananmu aman sampai 💛</p>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <button
+          data-testid="confirm-received-btn"
+          onClick={() => handleReceived(true)}
+          disabled={loading}
+          className="bg-gradient-to-r from-green-500 to-emerald-600 text-white font-bold py-2.5 rounded-xl shadow hover:shadow-lg transition-all disabled:opacity-70 flex items-center justify-center gap-1.5 text-sm"
+        >
+          <CheckCircle2 size={14} /> Sudah Terima
+        </button>
+        <button
+          data-testid="not-received-btn"
+          onClick={() => handleReceived(false)}
+          disabled={loading}
+          className="bg-white border-2 border-red-300 text-red-700 font-bold py-2.5 rounded-xl hover:bg-red-50 transition-all disabled:opacity-70 text-sm"
+        >
+          Belum Terima
+        </button>
+      </div>
+      {reviewOpen && <ReviewModal order={order} onClose={() => setReviewOpen(false)} onSubmitted={onRefresh} />}
+    </div>
+  );
+}
+
+function OrderCard({ order, settings, onRefresh }) {
   const isCancelled = order.status === 'dibatalkan';
   const currentIdx = isCancelled ? -1 : STATUS_PIPELINE.indexOf(order.status);
+  const isDone = order.status === 'selesai';
+
+  // For display, append "diterima" only if order.received
+  const displaySteps = order.received ? STATUS_STEPS : STATUS_STEPS.slice(0, 4);
 
   return (
     <div className="bg-white rounded-2xl border border-[#FED7AA] p-6 mb-4">
@@ -35,10 +122,10 @@ function OrderCard({ order, settings }) {
           <h3 className="font-heading text-xl font-bold text-[#D97706]">{order.order_number}</h3>
         </div>
         {isCancelled ? (
-          <span className="status-dibatalkan text-xs font-bold px-3 py-1.5 rounded-full">Dibatalkan</span>
+          <span className="text-xs font-bold px-3 py-1.5 rounded-full bg-red-100 text-red-700">Dibatalkan</span>
         ) : (
           <span className={`text-xs font-bold px-3 py-1.5 rounded-full status-${order.status}`}>
-            {order.status === 'menunggu' ? 'Menunggu Konfirmasi' : order.status === 'diproses' ? 'Diproses' : order.status === 'siap' ? 'Siap' : 'Selesai'}
+            {order.status === 'menunggu' ? 'Menunggu Konfirmasi' : order.status === 'diproses' ? 'Diproses' : order.status === 'siap' ? 'Siap' : order.received ? 'Diterima ✓' : 'Selesai'}
           </span>
         )}
       </div>
@@ -46,28 +133,28 @@ function OrderCard({ order, settings }) {
       {/* Timeline */}
       {!isCancelled && (
         <div className="relative">
-          {STATUS_STEPS.map((step, idx) => {
-            const isDone = currentIdx >= idx;
-            const isActive = currentIdx === idx;
+          {displaySteps.map((step, idx) => {
+            const isStepDone = order.received && step.key === 'diterima' ? true : currentIdx >= idx;
+            const isActive = currentIdx === idx && !order.received;
             const ts = order.status_timestamps?.[step.key];
             return (
               <div key={step.key} className="flex gap-4 mb-4 last:mb-0">
                 <div className="flex flex-col items-center">
                   <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg transition-all ${
-                    isDone ? 'bg-[#D97706] shadow-md' + (isActive ? ' step-active' : '') : 'bg-gray-100'
+                    isStepDone ? 'bg-[#D97706] shadow-md' + (isActive ? ' step-active' : '') : 'bg-gray-100'
                   }`}>
                     {step.icon}
                   </div>
-                  {idx < STATUS_STEPS.length - 1 && (
-                    <div className={`w-0.5 h-8 mt-1 ${isDone && currentIdx > idx ? 'bg-[#D97706]' : 'bg-gray-200'}`} />
+                  {idx < displaySteps.length - 1 && (
+                    <div className={`w-0.5 h-8 mt-1 ${isStepDone && currentIdx > idx ? 'bg-[#D97706]' : 'bg-gray-200'}`} />
                   )}
                 </div>
                 <div className="pt-1.5 pb-4">
-                  <p className={`font-semibold text-sm ${isDone ? 'text-[#78350F]' : 'text-gray-400'}`}>{step.label}</p>
+                  <p className={`font-semibold text-sm ${isStepDone ? 'text-[#78350F]' : 'text-gray-400'}`}>{step.label}</p>
                   {ts ? (
                     <p className="text-xs text-[#92400E] mt-0.5">{formatTs(ts)}</p>
                   ) : (
-                    <p className="text-xs text-gray-400 mt-0.5">{isDone ? '' : 'Menunggu...'}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">{isStepDone ? '' : 'Menunggu...'}</p>
                   )}
                 </div>
               </div>
@@ -82,6 +169,9 @@ function OrderCard({ order, settings }) {
           <p className="text-xs text-red-400 mt-1">{formatTs(order.status_timestamps?.dibatalkan)}</p>
         </div>
       )}
+
+      {/* Confirm Received Banner (only when status = selesai) */}
+      {isDone && <ConfirmReceivedBanner order={order} onRefresh={onRefresh} />}
 
       {/* Order Items */}
       <div className="mt-4 pt-4 border-t border-[#FED7AA]">
@@ -115,7 +205,7 @@ function OrderCard({ order, settings }) {
 }
 
 export default function OrderTracking() {
-  const { settings, wsEvent } = useApp();
+  const { settings, wsEvent, authUser } = useApp();
   const navigate = useNavigate();
   const [query, setQuery] = useState('');
   const [orders, setOrders] = useState([]);
@@ -128,7 +218,7 @@ export default function OrderTracking() {
     setLoading(true);
     setSearched(true);
     try {
-      const isPhone = /^\d{9,}$/.test(q.trim());
+      const isPhone = /^\d{9,}$/.test(q.trim().replace(/\D/g, ''));
       const param = isPhone ? `phone=${q.trim()}` : `order_id=${q.trim()}`;
       const res = await axios.get(`${API}/api/orders/track?${param}`);
       setOrders(res.data);
@@ -139,6 +229,15 @@ export default function OrderTracking() {
       setLoading(false);
     }
   }, []);
+
+  // Auto-load orders for logged-in user
+  useEffect(() => {
+    if (authUser && !searched) {
+      const phone = authUser.phone.replace(/^62/, '0');
+      setQuery(phone);
+      search(phone);
+    }
+  }, [authUser, searched, search]);
 
   // Auto-refresh every 10s if we have results
   useEffect(() => {
@@ -165,7 +264,9 @@ export default function OrderTracking() {
         <ArrowLeft size={18} /> Kembali
       </button>
       <h1 className="font-heading text-3xl font-bold text-[#78350F] mb-2">Lacak Pesanan</h1>
-      <p className="text-[#92400E] font-body mb-8">Masukkan Order ID atau Nomor HP untuk melacak pesananmu</p>
+      <p className="text-[#92400E] font-body mb-8">
+        {authUser ? `Halo ${authUser.name}, ini pesananmu` : 'Masukkan Order ID atau Nomor HP untuk melacak pesananmu'}
+      </p>
 
       <form onSubmit={handleSearch} className="flex gap-3 mb-8">
         <div className="relative flex-1">
@@ -175,7 +276,7 @@ export default function OrderTracking() {
             type="text"
             value={query}
             onChange={e => setQuery(e.target.value)}
-            placeholder="Contoh: ORD-001 atau 081234567890"
+            placeholder="Contoh: ORD-0001 atau 081234567890"
             className="w-full pl-11 pr-4 py-3 rounded-full border border-[#FED7AA] focus:outline-none focus:ring-2 focus:ring-[#D97706] font-body text-[#451A03] bg-white"
           />
         </div>
@@ -211,17 +312,17 @@ export default function OrderTracking() {
             )}
           </div>
           {orders.map(order => (
-            <OrderCard key={order.id} order={order} settings={settings} />
+            <OrderCard key={order.id} order={order} settings={settings} onRefresh={() => search(query)} />
           ))}
         </div>
       )}
 
-      {!searched && (
+      {!searched && !authUser && (
         <div className="text-center py-16">
           <div className="text-6xl mb-4">📦</div>
           <h3 className="font-heading text-xl text-[#78350F] mb-2">Cari Pesananmu</h3>
           <p className="text-[#92400E] font-body text-sm max-w-sm mx-auto">
-            Masukkan Order ID (contoh: ORD-001) atau Nomor HP yang digunakan saat checkout
+            Masukkan Order ID (contoh: ORD-0001) atau Nomor HP yang digunakan saat checkout
           </p>
         </div>
       )}

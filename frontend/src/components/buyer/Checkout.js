@@ -46,14 +46,26 @@ function SuccessScreen({ order, onTrack }) {
 }
 
 export default function Checkout() {
-  const { cart, cartTotal, clearCart, settings } = useApp();
+  const { cart, cartTotal, clearCart, settings, authUser, authToken } = useApp();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [order, setOrder] = useState(null);
   const [form, setForm] = useState({
-    customer_name: '', customer_phone: '', customer_address: '',
+    customer_name: authUser?.name || '',
+    customer_phone: authUser?.phone ? authUser.phone.replace(/^62/, '0') : '',
+    customer_address: '',
     delivery_method: 'delivery', notes: '', payment_method: 'transfer'
   });
+
+  React.useEffect(() => {
+    if (authUser) {
+      setForm(f => ({
+        ...f,
+        customer_name: f.customer_name || authUser.name || '',
+        customer_phone: f.customer_phone || (authUser.phone ? authUser.phone.replace(/^62/, '0') : ''),
+      }));
+    }
+  }, [authUser]);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -65,12 +77,17 @@ export default function Checkout() {
 
     setLoading(true);
     try {
-      const items = cart.map(({ product, qty }) => ({
-        product_id: product.id, product_name: product.name,
-        price: product.price, quantity: qty, subtotal: product.price * qty
-      }));
+      const items = cart.map(({ product, qty }) => {
+        const price = product.final_price || product.price;
+        return {
+          product_id: product.id, product_name: product.name,
+          price, quantity: qty, subtotal: price * qty,
+          image_url: product.image_url || ''
+        };
+      });
       const res = await axios.post(`${API}/api/orders`, {
-        ...form, items, subtotal: cartTotal, total: cartTotal
+        ...form, items, subtotal: cartTotal, total: cartTotal,
+        user_id: authToken || null
       });
       const newOrder = res.data;
       setOrder(newOrder);

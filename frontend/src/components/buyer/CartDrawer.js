@@ -52,12 +52,18 @@ export default function CartDrawer({ open, onClose }) {
               </button>
             </div>
           ) : (
-            cart.map(({ product, qty }) => (
+            cart.map(({ product, qty }) => {
+              const finalPrice = product.final_price || product.price;
+              const hasDiscount = product.final_price && product.final_price < product.price;
+              return (
               <div key={product.id} data-testid={`cart-item-${product.id}`} className="flex gap-3 bg-[#FDF8F0] rounded-xl p-3 border border-[#FED7AA]">
                 <img src={product.image_url} alt={product.name} className="w-16 h-16 rounded-lg object-cover flex-shrink-0" />
                 <div className="flex-1 min-w-0">
                   <h4 className="font-semibold text-[#78350F] text-sm leading-snug truncate">{product.name}</h4>
-                  <p className="text-[#D97706] font-bold text-sm mt-0.5">{formatRp(product.price)}</p>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <p className="text-[#D97706] font-bold text-sm">{formatRp(finalPrice)}</p>
+                    {hasDiscount && <p className="text-[10px] text-gray-400 line-through">{formatRp(product.price)}</p>}
+                  </div>
                   <div className="flex items-center gap-2 mt-2">
                     <div className="flex items-center border border-[#FED7AA] rounded-full bg-white overflow-hidden">
                       <button
@@ -72,7 +78,7 @@ export default function CartDrawer({ open, onClose }) {
                         className="px-2.5 py-1 text-[#78350F] hover:bg-[#FED7AA] transition-colors text-sm font-bold"
                       >+</button>
                     </div>
-                    <span className="text-xs text-[#92400E] ml-auto">{formatRp(product.price * qty)}</span>
+                    <span className="text-xs text-[#92400E] ml-auto font-bold">{formatRp(finalPrice * qty)}</span>
                   </div>
                 </div>
                 <button
@@ -83,7 +89,8 @@ export default function CartDrawer({ open, onClose }) {
                   <Trash2 size={15} />
                 </button>
               </div>
-            ))
+              );
+            })
           )}
         </div>
 

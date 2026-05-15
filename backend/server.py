@@ -1,13 +1,14 @@
-from fastapi import FastAPI, APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, APIRouter, WebSocket, WebSocketDisconnect, HTTPException
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 import json
+import re
 from pathlib import Path
-from pydantic import BaseModel
-from typing import List, Optional
+from pydantic import BaseModel, Field
+from typing import List, Optional, Dict, Any
 import uuid
 from datetime import datetime, timezone, timedelta
 
@@ -24,6 +25,9 @@ api_router = APIRouter(prefix="/api")
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Schema version — bump to force re-seed
+SCHEMA_VERSION = "v2.0.2"
+
 # ─── WebSocket Manager ───────────────────────────────────────────────────────
 class ConnectionManager:
     def __init__(self):
@@ -32,7 +36,6 @@ class ConnectionManager:
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
         self.active_connections.append(websocket)
-        logger.info(f"WS connected. Total: {len(self.active_connections)}")
 
     def disconnect(self, websocket: WebSocket):
         if websocket in self.active_connections:
@@ -42,7 +45,7 @@ class ConnectionManager:
         dead = []
         for conn in self.active_connections:
             try:
-                await conn.send_text(json.dumps(message))
+                await conn.send_text(json.dumps(message, default=str))
             except Exception:
                 dead.append(conn)
         for conn in dead:
@@ -50,23 +53,68 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
+# ─── Helpers ─────────────────────────────────────────────────────────────────
+def now_iso():
+    return datetime.now(timezone.utc).isoformat()
+
+async def next_order_number():
+    count = await db.orders.count_documents({})
+    return f"ORD-{str(count + 1).zfill(4)}"
+
+def normalize_phone(phone: str) -> str:
+    """Normalize Indonesian phone to start with 62."""
+    p = re.sub(r"\D", "", phone or "")
+    if p.startswith("0"):
+        p = "62" + p[1:]
+    if p and not p.startswith("62"):
+        p = "62" + p
+    return p
+
+def gdrive_to_direct(url: str) -> str:
+    """Convert Google Drive share link to direct view link."""
+    if not url:
+        return url
+    m = re.search(r"drive\.google\.com/file/d/([^/]+)/", url)
+    if m:
+        return f"https://drive.google.com/uc?export=view&id={m.group(1)}"
+    m = re.search(r"[?&]id=([^&]+)", url)
+    if m and "drive.google.com" in url:
+        return f"https://drive.google.com/uc?export=view&id={m.group(1)}"
+    return url
+
 # ─── Pydantic Models ─────────────────────────────────────────────────────────
+class OTPRequest(BaseModel):
+    phone: str
+    name: Optional[str] = None
+
+class OTPVerify(BaseModel):
+    phone: str
+    otp: str
+    name: Optional[str] = None
+
 class OrderItemModel(BaseModel):
     product_id: str
     product_name: str
     price: float
     quantity: int
     subtotal: float
+    image_url: Optional[str] = ""
 
 class ProductCreate(BaseModel):
     name: str
-    description: str
+    description: str = ""
     price: float
     cost_price: float = 0
-    category: str
-    stock: int
+    category: str = "snack"
+    categories: List[str] = []
+    stock: int = 0
+    unit: str = "pack"
+    weight: float = 0
     active: bool = True
     image_url: str = ""
+    media_urls: List[str] = []
+    discount_id: Optional[str] = None
+    sold_count: int = 0
 
 class ProductUpdate(BaseModel):
     name: Optional[str] = None
@@ -74,23 +122,36 @@ class ProductUpdate(BaseModel):
     price: Optional[float] = None
     cost_price: Optional[float] = None
     category: Optional[str] = None
+    categories: Optional[List[str]] = None
     stock: Optional[int] = None
+    unit: Optional[str] = None
+    weight: Optional[float] = None
     active: Optional[bool] = None
     image_url: Optional[str] = None
+    media_urls: Optional[List[str]] = None
+    discount_id: Optional[str] = None
+    sold_count: Optional[int] = None
 
 class OrderCreate(BaseModel):
     customer_name: str
     customer_phone: str
     customer_address: str = ""
     delivery_method: str
+    delivery_option_id: Optional[str] = None
+    delivery_fee: float = 0
     items: List[OrderItemModel]
     subtotal: float
     total: float
     notes: str = ""
     payment_method: str
+    payment_method_id: Optional[str] = None
+    user_id: Optional[str] = None
 
 class OrderStatusUpdate(BaseModel):
     status: str
+
+class OrderReceivedUpdate(BaseModel):
+    received: bool
 
 class SettingsUpdate(BaseModel):
     seller_whatsapp: Optional[str] = None
@@ -105,90 +166,195 @@ class FinancialEntryCreate(BaseModel):
     category: str
     date: str
 
-# ─── Helpers ─────────────────────────────────────────────────────────────────
-def now_iso():
-    return datetime.now(timezone.utc).isoformat()
+class ReviewCreate(BaseModel):
+    order_id: str
+    product_id: str
+    user_id: Optional[str] = None
+    user_name: str
+    rating: int = Field(ge=1, le=5)
+    text: str = ""
+    photos: List[str] = []
 
-async def next_order_number():
-    count = await db.orders.count_documents({})
-    return f"ORD-{str(count + 1).zfill(3)}"
+class StoreConfigUpdate(BaseModel):
+    name: Optional[str] = None
+    logo_url: Optional[str] = None
+    tagline: Optional[str] = None
+    whatsapp: Optional[str] = None
+    address: Optional[str] = None
+    operating_hours: Optional[str] = None
+    cerita: Optional[str] = None
+    gmaps_review_url: Optional[str] = None
+    bank_accounts: Optional[List[Dict[str, Any]]] = None
+    categories: Optional[List[Dict[str, Any]]] = None
+    delivery_options: Optional[List[Dict[str, Any]]] = None
+    payment_methods: Optional[List[Dict[str, Any]]] = None
+    social_links: Optional[Dict[str, str]] = None
+
+class DiscountCreate(BaseModel):
+    name: str
+    type: str  # "percent" or "fixed"
+    value: float
+    product_ids: List[str] = []
+    active: bool = True
+    starts_at: Optional[str] = None
+    ends_at: Optional[str] = None
+
+class DiscountUpdate(BaseModel):
+    name: Optional[str] = None
+    type: Optional[str] = None
+    value: Optional[float] = None
+    product_ids: Optional[List[str]] = None
+    active: Optional[bool] = None
+    starts_at: Optional[str] = None
+    ends_at: Optional[str] = None
 
 # ─── Default Data ─────────────────────────────────────────────────────────────
 DEFAULT_PRODUCTS = [
-    {"name": "Risoles Frozen (isi 10)", "description": "Risoles renyah dengan isi ragout sayur dan telur, dibalut tepung roti sempurna.", "price": 35000, "cost_price": 18000, "category": "snack", "stock": 50, "active": True, "image_url": "https://picsum.photos/seed/risoles/400/300"},
-    {"name": "Lumpia Frozen (isi 10)", "description": "Lumpia isi rebung dan ayam, kulit crispy khas Semarang.", "price": 30000, "cost_price": 15000, "category": "snack", "stock": 40, "active": True, "image_url": "https://picsum.photos/seed/lumpia/400/300"},
-    {"name": "Pastel Frozen (isi 10)", "description": "Pastel goreng isi wortel, kentang, dan telur puyuh.", "price": 28000, "cost_price": 14000, "category": "snack", "stock": 35, "active": True, "image_url": "https://picsum.photos/seed/pastel/400/300"},
-    {"name": "Cireng Frozen (isi 15)", "description": "Cireng aci goreng bumbu rujak pedas manis, camilan khas Bandung.", "price": 20000, "cost_price": 9000, "category": "snack", "stock": 60, "active": True, "image_url": "https://picsum.photos/seed/cireng/400/300"},
-    {"name": "Tahu Isi Frozen (isi 10)", "description": "Tahu goreng berisi sayur segar, mudah digoreng langsung dari freezer.", "price": 25000, "cost_price": 12000, "category": "snack", "stock": 45, "active": True, "image_url": "https://picsum.photos/seed/tahu/400/300"},
-    {"name": "Nugget Ayam Homemade (250gr)", "description": "Nugget ayam kampung homemade tanpa pengawet, crispy di luar lembut di dalam.", "price": 40000, "cost_price": 22000, "category": "snack", "stock": 30, "active": True, "image_url": "https://picsum.photos/seed/nugget/400/300"},
-    {"name": "Siomay Frozen (isi 10)", "description": "Siomay ikan tenggiri asli Bandung, nikmati dengan bumbu kacang.", "price": 32000, "cost_price": 17000, "category": "snack", "stock": 25, "active": True, "image_url": "https://picsum.photos/seed/siomay/400/300"},
-    {"name": "Bakwan Frozen (isi 10)", "description": "Bakwan jagung manis dan sayur, goreng langsung dari freezer.", "price": 22000, "cost_price": 10000, "category": "snack", "stock": 55, "active": True, "image_url": "https://picsum.photos/seed/bakwan/400/300"},
-    {"name": "Bebek Utuh Pawon Ayu", "description": "Bebek utuh asap Pawon Ayu, bumbu rempah khas Malang, tinggal goreng atau panggang.", "price": 85000, "cost_price": 50000, "category": "bebek", "stock": 20, "active": True, "image_url": "https://picsum.photos/seed/bebek1/400/300"},
-    {"name": "Setengah Bebek Pawon Ayu", "description": "Setengah ekor bebek asap Pawon Ayu, porsi pas untuk 2 orang.", "price": 45000, "cost_price": 28000, "category": "bebek", "stock": 25, "active": True, "image_url": "https://picsum.photos/seed/bebek2/400/300"},
-    {"name": "Bebek Potongan Paha (2pcs)", "description": "Paha bebek asap Pawon Ayu 2 potong, bumbu meresap sempurna.", "price": 35000, "cost_price": 20000, "category": "bebek", "stock": 30, "active": True, "image_url": "https://picsum.photos/seed/bebek3/400/300"},
-    {"name": "Paket Bebek Keluarga (2 ekor)", "description": "2 ekor bebek asap Pawon Ayu, cocok untuk keluarga atau acara spesial.", "price": 160000, "cost_price": 95000, "category": "bebek", "stock": 10, "active": True, "image_url": "https://picsum.photos/seed/bebek4/400/300"},
+    {"name": "Risoles Frozen (isi 10)", "description": "Risoles renyah dengan isi ragout sayur dan telur, dibalut tepung roti sempurna. Cocok untuk camilan keluarga atau bekal anak sekolah.", "price": 35000, "cost_price": 18000, "category": "snack", "categories": ["snack", "kekinian"], "stock": 50, "unit": "pack", "weight": 0.4, "image_url": "https://images.unsplash.com/photo-1625220194771-7ebdea0b70b9?w=600&q=80", "media_urls": ["https://images.unsplash.com/photo-1625220194771-7ebdea0b70b9?w=600&q=80"], "sold_count": 142},
+    {"name": "Lumpia Frozen (isi 10)", "description": "Lumpia isi rebung dan ayam, kulit crispy khas Semarang. Goreng sebentar langsung gurih.", "price": 30000, "cost_price": 15000, "category": "snack", "categories": ["snack"], "stock": 40, "unit": "pack", "weight": 0.35, "image_url": "https://images.unsplash.com/photo-1606503153255-59d8b8b27a45?w=600&q=80", "sold_count": 98},
+    {"name": "Pastel Frozen (isi 10)", "description": "Pastel goreng isi wortel, kentang, dan telur puyuh. Renyah di luar, padat di dalam.", "price": 28000, "cost_price": 14000, "category": "snack", "categories": ["snack"], "stock": 35, "unit": "pack", "weight": 0.35, "image_url": "https://images.unsplash.com/photo-1626200419199-391ae4be7a41?w=600&q=80", "sold_count": 76},
+    {"name": "Cireng Frozen (isi 15)", "description": "Cireng aci goreng bumbu rujak pedas manis, camilan khas Bandung yang viral!", "price": 20000, "cost_price": 9000, "category": "snack", "categories": ["snack", "viral"], "stock": 60, "unit": "pack", "weight": 0.5, "image_url": "https://images.unsplash.com/photo-1626202373052-9d6d5b9bca5b?w=600&q=80", "sold_count": 215},
+    {"name": "Tahu Isi Frozen (isi 10)", "description": "Tahu goreng berisi sayur segar, mudah digoreng langsung dari freezer.", "price": 25000, "cost_price": 12000, "category": "snack", "categories": ["snack"], "stock": 45, "unit": "pack", "weight": 0.4, "image_url": "https://images.unsplash.com/photo-1572448862527-d3c904757de6?w=600&q=80", "sold_count": 64},
+    {"name": "Nugget Ayam Homemade (250gr)", "description": "Nugget ayam kampung homemade tanpa pengawet, crispy di luar lembut di dalam. Anak-anak suka!", "price": 40000, "cost_price": 22000, "category": "snack", "categories": ["snack", "anak"], "stock": 30, "unit": "pack", "weight": 0.25, "image_url": "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=600&q=80", "sold_count": 187},
+    {"name": "Siomay Frozen (isi 10)", "description": "Siomay ikan tenggiri asli Bandung, nikmati dengan bumbu kacang.", "price": 32000, "cost_price": 17000, "category": "snack", "categories": ["snack"], "stock": 25, "unit": "pack", "weight": 0.4, "image_url": "https://images.unsplash.com/photo-1625220194771-7ebdea0b70b9?w=600&q=80", "sold_count": 53},
+    {"name": "Bakwan Frozen (isi 10)", "description": "Bakwan jagung manis dan sayur, goreng langsung dari freezer.", "price": 22000, "cost_price": 10000, "category": "snack", "categories": ["snack"], "stock": 55, "unit": "pack", "weight": 0.4, "image_url": "https://images.unsplash.com/photo-1601001435957-74f0958a93c5?w=600&q=80", "sold_count": 41},
+    {"name": "Bebek Utuh Pawon Ayu", "description": "Bebek utuh asap Pawon Ayu, bumbu rempah khas Malang, tinggal goreng atau panggang. Premium signature kami.", "price": 85000, "cost_price": 50000, "category": "bebek", "categories": ["bebek", "premium"], "stock": 20, "unit": "ekor", "weight": 1.2, "image_url": "https://images.unsplash.com/photo-1544025162-d76694265947?w=600&q=80", "sold_count": 89},
+    {"name": "Setengah Bebek Pawon Ayu", "description": "Setengah ekor bebek asap Pawon Ayu, porsi pas untuk 2 orang.", "price": 45000, "cost_price": 28000, "category": "bebek", "categories": ["bebek"], "stock": 25, "unit": "ekor", "weight": 0.6, "image_url": "https://images.unsplash.com/photo-1432139509613-5c4255815697?w=600&q=80", "sold_count": 67},
+    {"name": "Bebek Potongan Paha (2pcs)", "description": "Paha bebek asap Pawon Ayu 2 potong, bumbu meresap sempurna.", "price": 35000, "cost_price": 20000, "category": "bebek", "categories": ["bebek"], "stock": 30, "unit": "pack", "weight": 0.35, "image_url": "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=600&q=80", "sold_count": 45},
+    {"name": "Paket Bebek Keluarga (2 ekor)", "description": "2 ekor bebek asap Pawon Ayu, cocok untuk keluarga atau acara spesial. Hemat dan istimewa.", "price": 160000, "cost_price": 95000, "category": "bebek", "categories": ["bebek", "premium", "paket"], "stock": 10, "unit": "paket", "weight": 2.4, "image_url": "https://images.unsplash.com/photo-1544025162-d76694265947?w=600&q=80", "sold_count": 32},
 ]
 
 DEFAULT_SETTINGS = {
-    "seller_whatsapp": "6285249682337",
+    "seller_whatsapp": "6281912853950",
     "store_name": "Ciltarasa",
     "auto_whatsapp": True,
     "message_template": "PESANAN BARU - Ciltarasa\n\nOrder ID: #{order_id}\nPelanggan: {customer_name}\nNo. HP: {customer_phone}\nAlamat: {customer_address}\n\nDetail Pesanan:\n{items_detail}\n\nTotal: Rp {total}\nCatatan: {notes}\n\nSilakan konfirmasi pesanan ini di dashboard Ciltarasa."
 }
 
+DEFAULT_STORE_CONFIG = {
+    "_id": "main",
+    "name": "Ciltarasa",
+    "logo_url": "",
+    "tagline": "Frozen Food Premium • Malang",
+    "whatsapp": "6281912853950",
+    "address": "Jl. Kawi No. 15, Malang, Jawa Timur",
+    "operating_hours": "Setiap Hari • 08.00 - 21.00 WIB",
+    "cerita": "Ciltarasa lahir dari dapur kecil di Malang tahun 2020. Bermula dari pesanan tetangga yang suka risoles homemade buatan Bunda, kini kami sudah melayani ribuan keluarga di seluruh Malang Raya.\n\nKami percaya makanan beku berkualitas itu bukan instant—tiap produk dibuat fresh tiap hari, dibekukan dengan blast freezer, dan dikirim langsung ke rumah Anda. Tanpa pengawet, tanpa MSG berlebih, hanya rasa autentik yang bikin keluarga ketagihan.\n\nSpesialisasi kami: aneka frozen snack (risoles, lumpia, pastel, cireng) dan Bebek Asap Pawon Ayu—signature dish dengan bumbu rempah Jawa yang sudah turun-temurun.",
+    "gmaps_review_url": "https://maps.app.goo.gl/W8noqRWBkVsMESbHA",
+    "bank_accounts": [
+        {"id": str(uuid.uuid4()), "bank": "BCA", "name": "Ciltarasa Malang", "number": "1234567890"},
+        {"id": str(uuid.uuid4()), "bank": "Mandiri", "name": "Ciltarasa Malang", "number": "9876543210"},
+    ],
+    "categories": [
+        {"id": "snack", "name": "Frozen Snack", "icon": "🥟"},
+        {"id": "bebek", "name": "Bebek Pawon Ayu", "icon": "🦆"},
+        {"id": "viral", "name": "Lagi Viral", "icon": "🔥"},
+        {"id": "anak", "name": "Favorit Anak", "icon": "👶"},
+        {"id": "premium", "name": "Premium", "icon": "⭐"},
+        {"id": "paket", "name": "Paket Hemat", "icon": "📦"},
+    ],
+    "delivery_options": [
+        {"id": "pickup", "name": "Ambil Sendiri", "description": "Ambil langsung di toko, gratis ongkir", "fee": 0, "active": True},
+        {"id": "kurir_toko", "name": "Kurir Toko (Malang Kota)", "description": "Diantar kurir toko, area Malang kota", "fee": 10000, "active": True},
+        {"id": "gosend", "name": "GoSend / GrabExpress", "description": "Ongkir sesuai aplikasi, bayar kurir", "fee": 0, "active": True},
+        {"id": "jne_jnt", "name": "JNE / J&T (luar kota)", "description": "Untuk luar Malang, estimasi 1-3 hari", "fee": 25000, "active": True},
+    ],
+    "payment_methods": [
+        {"id": "transfer", "name": "Transfer Bank", "type": "transfer", "details": "BCA / Mandiri", "active": True},
+        {"id": "qris", "name": "QRIS", "type": "qris", "details": "Scan QRIS, semua e-wallet", "active": True},
+        {"id": "cod", "name": "COD (Bayar di Tempat)", "type": "cod", "details": "Hanya area Malang kota", "active": True},
+    ],
+    "social_links": {
+        "instagram": "https://instagram.com/ciltarasa",
+        "tiktok": "https://tiktok.com/@ciltarasa",
+        "shopee": "",
+    }
+}
+
+DEFAULT_DISCOUNTS = [
+    {"id": str(uuid.uuid4()), "name": "Promo Bulan Ini", "type": "percent", "value": 10, "product_ids": [], "active": True, "starts_at": None, "ends_at": None, "created_at": now_iso()},
+]
+
+
 async def seed_database():
+    """Seed DB and reset if SCHEMA_VERSION changed."""
+    meta = await db.system_meta.find_one({"_id": "schema"})
+    if not meta or meta.get("version") != SCHEMA_VERSION:
+        logger.info(f"Schema version mismatch ({meta.get('version') if meta else 'none'} → {SCHEMA_VERSION}). Resetting DB.")
+        for c in ["products", "orders", "settings", "financial_entries", "store_config", "discounts", "reviews", "users"]:
+            await db[c].drop()
+        await db.system_meta.update_one({"_id": "schema"}, {"$set": {"version": SCHEMA_VERSION, "updated_at": now_iso()}}, upsert=True)
+
+    # Products
     if await db.products.count_documents({}) == 0:
         ts = now_iso()
         for p in DEFAULT_PRODUCTS:
-            await db.products.insert_one({"id": str(uuid.uuid4()), "created_at": ts, "updated_at": ts, **p})
+            doc = {"id": str(uuid.uuid4()), "created_at": ts, "updated_at": ts,
+                   "media_urls": p.get("media_urls", [p["image_url"]]),
+                   "discount_id": None, "active": True, **p}
+            await db.products.insert_one(doc)
         logger.info(f"Seeded {len(DEFAULT_PRODUCTS)} products")
 
+    # Settings
     if await db.settings.count_documents({}) == 0:
         await db.settings.insert_one({"_id": "main", **DEFAULT_SETTINGS})
-        logger.info("Seeded settings")
 
+    # StoreConfig
+    if await db.store_config.count_documents({}) == 0:
+        await db.store_config.insert_one(DEFAULT_STORE_CONFIG)
+        logger.info("Seeded store config")
+
+    # Discounts
+    if await db.discounts.count_documents({}) == 0:
+        for d in DEFAULT_DISCOUNTS:
+            await db.discounts.insert_one(d)
+
+    # Orders (demo)
     if await db.orders.count_documents({}) == 0:
         products = await db.products.find({}, {"_id": 0}).to_list(100)
-        pmap = {p["name"]: p["id"] for p in products}
+        pmap = {p["name"]: p for p in products}
         now = datetime.now(timezone.utc)
 
         sample_orders = [
             {
-                "customer_name": "Siti Rahayu", "customer_phone": "081234567890",
+                "customer_name": "Siti Rahayu", "customer_phone": "6281234567890",
                 "customer_address": "Jl. Kawi No. 15, Malang", "delivery_method": "delivery",
-                "items": [{"product_name": "Risoles Frozen (isi 10)", "price": 35000, "quantity": 2, "subtotal": 70000},
-                          {"product_name": "Lumpia Frozen (isi 10)", "price": 30000, "quantity": 1, "subtotal": 30000}],
-                "subtotal": 100000, "total": 100000, "notes": "Tolong packing rapi ya",
+                "delivery_option_id": "kurir_toko", "delivery_fee": 10000,
+                "items": [("Risoles Frozen (isi 10)", 2), ("Lumpia Frozen (isi 10)", 1)],
+                "notes": "Tolong packing rapi ya",
                 "payment_method": "transfer", "status": "menunggu", "days_ago": 0
             },
             {
-                "customer_name": "Budi Santoso", "customer_phone": "082345678901",
+                "customer_name": "Budi Santoso", "customer_phone": "6282345678901",
                 "customer_address": "Jl. Ijen No. 8, Malang", "delivery_method": "delivery",
-                "items": [{"product_name": "Bebek Utuh Pawon Ayu", "price": 85000, "quantity": 1, "subtotal": 85000},
-                          {"product_name": "Cireng Frozen (isi 15)", "price": 20000, "quantity": 2, "subtotal": 40000}],
-                "subtotal": 125000, "total": 125000, "notes": "",
+                "delivery_option_id": "kurir_toko", "delivery_fee": 10000,
+                "items": [("Bebek Utuh Pawon Ayu", 1), ("Cireng Frozen (isi 15)", 2)],
+                "notes": "",
                 "payment_method": "cod", "status": "diproses", "days_ago": 1
             },
             {
-                "customer_name": "Dewi Lestari", "customer_phone": "083456789012",
+                "customer_name": "Dewi Lestari", "customer_phone": "6283456789012",
                 "customer_address": "Jl. Sulfat No. 22, Malang", "delivery_method": "pickup",
-                "items": [{"product_name": "Paket Bebek Keluarga (2 ekor)", "price": 160000, "quantity": 1, "subtotal": 160000}],
-                "subtotal": 160000, "total": 160000, "notes": "Ambil jam 4 sore",
+                "delivery_option_id": "pickup", "delivery_fee": 0,
+                "items": [("Paket Bebek Keluarga (2 ekor)", 1)],
+                "notes": "Ambil jam 4 sore",
                 "payment_method": "qris", "status": "siap", "days_ago": 2
             },
             {
-                "customer_name": "Ahmad Fauzi", "customer_phone": "084567890123",
+                "customer_name": "Ahmad Fauzi", "customer_phone": "6284567890123",
                 "customer_address": "Jl. Simpang Balapan No. 5, Malang", "delivery_method": "delivery",
-                "items": [{"product_name": "Nugget Ayam Homemade (250gr)", "price": 40000, "quantity": 3, "subtotal": 120000},
-                          {"product_name": "Tahu Isi Frozen (isi 10)", "price": 25000, "quantity": 2, "subtotal": 50000}],
-                "subtotal": 170000, "total": 170000, "notes": "",
-                "payment_method": "transfer", "status": "selesai", "days_ago": 3
+                "delivery_option_id": "kurir_toko", "delivery_fee": 10000,
+                "items": [("Nugget Ayam Homemade (250gr)", 3), ("Tahu Isi Frozen (isi 10)", 2)],
+                "notes": "",
+                "payment_method": "transfer", "status": "selesai", "days_ago": 3,
+                "received": True,
             },
             {
-                "customer_name": "Rina Wati", "customer_phone": "085678901234",
+                "customer_name": "Rina Wati", "customer_phone": "6285678901234",
                 "customer_address": "Jl. Arjuno No. 11, Malang", "delivery_method": "delivery",
-                "items": [{"product_name": "Siomay Frozen (isi 10)", "price": 32000, "quantity": 1, "subtotal": 32000}],
-                "subtotal": 32000, "total": 32000, "notes": "Stok masih ada?",
+                "delivery_option_id": "kurir_toko", "delivery_fee": 10000,
+                "items": [("Siomay Frozen (isi 10)", 1)],
+                "notes": "Stok masih ada?",
                 "payment_method": "cod", "status": "dibatalkan", "days_ago": 4
             },
         ]
@@ -196,38 +362,131 @@ async def seed_database():
         for i, o in enumerate(sample_orders):
             order_dt = now - timedelta(days=o["days_ago"])
             order_ts = order_dt.isoformat()
-            items = [{"product_id": pmap.get(item["product_name"], ""), **item} for item in o["items"]]
+            items = []
+            subtotal = 0
+            for name, qty in o["items"]:
+                p = pmap.get(name)
+                if not p:
+                    continue
+                sub = p["price"] * qty
+                subtotal += sub
+                items.append({
+                    "product_id": p["id"], "product_name": name,
+                    "price": p["price"], "quantity": qty, "subtotal": sub,
+                    "image_url": p.get("image_url", "")
+                })
+
+            total = subtotal + o["delivery_fee"]
             s = o["status"]
-            status_ts = {"menunggu": order_ts}
+            status_ts = {}
             prog = ["menunggu", "diproses", "siap", "selesai"]
             if s in prog:
                 for st in prog:
                     status_ts[st] = order_ts
                     if st == s:
                         break
-            if s == "dibatalkan":
-                status_ts["dibatalkan"] = order_ts
+            elif s == "dibatalkan":
+                status_ts = {"menunggu": order_ts, "dibatalkan": order_ts}
 
             await db.orders.insert_one({
-                "id": str(uuid.uuid4()), "order_number": f"ORD-{str(i+1).zfill(3)}",
+                "id": str(uuid.uuid4()), "order_number": f"ORD-{str(i+1).zfill(4)}",
                 "customer_name": o["customer_name"], "customer_phone": o["customer_phone"],
                 "customer_address": o["customer_address"], "delivery_method": o["delivery_method"],
-                "items": items, "subtotal": o["subtotal"], "total": o["total"],
+                "delivery_option_id": o.get("delivery_option_id"), "delivery_fee": o["delivery_fee"],
+                "items": items, "subtotal": subtotal, "total": total,
                 "notes": o["notes"], "payment_method": o["payment_method"],
+                "payment_method_id": o["payment_method"],
                 "status": s, "status_timestamps": status_ts,
+                "received": o.get("received", False),
+                "user_id": None,
                 "created_at": order_ts, "updated_at": order_ts
             })
-        logger.info("Seeded 5 sample orders")
+        logger.info("Seeded sample orders")
+
+# ─── Auth Endpoints (Simulated OTP) ──────────────────────────────────────────
+@api_router.post("/auth/request-otp")
+async def request_otp(req: OTPRequest):
+    phone = normalize_phone(req.phone)
+    if len(phone) < 10:
+        raise HTTPException(400, "Nomor HP tidak valid")
+    # Simulated: OTP is always 123456
+    ts = now_iso()
+    expires = (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()
+    await db.users.update_one(
+        {"phone": phone},
+        {"$set": {"otp_code": "123456", "otp_expires_at": expires, "updated_at": ts},
+         "$setOnInsert": {"id": str(uuid.uuid4()), "phone": phone, "name": req.name or "", "verified": False, "created_at": ts}},
+        upsert=True
+    )
+    return {"success": True, "phone": phone, "demo_otp": "123456", "message": "OTP terkirim via WhatsApp (simulasi). Gunakan kode 123456."}
+
+@api_router.post("/auth/verify-otp")
+async def verify_otp(req: OTPVerify):
+    phone = normalize_phone(req.phone)
+    user = await db.users.find_one({"phone": phone}, {"_id": 0})
+    if not user:
+        raise HTTPException(404, "Nomor HP belum terdaftar. Silakan request OTP dulu.")
+    if req.otp != "123456":
+        raise HTTPException(400, "Kode OTP salah. Gunakan 123456 (simulasi).")
+    upd = {"verified": True, "updated_at": now_iso()}
+    if req.name:
+        upd["name"] = req.name
+    await db.users.update_one({"phone": phone}, {"$set": upd, "$unset": {"otp_code": "", "otp_expires_at": ""}})
+    user = await db.users.find_one({"phone": phone}, {"_id": 0, "otp_code": 0, "otp_expires_at": 0})
+    return {"success": True, "user": user, "token": user["id"]}
+
+@api_router.get("/auth/me")
+async def auth_me(token: str):
+    user = await db.users.find_one({"id": token}, {"_id": 0, "otp_code": 0, "otp_expires_at": 0})
+    if not user:
+        raise HTTPException(404, "User tidak ditemukan")
+    return user
 
 # ─── Product Endpoints ────────────────────────────────────────────────────────
 @api_router.get("/products")
 async def get_products():
-    return await db.products.find({}, {"_id": 0}).to_list(1000)
+    products = await db.products.find({}, {"_id": 0}).to_list(1000)
+    # Attach discount info
+    discounts = await db.discounts.find({"active": True}, {"_id": 0}).to_list(100)
+    dmap = {d["id"]: d for d in discounts}
+    # Attach review stats
+    for p in products:
+        d = dmap.get(p.get("discount_id"))
+        if d:
+            p["discount"] = {"name": d["name"], "type": d["type"], "value": d["value"]}
+            if d["type"] == "percent":
+                p["final_price"] = round(p["price"] * (1 - d["value"] / 100))
+            else:
+                p["final_price"] = max(0, p["price"] - d["value"])
+        else:
+            p["discount"] = None
+            p["final_price"] = p["price"]
+    # Review aggregation
+    pipeline = [{"$group": {"_id": "$product_id", "avg": {"$avg": "$rating"}, "count": {"$sum": 1}}}]
+    stats = {r["_id"]: r async for r in db.reviews.aggregate(pipeline)}
+    for p in products:
+        s = stats.get(p["id"])
+        p["rating_avg"] = round(s["avg"], 1) if s else 0
+        p["rating_count"] = s["count"] if s else 0
+    return products
+
+@api_router.get("/products/{pid}")
+async def get_product(pid: str):
+    p = await db.products.find_one({"id": pid}, {"_id": 0})
+    if not p:
+        raise HTTPException(404, "Produk tidak ditemukan")
+    return p
 
 @api_router.post("/products")
 async def create_product(p: ProductCreate):
     ts = now_iso()
-    doc = {"id": str(uuid.uuid4()), "created_at": ts, "updated_at": ts, **p.model_dump()}
+    data = p.model_dump()
+    data["media_urls"] = [gdrive_to_direct(u) for u in (data.get("media_urls") or []) if u]
+    if data.get("image_url"):
+        data["image_url"] = gdrive_to_direct(data["image_url"])
+    elif data["media_urls"]:
+        data["image_url"] = data["media_urls"][0]
+    doc = {"id": str(uuid.uuid4()), "created_at": ts, "updated_at": ts, **data}
     await db.products.insert_one(doc)
     doc.pop("_id", None)
     await manager.broadcast({"type": "product_updated", "data": doc})
@@ -236,6 +495,12 @@ async def create_product(p: ProductCreate):
 @api_router.put("/products/{pid}")
 async def update_product(pid: str, update: ProductUpdate):
     upd = update.model_dump(exclude_unset=True)
+    if "media_urls" in upd and upd["media_urls"] is not None:
+        upd["media_urls"] = [gdrive_to_direct(u) for u in upd["media_urls"] if u]
+        if upd["media_urls"] and not upd.get("image_url"):
+            upd["image_url"] = upd["media_urls"][0]
+    if "image_url" in upd and upd["image_url"]:
+        upd["image_url"] = gdrive_to_direct(upd["image_url"])
     upd["updated_at"] = now_iso()
     await db.products.update_one({"id": pid}, {"$set": upd})
     doc = await db.products.find_one({"id": pid}, {"_id": 0})
@@ -251,8 +516,12 @@ async def delete_product(pid: str):
 
 # ─── Order Endpoints ──────────────────────────────────────────────────────────
 @api_router.get("/orders")
-async def get_orders(status: Optional[str] = None):
-    query = {} if not status else {"status": status}
+async def get_orders(status: Optional[str] = None, user_id: Optional[str] = None):
+    query = {}
+    if status:
+        query["status"] = status
+    if user_id:
+        query["user_id"] = user_id
     return await db.orders.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
 
 @api_router.get("/orders/track")
@@ -260,7 +529,8 @@ async def track_orders(order_id: Optional[str] = None, phone: Optional[str] = No
     if order_id:
         query = {"$or": [{"id": order_id}, {"order_number": order_id.upper()}]}
     elif phone:
-        query = {"customer_phone": phone}
+        np = normalize_phone(phone)
+        query = {"customer_phone": {"$in": [phone, np]}}
     else:
         return []
     return await db.orders.find(query, {"_id": 0}).sort("created_at", -1).to_list(10)
@@ -273,17 +543,23 @@ async def get_order(oid: str):
 async def create_order(order: OrderCreate):
     ts = now_iso()
     onum = await next_order_number()
+    data = order.model_dump()
+    data["customer_phone"] = normalize_phone(data["customer_phone"])
     doc = {
         "id": str(uuid.uuid4()), "order_number": onum,
         "status": "menunggu", "status_timestamps": {"menunggu": ts},
+        "received": False,
         "created_at": ts, "updated_at": ts,
-        **order.model_dump()
+        **data
     }
     await db.orders.insert_one(doc)
     doc.pop("_id", None)
     for item in order.items:
         if item.product_id:
-            await db.products.update_one({"id": item.product_id}, {"$inc": {"stock": -item.quantity}})
+            await db.products.update_one(
+                {"id": item.product_id},
+                {"$inc": {"stock": -item.quantity, "sold_count": item.quantity}}
+            )
     await manager.broadcast({"type": "order_created", "data": doc})
     return doc
 
@@ -292,7 +568,7 @@ async def update_order_status(oid: str, update: OrderStatusUpdate):
     ts = now_iso()
     order = await db.orders.find_one({"id": oid}, {"_id": 0})
     if not order:
-        return {"error": "Not found"}
+        raise HTTPException(404, "Order not found")
     status_ts = order.get("status_timestamps", {})
     status_ts[update.status] = ts
     await db.orders.update_one({"id": oid}, {"$set": {"status": update.status, "status_timestamps": status_ts, "updated_at": ts}})
@@ -300,7 +576,24 @@ async def update_order_status(oid: str, update: OrderStatusUpdate):
     await manager.broadcast({"type": "order_updated", "data": doc})
     return doc
 
-# ─── Settings Endpoints ───────────────────────────────────────────────────────
+@api_router.put("/orders/{oid}/received")
+async def update_order_received(oid: str, update: OrderReceivedUpdate):
+    ts = now_iso()
+    order = await db.orders.find_one({"id": oid}, {"_id": 0})
+    if not order:
+        raise HTTPException(404, "Order not found")
+    status_ts = order.get("status_timestamps", {})
+    if update.received:
+        status_ts["diterima"] = ts
+    await db.orders.update_one(
+        {"id": oid},
+        {"$set": {"received": update.received, "status_timestamps": status_ts, "updated_at": ts}}
+    )
+    doc = await db.orders.find_one({"id": oid}, {"_id": 0})
+    await manager.broadcast({"type": "order_updated", "data": doc})
+    return doc
+
+# ─── Settings ────────────────────────────────────────────────────────────────
 @api_router.get("/settings")
 async def get_settings():
     s = await db.settings.find_one({"_id": "main"}, {"_id": 0})
@@ -314,7 +607,70 @@ async def update_settings(update: SettingsUpdate):
     await manager.broadcast({"type": "settings_updated", "data": s})
     return s
 
-# ─── Financial Endpoints ──────────────────────────────────────────────────────
+# ─── Store Config ────────────────────────────────────────────────────────────
+@api_router.get("/store-config")
+async def get_store_config():
+    s = await db.store_config.find_one({"_id": "main"}, {"_id": 0})
+    return s or {}
+
+@api_router.put("/store-config")
+async def update_store_config(update: StoreConfigUpdate):
+    upd = update.model_dump(exclude_unset=True)
+    upd["updated_at"] = now_iso()
+    await db.store_config.update_one({"_id": "main"}, {"$set": upd}, upsert=True)
+    s = await db.store_config.find_one({"_id": "main"}, {"_id": 0})
+    await manager.broadcast({"type": "store_config_updated", "data": s})
+    return s
+
+# ─── Discounts ───────────────────────────────────────────────────────────────
+@api_router.get("/discounts")
+async def get_discounts():
+    return await db.discounts.find({}, {"_id": 0}).sort("created_at", -1).to_list(200)
+
+@api_router.post("/discounts")
+async def create_discount(d: DiscountCreate):
+    ts = now_iso()
+    doc = {"id": str(uuid.uuid4()), "created_at": ts, "updated_at": ts, **d.model_dump()}
+    await db.discounts.insert_one(doc)
+    doc.pop("_id", None)
+    await manager.broadcast({"type": "discount_updated", "data": doc})
+    return doc
+
+@api_router.put("/discounts/{did}")
+async def update_discount(did: str, update: DiscountUpdate):
+    upd = update.model_dump(exclude_unset=True)
+    upd["updated_at"] = now_iso()
+    await db.discounts.update_one({"id": did}, {"$set": upd})
+    doc = await db.discounts.find_one({"id": did}, {"_id": 0})
+    await manager.broadcast({"type": "discount_updated", "data": doc})
+    return doc
+
+@api_router.delete("/discounts/{did}")
+async def delete_discount(did: str):
+    await db.discounts.delete_one({"id": did})
+    await manager.broadcast({"type": "discount_deleted", "data": {"id": did}})
+    return {"success": True}
+
+# ─── Reviews ─────────────────────────────────────────────────────────────────
+@api_router.get("/reviews")
+async def get_reviews(product_id: Optional[str] = None, order_id: Optional[str] = None):
+    q = {}
+    if product_id:
+        q["product_id"] = product_id
+    if order_id:
+        q["order_id"] = order_id
+    return await db.reviews.find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
+
+@api_router.post("/reviews")
+async def create_review(r: ReviewCreate):
+    ts = now_iso()
+    doc = {"id": str(uuid.uuid4()), "created_at": ts, **r.model_dump()}
+    await db.reviews.insert_one(doc)
+    doc.pop("_id", None)
+    await manager.broadcast({"type": "review_created", "data": doc})
+    return doc
+
+# ─── Financial ────────────────────────────────────────────────────────────────
 @api_router.get("/financial-entries")
 async def get_financial_entries():
     return await db.financial_entries.find({}, {"_id": 0}).sort("date", -1).to_list(1000)
@@ -355,7 +711,7 @@ async def get_sales_report(period: str = "month"):
     products = await db.products.find({}, {"_id": 0}).to_list(1000)
     pcat = {p["name"]: p["category"] for p in products}
     pstock = {p["name"]: p["stock"] for p in products}
-    category_sales = {"snack": 0, "bebek": 0}
+    category_sales = {}
 
     for order in filtered:
         for item in order.get("items", []):
@@ -364,7 +720,7 @@ async def get_sales_report(period: str = "month"):
                 product_sales[pn] = {"units": 0, "revenue": 0}
             product_sales[pn]["units"] += item["quantity"]
             product_sales[pn]["revenue"] += item["subtotal"]
-            cat = pcat.get(pn, "snack")
+            cat = pcat.get(pn, "lainnya")
             category_sales[cat] = category_sales.get(cat, 0) + item["subtotal"]
 
     best_seller = max(product_sales.items(), key=lambda x: x[1]["units"])[0] if product_sales else "N/A"
@@ -436,12 +792,12 @@ async def get_financial_report():
         "expense_entries": entries,
     }
 
-# ─── Root & Health ────────────────────────────────────────────────────────────
+# ─── Root ────────────────────────────────────────────────────────────────────
 @api_router.get("/")
 async def root():
-    return {"message": "Ciltarasa API is running"}
+    return {"message": "Ciltarasa API is running", "version": SCHEMA_VERSION}
 
-# ─── WebSocket ────────────────────────────────────────────────────────────────
+# ─── WebSocket ───────────────────────────────────────────────────────────────
 @app.websocket("/api/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
@@ -453,7 +809,7 @@ async def websocket_endpoint(websocket: WebSocket):
     except Exception:
         manager.disconnect(websocket)
 
-# ─── App Setup ────────────────────────────────────────────────────────────────
+# ─── App Setup ───────────────────────────────────────────────────────────────
 app.include_router(api_router)
 app.add_middleware(
     CORSMiddleware,

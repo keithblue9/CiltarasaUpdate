@@ -1,7 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronRight } from 'lucide-react';
-import { LogoWithText } from '../shared/Logo';
+import { ChevronRight, Sparkles, Flame } from 'lucide-react';
 
 const HERO_BG = 'https://static.prod-images.emergentagent.com/jobs/fa7f3ba8-8537-4e4d-b681-0c7370599acf/images/3fd09d3c0fc14b6148e6065a022d94002c52a9aafb799d7dda170d7445053fd9.png';
 
@@ -16,64 +15,58 @@ export default function Hero() {
   return (
     <>
       {/* Hero Section */}
-      <section className="relative min-h-[85vh] flex items-center overflow-hidden">
+      <section className="relative min-h-[78vh] flex items-center overflow-hidden">
         <div className="absolute inset-0">
           <img src={HERO_BG} alt="Ciltarasa Hero" className="w-full h-full object-cover" />
-          <div className="absolute inset-0 bg-gradient-to-r from-[#451A03]/80 via-[#78350F]/60 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-r from-[#451A03]/85 via-[#78350F]/55 to-transparent" />
         </div>
-        <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
+        <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 w-full">
           <div className="max-w-xl">
-            <div className="mb-6 fade-in-up">
-              <LogoWithText size="lg" className="mb-4" />
+            {/* Tagline pill */}
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-white/10 backdrop-blur-md rounded-full border border-white/20 mb-5 fade-in-up">
+              <Flame size={14} className="text-amber-300" />
+              <span className="text-xs font-bold text-white uppercase tracking-wider">Lagi Viral di Malang 🔥</span>
             </div>
-            <h1 className="font-heading text-4xl sm:text-5xl lg:text-6xl font-bold text-white leading-tight mb-4 fade-in-up stagger-1">
-              Cemilan Segar,<br />
-              <span className="text-[#FED7AA]">Rasa Istimewa</span>
+
+            <h1 className="font-heading text-4xl sm:text-5xl lg:text-6xl font-extrabold text-white leading-[1.05] mb-4 fade-in-up stagger-1">
+              Cemilan Frozen<br />
+              <span className="bg-gradient-to-r from-[#FED7AA] to-[#FBBF24] bg-clip-text text-transparent">Yang Bikin Nagih</span>
             </h1>
-            <p className="font-body text-lg text-orange-100 mb-8 leading-relaxed fade-in-up stagger-2">
-              Frozen snack premium & Bebek Pawon Ayu khas Malang.<br />
-              Tinggal goreng, langsung nikmat!
+            <p className="font-body text-base sm:text-lg text-orange-100 mb-8 leading-relaxed fade-in-up stagger-2 max-w-md">
+              Frozen snack premium & Bebek Pawon Ayu khas Malang. Tinggal goreng, anak-anak langsung suka! ✨
             </p>
-            <div className="flex flex-col sm:flex-row gap-4 fade-in-up stagger-3">
+            <div className="flex flex-col sm:flex-row gap-3 fade-in-up stagger-3">
               <button
                 data-testid="hero-order-btn"
                 onClick={() => document.getElementById('catalog')?.scrollIntoView({ behavior: 'smooth' })}
-                className="bg-[#D97706] text-white font-bold px-8 py-4 rounded-full hover:bg-[#B45309] transition-all transform hover:-translate-y-1 shadow-lg hover:shadow-xl flex items-center justify-center gap-2"
+                className="bg-gradient-to-r from-[#F97316] to-[#EA580C] text-white font-bold px-7 py-3.5 rounded-full hover:shadow-2xl hover:-translate-y-1 transition-all shadow-xl flex items-center justify-center gap-2"
               >
-                Pesan Sekarang <ChevronRight size={18} />
+                <Sparkles size={16} /> Belanja Sekarang <ChevronRight size={16} />
               </button>
               <button
                 data-testid="hero-track-btn"
                 onClick={() => navigate('/buyer/track')}
-                className="bg-white/10 backdrop-blur-sm text-white border border-white/40 font-bold px-8 py-4 rounded-full hover:bg-white/20 transition-all flex items-center justify-center gap-2"
+                className="bg-white/10 backdrop-blur-md text-white border border-white/40 font-bold px-7 py-3.5 rounded-full hover:bg-white/20 transition-all"
               >
-                Lacak Pesanan
+                Lacak Pesananku
               </button>
             </div>
+
+            {/* Social proof */}
+            <div className="flex items-center gap-4 mt-8 fade-in-up stagger-4">
+              <div className="flex -space-x-2">
+                {['👩', '👩‍🦱', '👵', '👨'].map((e, i) => (
+                  <div key={i} className="w-9 h-9 rounded-full bg-white/90 flex items-center justify-center text-lg border-2 border-white shadow">{e}</div>
+                ))}
+              </div>
+              <div>
+                <div className="flex items-center gap-1 text-amber-300 text-sm">
+                  {'★★★★★'.split('').map((s, i) => <span key={i}>{s}</span>)}
+                </div>
+                <p className="text-xs text-orange-100 font-semibold">1.200+ keluarga di Malang sudah berlangganan</p>
+              </div>
+            </div>
           </div>
-        </div>
-        {/* Category floating cards */}
-        <div className="absolute bottom-8 right-8 hidden lg:flex flex-col gap-3 fade-in-up stagger-4">
-          <button
-            onClick={() => {
-              document.getElementById('catalog')?.scrollIntoView({ behavior: 'smooth' });
-              setTimeout(() => window.dispatchEvent(new CustomEvent('filterCategory', { detail: 'snack' })), 500);
-            }}
-            className="bg-white/90 backdrop-blur-sm text-[#78350F] font-semibold px-6 py-3 rounded-2xl shadow-lg hover:bg-white hover:-translate-y-1 transition-all flex items-center gap-3"
-          >
-            <span className="text-2xl">🍟</span>
-            <span>Frozen Snacks</span>
-          </button>
-          <button
-            onClick={() => {
-              document.getElementById('catalog')?.scrollIntoView({ behavior: 'smooth' });
-              setTimeout(() => window.dispatchEvent(new CustomEvent('filterCategory', { detail: 'bebek' })), 500);
-            }}
-            className="bg-white/90 backdrop-blur-sm text-[#78350F] font-semibold px-6 py-3 rounded-2xl shadow-lg hover:bg-white hover:-translate-y-1 transition-all flex items-center gap-3"
-          >
-            <span className="text-2xl">🦆</span>
-            <span>Bebek Pawon Ayu</span>
-          </button>
         </div>
       </section>
 

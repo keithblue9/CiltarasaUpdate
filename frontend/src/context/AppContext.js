@@ -27,12 +27,22 @@ function cartReducer(state, action) {
 export function AppProvider({ children }) {
   const [products, setProducts] = useState([]);
   const [settings, setSettings] = useState(null);
+  const [storeConfig, setStoreConfig] = useState(null);
+  const [discounts, setDiscounts] = useState([]);
+  const [reviews, setReviews] = useState([]);
   const [wsConnected, setWsConnected] = useState(false);
   const [wsEvent, setWsEvent] = useState(null);
   const [cart, dispatch] = useReducer(cartReducer, []);
+
+  // Auth
+  const [authUser, setAuthUser] = useState(null);
+  const [authToken, setAuthToken] = useState(null);
+  const [authMode, setAuthMode] = useState(null); // null | 'register' | 'login' | 'guest'
+
   const wsRef = useRef(null);
   const timerRef = useRef(null);
 
+  // Load cart from localStorage
   useEffect(() => {
     const saved = localStorage.getItem('ciltarasa_cart');
     if (saved) {
@@ -44,11 +54,30 @@ export function AppProvider({ children }) {
     localStorage.setItem('ciltarasa_cart', JSON.stringify(cart));
   }, [cart]);
 
+  // Load auth session
   useEffect(() => {
-    axios.get(`${API}/api/products`).then(r => setProducts(r.data)).catch(console.error);
-    axios.get(`${API}/api/settings`).then(r => setSettings(r.data)).catch(console.error);
+    const t = localStorage.getItem('ciltarasa_token');
+    const guest = localStorage.getItem('ciltarasa_guest');
+    if (t) {
+      axios.get(`${API}/api/auth/me?token=${t}`)
+        .then(r => { setAuthUser(r.data); setAuthToken(t); })
+        .catch(() => { localStorage.removeItem('ciltarasa_token'); });
+    } else if (guest) {
+      setAuthMode('guest');
+    }
   }, []);
 
+  // Load global data
+  const loadAll = () => {
+    axios.get(`${API}/api/products`).then(r => setProducts(r.data)).catch(() => {});
+    axios.get(`${API}/api/settings`).then(r => setSettings(r.data)).catch(() => {});
+    axios.get(`${API}/api/store-config`).then(r => setStoreConfig(r.data)).catch(() => {});
+    axios.get(`${API}/api/discounts`).then(r => setDiscounts(r.data)).catch(() => {});
+    axios.get(`${API}/api/reviews`).then(r => setReviews(r.data)).catch(() => {});
+  };
+  useEffect(() => { loadAll(); }, []);
+
+  // WebSocket
   useEffect(() => {
     let active = true;
     const connect = () => {
@@ -72,6 +101,22 @@ export function AppProvider({ children }) {
             setProducts(prev => prev.filter(p => p.id !== msg.data.id));
           }
           if (msg.type === 'settings_updated') setSettings(msg.data);
+          if (msg.type === 'store_config_updated') setStoreConfig(msg.data);
+          if (msg.type === 'discount_updated') {
+            setDiscounts(prev => {
+              const idx = prev.findIndex(d => d.id === msg.data.id);
+              if (idx >= 0) { const u = [...prev]; u[idx] = msg.data; return u; }
+              return [msg.data, ...prev];
+            });
+            axios.get(`${API}/api/products`).then(r => setProducts(r.data)).catch(() => {});
+          }
+          if (msg.type === 'discount_deleted') {
+            setDiscounts(prev => prev.filter(d => d.id !== msg.data.id));
+          }
+          if (msg.type === 'review_created') {
+            setReviews(prev => [msg.data, ...prev]);
+            axios.get(`${API}/api/products`).then(r => setProducts(r.data)).catch(() => {});
+          }
         } catch {}
       };
       ws.onclose = () => {
@@ -89,13 +134,42 @@ export function AppProvider({ children }) {
     };
   }, []);
 
+  // Auth actions
+  const requestOtp = async (phone, name) => {
+    const r = await axios.post(`${API}/api/auth/request-otp`, { phone, name });
+    return r.data;
+  };
+  const verifyOtp = async (phone, otp, name) => {
+    const r = await axios.post(`${API}/api/auth/verify-otp`, { phone, otp, name });
+    setAuthUser(r.data.user);
+    setAuthToken(r.data.token);
+    localStorage.setItem('ciltarasa_token', r.data.token);
+    localStorage.removeItem('ciltarasa_guest');
+    setAuthMode(null);
+    return r.data;
+  };
+  const logout = () => {
+    setAuthUser(null);
+    setAuthToken(null);
+    localStorage.removeItem('ciltarasa_token');
+    localStorage.removeItem('ciltarasa_guest');
+    setAuthMode(null);
+  };
+  const continueAsGuest = () => {
+    localStorage.setItem('ciltarasa_guest', '1');
+    setAuthMode('guest');
+  };
+
   const value = {
     products,
     settings,
+    storeConfig,
+    discounts,
+    reviews,
     wsConnected,
     wsEvent,
     cart,
-    cartTotal: cart.reduce((s, i) => s + i.product.price * i.qty, 0),
+    cartTotal: cart.reduce((s, i) => s + (i.product.final_price || i.product.price) * i.qty, 0),
     cartCount: cart.reduce((s, i) => s + i.qty, 0),
     addToCart: (product, qty = 1) => dispatch({ type: 'ADD', product, qty }),
     removeFromCart: (id) => dispatch({ type: 'REMOVE', id }),
@@ -103,6 +177,19 @@ export function AppProvider({ children }) {
     clearCart: () => dispatch({ type: 'CLEAR' }),
     refreshProducts: () => axios.get(`${API}/api/products`).then(r => setProducts(r.data)),
     refreshSettings: () => axios.get(`${API}/api/settings`).then(r => setSettings(r.data)),
+    refreshStoreConfig: () => axios.get(`${API}/api/store-config`).then(r => setStoreConfig(r.data)),
+    refreshDiscounts: () => axios.get(`${API}/api/discounts`).then(r => setDiscounts(r.data)),
+    refreshReviews: () => axios.get(`${API}/api/reviews`).then(r => setReviews(r.data)),
+    // Auth
+    authUser,
+    authToken,
+    authMode,
+    setAuthMode,
+    requestOtp,
+    verifyOtp,
+    logout,
+    continueAsGuest,
+    isAuthed: !!authUser,
     API,
   };
 

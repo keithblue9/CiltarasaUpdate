@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { Routes, Route } from 'react-router-dom';
 import SellerLogin from './SellerLogin';
 import SellerSidebar from './SellerSidebar';
 import DashboardOverview from './DashboardOverview';
@@ -8,6 +7,8 @@ import IncomingOrders from './IncomingOrders';
 import SalesReport from './SalesReport';
 import FinancialReport from './FinancialReport';
 import WhatsAppSettings from './WhatsAppSettings';
+import { StoreProfile, StoreCerita, CategoriesConfig, DeliveryConfig, PaymentsConfig } from './StoreConfigPages';
+import DiscountManagement from './DiscountManagement';
 
 const PIN = 'ciltarasa';
 
@@ -40,6 +41,12 @@ export default function SellerApp() {
     orders: <IncomingOrders />,
     sales: <SalesReport />,
     financial: <FinancialReport />,
+    'store-profile': <StoreProfile />,
+    'store-cerita': <StoreCerita />,
+    categories: <CategoriesConfig />,
+    delivery: <DeliveryConfig />,
+    payments: <PaymentsConfig />,
+    discounts: <DiscountManagement />,
     whatsapp: <WhatsAppSettings />,
   };
 
@@ -53,7 +60,6 @@ export default function SellerApp() {
         onClose={() => setSidebarOpen(false)}
       />
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Mobile header */}
         <div className="lg:hidden flex items-center justify-between px-4 py-3 bg-white border-b border-[#FED7AA]">
           <button onClick={() => setSidebarOpen(true)} className="p-2 text-[#78350F]">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
