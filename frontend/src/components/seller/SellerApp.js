@@ -6,10 +6,10 @@ import ProductManagement from './ProductManagement';
 import IncomingOrders from './IncomingOrders';
 import SalesReport from './SalesReport';
 import FinancialReport from './FinancialReport';
-import WhatsAppSettings from './WhatsAppSettings';
 import { StoreProfile, StoreCerita, CategoriesConfig, DeliveryConfig, PaymentsConfig, HomepageTextsConfig, HeroSlideshowConfig, FunFactsConfig } from './StoreConfigPages';
 import DiscountManagement from './DiscountManagement';
 import PurchaseManagement from './PurchaseManagement';
+import { FonnteConfig, HowToOrderConfig, ResetCustomersConfig } from './AdminPages';
 
 const PIN = 'ciltarasa';
 
@@ -46,13 +46,15 @@ export default function SellerApp() {
     'store-profile': <StoreProfile />,
     'store-cerita': <StoreCerita />,
     'homepage-texts': <HomepageTextsConfig />,
+    'how-to-order': <HowToOrderConfig />,
     'hero-slideshow': <HeroSlideshowConfig />,
     'fun-facts': <FunFactsConfig />,
     categories: <CategoriesConfig />,
     delivery: <DeliveryConfig />,
     payments: <PaymentsConfig />,
     discounts: <DiscountManagement />,
-    whatsapp: <WhatsAppSettings />,
+    whatsapp: <FonnteConfig />,
+    'reset-customers': <ResetCustomersConfig />,
   };
 
   return (

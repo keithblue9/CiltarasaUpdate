@@ -6,6 +6,8 @@ import os
 import logging
 import json
 import re
+import random
+import httpx
 from pathlib import Path
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
@@ -26,7 +28,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Schema version — bump to force re-seed
-SCHEMA_VERSION = "v2.2.1"
+SCHEMA_VERSION = "v2.3.1"
 
 # ─── WebSocket Manager ───────────────────────────────────────────────────────
 class ConnectionManager:
@@ -81,6 +83,94 @@ def gdrive_to_direct(url: str) -> str:
     if m and "drive.google.com" in url:
         return f"https://drive.google.com/uc?export=view&id={m.group(1)}"
     return url
+
+# ─── Fonnte WhatsApp Helper ──────────────────────────────────────────────────
+FONNTE_URL = "https://api.fonnte.com/send"
+
+async def get_fonnte_config():
+    sc = await db.store_config.find_one({"_id": "main"}, {"_id": 0})
+    if not sc:
+        return None, None, False
+    return sc.get("fonnte_token"), sc.get("seller_notify_phone"), sc.get("wa_notif_enabled", True)
+
+async def fonnte_send(target: str, message: str) -> Dict[str, Any]:
+    """Send WhatsApp message via Fonnte API. Returns {ok, status, response}."""
+    token, _, enabled = await get_fonnte_config()
+    if not enabled:
+        return {"ok": False, "skipped": True, "reason": "WA notif disabled in config"}
+    if not token:
+        return {"ok": False, "skipped": True, "reason": "Fonnte token not set"}
+    target = normalize_phone(target)
+    if not target or len(target) < 10:
+        return {"ok": False, "skipped": True, "reason": "Invalid target phone"}
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.post(
+                FONNTE_URL,
+                headers={"Authorization": token},
+                data={"target": target, "message": message, "countryCode": "62"},
+            )
+            data = r.json() if r.headers.get("content-type", "").startswith("application/json") else {"raw": r.text}
+            return {"ok": r.status_code == 200 and data.get("status", True) is not False, "status": r.status_code, "response": data}
+    except Exception as e:
+        logger.warning(f"Fonnte send failed to {target}: {e}")
+        return {"ok": False, "error": str(e)}
+
+def fmt_rp_id(n) -> str:
+    return f"Rp {int(n):,}".replace(",", ".")
+
+def build_seller_order_message(order: dict) -> str:
+    items_lines = []
+    for it in order.get("items", []):
+        items_lines.append(f"• {it['product_name']} × {it['quantity']} = {fmt_rp_id(it['subtotal'])}")
+    items_text = "\n".join(items_lines) if items_lines else "-"
+    ts = datetime.now(timezone(timedelta(hours=7))).strftime("%d %b %Y, %H:%M WIB")
+    delivery = order.get("delivery_method", "-")
+    if order.get("delivery_option_id"):
+        delivery = f"{delivery} ({order['delivery_option_id']})"
+    return (
+        f"🛒 PESANAN BARU - Ciltarasa\n\n"
+        f"Order ID: #{order.get('order_number', order.get('id', ''))}\n"
+        f"👤 Pelanggan: {order.get('customer_name', '-')}\n"
+        f"📱 No. HP: +{order.get('customer_phone', '-')}\n"
+        f"📍 Alamat: {order.get('customer_address', '-')}\n"
+        f"🚚 Pengiriman: {delivery}\n\n"
+        f"📦 Detail Pesanan:\n{items_text}\n\n"
+        f"💰 Total: {fmt_rp_id(order.get('total', 0))}\n"
+        f"📝 Catatan: {order.get('notes', '') or '-'}\n"
+        f"⏰ Waktu: {ts}\n\n"
+        f"Silakan konfirmasi di dashboard Ciltarasa ✅"
+    )
+
+STATUS_EMOJI = {"menunggu": "⏳", "diproses": "👨‍🍳", "siap": "📦", "selesai": "✅", "dibatalkan": "❌"}
+STATUS_LABEL = {"menunggu": "Menunggu Konfirmasi", "diproses": "Diproses", "siap": "Siap Diambil/Dikirim", "selesai": "Selesai", "dibatalkan": "Dibatalkan"}
+STATUS_DESC = {
+    "diproses": "Pesanan kamu sedang kami siapkan dengan penuh cinta 🍱",
+    "siap": "Pesanan siap! Segera dikirim/diambil ya 🚀",
+    "selesai": "Pesanan sudah sampai! Jangan lupa kasih review ya ⭐",
+    "dibatalkan": "Maaf, pesanan dibatalkan. Hubungi kami untuk info lebih lanjut 🙏",
+}
+
+def build_buyer_status_message(order: dict, app_url: str = "") -> str:
+    status = order.get("status", "menunggu")
+    return (
+        f"📦 Update Pesanan Ciltarasa\n\n"
+        f"Halo {order.get('customer_name', 'Bunda')}! 👋\n"
+        f"Order #{order.get('order_number', '')} kamu:\n\n"
+        f"Status: {STATUS_EMOJI.get(status, '📦')} {STATUS_LABEL.get(status, status)}\n\n"
+        f"{STATUS_DESC.get(status, '')}\n\n"
+        f"_Lacak pesanan: {app_url}/#/buyer → Lacak Pesanan → {order.get('order_number','')}_\n\n"
+        f"Terima kasih sudah belanja di Ciltarasa! 🧡"
+    )
+
+def build_otp_message(code: str) -> str:
+    return (
+        f"🔐 *Ciltarasa - Kode Verifikasi*\n\n"
+        f"Kode OTP kamu adalah: *{code}*\n\n"
+        f"Jangan kasih kode ini ke siapa pun ya, termasuk admin Ciltarasa.\n"
+        f"Kode berlaku 5 menit.\n\n"
+        f"Terima kasih sudah belanja di Ciltarasa! 🧡"
+    )
 
 # ─── Pydantic Models ─────────────────────────────────────────────────────────
 class OTPRequest(BaseModel):
@@ -192,6 +282,10 @@ class StoreConfigUpdate(BaseModel):
     homepage_texts: Optional[Dict[str, str]] = None
     hero_slides: Optional[List[Dict[str, Any]]] = None
     fun_facts: Optional[List[Dict[str, Any]]] = None
+    how_to_order_steps: Optional[List[Dict[str, Any]]] = None
+    fonnte_token: Optional[str] = None
+    seller_notify_phone: Optional[str] = None
+    wa_notif_enabled: Optional[bool] = None
 
 class PurchaseItem(BaseModel):
     product_id: str
@@ -321,7 +415,15 @@ DEFAULT_STORE_CONFIG = {
         {"id": "ff-3", "image_url": "https://images.unsplash.com/photo-1626202373052-9d6d5b9bca5b?w=600&q=80", "title": "Tanpa Pengawet, Beneran!", "text": "Semua frozen food kami dibekukan dengan blast freezer dalam 30 menit. Jadi awet tanpa perlu bahan pengawet kimia. Aman buat keluarga."},
         {"id": "ff-4", "image_url": "https://images.unsplash.com/photo-1606503153255-59d8b8b27a45?w=600&q=80", "title": "Cireng Viral Karena TikTok", "text": "Cireng bumbu rujak kami sempat viral di TikTok awal 2025. Sekarang ribuan ibu-ibu Malang pesan tiap minggu buat camilan anak."},
         {"id": "ff-5", "image_url": "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=600&q=80", "title": "Nugget Tanpa MSG", "text": "Nugget ayam homemade kami pakai daging ayam kampung asli, tanpa MSG, tanpa pewarna. Anak-anak SD suka dipakai bekal sekolah."},
-    ]
+    ],
+    "how_to_order_steps": [
+        {"id": "s1", "icon": "🛒", "title": "Pilih Produk", "desc": "Pilih frozen snack atau bebek favoritmu dari katalog kami."},
+        {"id": "s2", "icon": "📝", "title": "Isi Data Pesanan", "desc": "Lengkapi nama, nomor HP, dan alamat pengiriman."},
+        {"id": "s3", "icon": "🎉", "title": "Pesanan Dikirim", "desc": "Kami proses dan kirim langsung ke pintumu!"},
+    ],
+    "fonnte_token": "QyMJ55FmqmLQGUxmwsBw",
+    "seller_notify_phone": "6285249682337",
+    "wa_notif_enabled": True,
 }
 
 DEFAULT_DISCOUNTS = [
@@ -482,16 +584,32 @@ async def request_otp(req: OTPRequest):
     phone = normalize_phone(req.phone)
     if len(phone) < 10:
         raise HTTPException(400, "Nomor HP tidak valid")
-    # Simulated: OTP is always 123456
+    # Generate 6-digit OTP. If WA notif is enabled and token configured, send real OTP.
+    token, _, enabled = await get_fonnte_config()
+    use_real = bool(token and enabled)
+    otp_code = str(random.randint(100000, 999999)) if use_real else "123456"
     ts = now_iso()
     expires = (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()
     await db.users.update_one(
         {"phone": phone},
-        {"$set": {"otp_code": "123456", "otp_expires_at": expires, "updated_at": ts},
+        {"$set": {"otp_code": otp_code, "otp_expires_at": expires, "updated_at": ts},
          "$setOnInsert": {"id": str(uuid.uuid4()), "phone": phone, "name": req.name or "", "verified": False, "created_at": ts}},
         upsert=True
     )
-    return {"success": True, "phone": phone, "demo_otp": "123456", "message": "OTP terkirim via WhatsApp (simulasi). Gunakan kode 123456."}
+    # Try send via Fonnte
+    wa_result = {"ok": False}
+    if use_real:
+        wa_result = await fonnte_send(phone, build_otp_message(otp_code))
+    response = {
+        "success": True,
+        "phone": phone,
+        "wa_sent": wa_result.get("ok", False),
+        "message": "Kode OTP terkirim via WhatsApp. Cek WA kamu ya!" if wa_result.get("ok") else "Kode OTP berhasil dibuat.",
+    }
+    if not use_real:
+        response["demo_otp"] = otp_code
+        response["message"] = "Mode simulasi aktif. Pakai kode 123456."
+    return response
 
 @api_router.post("/auth/verify-otp")
 async def verify_otp(req: OTPVerify):
@@ -499,8 +617,18 @@ async def verify_otp(req: OTPVerify):
     user = await db.users.find_one({"phone": phone}, {"_id": 0})
     if not user:
         raise HTTPException(404, "Nomor HP belum terdaftar. Silakan request OTP dulu.")
-    if req.otp != "123456":
-        raise HTTPException(400, "Kode OTP salah. Gunakan 123456 (simulasi).")
+    # Check expiry
+    exp = user.get("otp_expires_at")
+    if exp:
+        try:
+            exp_dt = datetime.fromisoformat(exp.replace("Z", "+00:00"))
+            if datetime.now(timezone.utc) > exp_dt:
+                raise HTTPException(400, "Kode OTP sudah kadaluarsa. Request ulang ya.")
+        except ValueError:
+            pass
+    expected = user.get("otp_code") or "123456"
+    if req.otp != expected:
+        raise HTTPException(400, "Kode OTP salah.")
     upd = {"verified": True, "updated_at": now_iso()}
     if req.name:
         upd["name"] = req.name
@@ -647,6 +775,13 @@ async def create_order(order: OrderCreate):
                 {"$inc": {"stock": -item.quantity, "sold_count": item.quantity}}
             )
     await manager.broadcast({"type": "order_created", "data": doc})
+    # WA notif to seller
+    _, seller_phone, enabled = await get_fonnte_config()
+    wa_sent = False
+    if enabled and seller_phone:
+        res = await fonnte_send(seller_phone, build_seller_order_message(doc))
+        wa_sent = res.get("ok", False)
+    doc["_wa_seller_sent"] = wa_sent
     return doc
 
 @api_router.put("/orders/{oid}/status")
@@ -660,6 +795,15 @@ async def update_order_status(oid: str, update: OrderStatusUpdate):
     await db.orders.update_one({"id": oid}, {"$set": {"status": update.status, "status_timestamps": status_ts, "updated_at": ts}})
     doc = await db.orders.find_one({"id": oid}, {"_id": 0})
     await manager.broadcast({"type": "order_updated", "data": doc})
+    # WA notif to buyer
+    wa_sent = False
+    if update.status in STATUS_DESC and doc.get("customer_phone"):
+        _, _, enabled = await get_fonnte_config()
+        if enabled:
+            app_url = os.environ.get("APP_URL", "")
+            res = await fonnte_send(doc["customer_phone"], build_buyer_status_message(doc, app_url))
+            wa_sent = res.get("ok", False)
+    doc["_wa_buyer_sent"] = wa_sent
     return doc
 
 @api_router.put("/orders/{oid}/received")
@@ -707,6 +851,39 @@ async def update_store_config(update: StoreConfigUpdate):
     s = await db.store_config.find_one({"_id": "main"}, {"_id": 0})
     await manager.broadcast({"type": "store_config_updated", "data": s})
     return s
+
+# ─── Admin Utilities ────────────────────────────────────────────────────────
+class TestWAReq(BaseModel):
+    target: str
+    message: Optional[str] = None
+
+@api_router.post("/admin/test-wa")
+async def test_wa(req: TestWAReq):
+    msg = req.message or "🔔 Tes notifikasi dari dashboard Ciltarasa. Jika kamu menerima ini, integrasi Fonnte sukses! ✅"
+    res = await fonnte_send(req.target, msg)
+    return res
+
+class ResetCustomersReq(BaseModel):
+    confirm: str  # must equal "RESET"
+    scope: str = "all"  # all | orders | users | both
+
+@api_router.post("/admin/reset-customers")
+async def reset_customers(req: ResetCustomersReq):
+    if req.confirm != "RESET":
+        raise HTTPException(400, "Konfirmasi tidak valid. Kirim {confirm: 'RESET'} untuk lanjut.")
+    deleted = {"orders": 0, "users": 0, "reviews": 0}
+    if req.scope in ("all", "orders", "both"):
+        r = await db.orders.delete_many({})
+        deleted["orders"] = r.deleted_count
+        r = await db.reviews.delete_many({})
+        deleted["reviews"] = r.deleted_count
+        # Reset sold_count on products too
+        await db.products.update_many({}, {"$set": {"sold_count": 0}})
+    if req.scope in ("all", "users", "both"):
+        r = await db.users.delete_many({})
+        deleted["users"] = r.deleted_count
+    await manager.broadcast({"type": "data_reset", "data": deleted})
+    return {"success": True, "deleted": deleted}
 
 # ─── Purchases (Restock) ─────────────────────────────────────────────────────
 @api_router.get("/purchases")

@@ -89,6 +89,9 @@ export default function Checkout() {
         ...form, items, subtotal: cartTotal, total: cartTotal,
         user_id: authToken || null
       });
+      if (res.data?._wa_seller_sent) {
+        toast.success('✅ Notif WA terkirim ke seller!');
+      }
       const newOrder = res.data;
       setOrder(newOrder);
       clearCart();

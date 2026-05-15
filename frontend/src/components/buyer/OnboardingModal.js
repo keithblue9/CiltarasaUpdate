@@ -185,7 +185,7 @@ export default function OnboardingModal() {
                     className="flex-1 outline-none font-body text-[#451A03] bg-transparent"
                   />
                 </div>
-                <p className="text-[10px] text-gray-500 mt-1.5">💡 Untuk testing pakai: 081912853950</p>
+                <p className="text-[10px] text-gray-500 mt-1.5">💡 Pastikan nomor WhatsApp aktif untuk terima kode OTP</p>
               </div>
 
               <button
@@ -236,9 +236,9 @@ export default function OnboardingModal() {
                   placeholder="• • • • • •"
                   className="w-full px-4 py-4 rounded-xl border-2 border-[#FED7AA] focus:outline-none focus:border-[#F97316] font-bold text-2xl text-center tracking-[0.5em] text-[#451A03] bg-white"
                 />
-                <div className="mt-2 p-3 bg-yellow-50 border border-yellow-200 rounded-xl">
-                  <p className="text-xs text-yellow-800">
-                    🧪 <strong>Mode Demo:</strong> Gunakan kode <strong className="font-mono bg-yellow-200 px-1.5 py-0.5 rounded">123456</strong>
+                <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-xl">
+                  <p className="text-xs text-blue-800">
+                    📱 Cek WhatsApp kamu untuk lihat kode OTP yang dikirim
                   </p>
                 </div>
               </div>

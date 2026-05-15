@@ -17,10 +17,10 @@ const defaultTexts = {
   how_to_order_subtitle: 'Mudah, cepat, dan praktis',
 };
 
-const steps = [
-  { icon: '🛒', title: 'Pilih Produk', desc: 'Pilih frozen snack atau bebek favoritmu dari katalog kami.' },
-  { icon: '📝', title: 'Isi Data Pesanan', desc: 'Lengkapi nama, nomor HP, dan alamat pengiriman.' },
-  { icon: '🎉', title: 'Pesanan Dikirim', desc: 'Kami proses dan kirim langsung ke pintumu!' },
+const defaultSteps = [
+  { id: 's1', icon: '🛒', title: 'Pilih Produk', desc: 'Pilih frozen snack atau bebek favoritmu dari katalog kami.' },
+  { id: 's2', icon: '📝', title: 'Isi Data Pesanan', desc: 'Lengkapi nama, nomor HP, dan alamat pengiriman.' },
+  { id: 's3', icon: '🎉', title: 'Pesanan Dikirim', desc: 'Kami proses dan kirim langsung ke pintumu!' },
 ];
 
 function HeroSlideshow({ slides }) {
@@ -74,6 +74,7 @@ export default function Hero() {
   const { storeConfig } = useApp();
   const t = { ...defaultTexts, ...(storeConfig?.homepage_texts || {}) };
   const slides = storeConfig?.hero_slides || [];
+  const steps = storeConfig?.how_to_order_steps?.length ? storeConfig.how_to_order_steps : defaultSteps;
 
   return (
     <>
@@ -139,9 +140,9 @@ export default function Hero() {
             <h2 className="font-heading text-3xl font-bold text-[#78350F] mb-3">{t.how_to_order_title}</h2>
             <p className="text-[#92400E] font-body">{t.how_to_order_subtitle}</p>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          <div className={`grid grid-cols-1 md:grid-cols-2 ${steps.length >= 3 ? 'lg:grid-cols-3' : ''} ${steps.length >= 4 ? 'xl:grid-cols-4' : ''} gap-6 lg:gap-8`}>
             {steps.map((step, i) => (
-              <div key={i} className={`text-center p-8 rounded-2xl border border-[#FED7AA] bg-[#FDF8F0] fade-in-up stagger-${i+1}`}>
+              <div key={step.id || i} className={`text-center p-8 rounded-2xl border border-[#FED7AA] bg-[#FDF8F0] fade-in-up stagger-${Math.min(i+1, 4)}`}>
                 <div className="text-5xl mb-4">{step.icon}</div>
                 <div className="w-8 h-8 bg-[#D97706] text-white rounded-full flex items-center justify-center font-bold text-sm mx-auto mb-3">
                   {i + 1}

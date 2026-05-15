@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Package, ShoppingBag, BarChart2, DollarSign, MessageCircle, LogOut, X, Wifi, WifiOff, Store, BookOpen, FolderTree, Truck, CreditCard, Tag, Settings, Type, ImagePlus, Sparkles, ShoppingCart } from 'lucide-react';
+import { LayoutDashboard, Package, ShoppingBag, BarChart2, DollarSign, MessageCircle, LogOut, X, Wifi, WifiOff, Store, BookOpen, FolderTree, Truck, CreditCard, Tag, Settings, Type, ImagePlus, Sparkles, ShoppingCart, ListOrdered, ShieldAlert } from 'lucide-react';
 import { LogoWithText } from '../shared/Logo';
 import { useApp } from '../../context/AppContext';
 
@@ -16,13 +16,15 @@ const configTabs = [
   { id: 'store-profile', label: 'Profil Toko', icon: Store },
   { id: 'store-cerita', label: 'Cerita Perjalanan', icon: BookOpen },
   { id: 'homepage-texts', label: 'Teks Homepage', icon: Type },
+  { id: 'how-to-order', label: 'Cara Pesan (Steps)', icon: ListOrdered },
   { id: 'hero-slideshow', label: 'Slideshow Hero', icon: ImagePlus },
   { id: 'fun-facts', label: 'Fun Facts Popup', icon: Sparkles },
   { id: 'categories', label: 'Kategori Produk', icon: FolderTree },
   { id: 'delivery', label: 'Layanan Pengiriman', icon: Truck },
   { id: 'payments', label: 'Metode Pembayaran', icon: CreditCard },
   { id: 'discounts', label: 'Diskon Produk', icon: Tag },
-  { id: 'whatsapp', label: 'WhatsApp Settings', icon: MessageCircle },
+  { id: 'whatsapp', label: 'WhatsApp (Fonnte)', icon: MessageCircle },
+  { id: 'reset-customers', label: 'Reset Pelanggan', icon: ShieldAlert },
 ];
 
 export default function SellerSidebar({ activeTab, onTabChange, onLogout, isOpen, onClose }) {

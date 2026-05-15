@@ -113,6 +113,9 @@ export default function IncomingOrders() {
       setOrders(prev => prev.map(o => o.id === orderId ? res.data : o));
       if (selectedOrder?.id === orderId) setSelectedOrder(res.data);
       toast.success(`Status diupdate: ${STATUS_MAP[newStatus]?.label}`);
+      if (res.data?._wa_buyer_sent) {
+        toast.success('✅ Notif WA terkirim ke buyer!', { duration: 2500 });
+      }
       setSelectedOrder(null);
     } catch { toast.error('Gagal update status.'); }
   };
