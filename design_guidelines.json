@@ -1,0 +1,75 @@
+{
+  "theme": "LIGHT",
+  "archetype": "1_ORGANIC_EARTHY",
+  "brand_name": "Ciltarasa",
+  "tagline": "Ngemil & Ngebekal Praktis!",
+  "colors": {
+    "primary": "#D97706",
+    "background": "#FDF8F0",
+    "headings": "#78350F",
+    "highlight": "#FED7AA",
+    "text_main": "#451A03",
+    "text_muted": "#78350F",
+    "surface": "#FFFFFF",
+    "border": "#FED7AA",
+    "success": "#166534",
+    "danger": "#991B1B"
+  },
+  "typography": {
+    "fonts": {
+      "headings": "'Playfair Display', serif",
+      "body": "'Nunito', sans-serif"
+    },
+    "scales": {
+      "h1": "text-4xl sm:text-5xl lg:text-6xl tracking-tight leading-none",
+      "h2": "text-2xl sm:text-3xl lg:text-4xl tracking-tight",
+      "h3": "text-xl sm:text-2xl",
+      "body": "text-base leading-relaxed",
+      "small": "text-sm uppercase tracking-widest"
+    }
+  },
+  "layout_and_spacing": {
+    "buyer_storefront": {
+      "grid_system": "Bento Grid - Mode A (Tetris Grid). Use asymmetry for feature sections, e.g., grid-cols-1 md:grid-cols-12 with wide gaps (gap-8).",
+      "spacing_scale": "Generous spacing (p-6, p-8, py-20) to give food photography room to breathe.",
+      "container": "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8"
+    },
+    "seller_dashboard": {
+      "grid_system": "Control Room Grid - Mode B. Dense data layout (grid-cols-1 md:grid-cols-3 lg:grid-cols-4) with tight gaps (gap-4 or gap-6).",
+      "spacing_scale": "Compact spacing (p-4, p-6) to maximize data visibility.",
+      "container": "w-full p-4 md:p-6"
+    }
+  },
+  "surface_styles": {
+    "cards": "Flat background (bg-white), 1px subtle border (border-[#FED7AA]), soft ambient shadow (shadow-sm). Rounded corners (rounded-xl or rounded-2xl).",
+    "buttons_primary": "bg-[#D97706] text-white font-bold rounded-full px-6 py-3 hover:bg-[#B45309] transition-all transform hover:-translate-y-1 shadow-md hover:shadow-lg",
+    "buttons_secondary": "bg-[#FDF8F0] text-[#78350F] border border-[#78350F] font-bold rounded-full px-6 py-3 hover:bg-[#FED7AA] transition-all",
+    "glassmorphism": "Use sparingly for sticky buyer header: backdrop-blur-xl bg-[#FDF8F0]/80 border-b border-[#FED7AA]"
+  },
+  "media": {
+    "logo_url": "https://static.prod-images.emergentagent.com/jobs/fa7f3ba8-8537-4e4d-b681-0c7370599acf/images/d1f57cba0f24fd4e71570ecb74bd04e56cf2549292bae97e7951bb359afc9b9e.png",
+    "hero_background": "https://static.prod-images.emergentagent.com/jobs/fa7f3ba8-8537-4e4d-b681-0c7370599acf/images/3fd09d3c0fc14b6148e6065a022d94002c52a9aafb799d7dda170d7445053fd9.png",
+    "texture_pattern": "https://static.prod-images.emergentagent.com/jobs/fa7f3ba8-8537-4e4d-b681-0c7370599acf/images/c9c7f5b25a801a6b557e6671f35827951cb5de10cb9613ffdf437751e2f2923f.png",
+    "products": {
+      "bebek_smoked_duck": "https://images.unsplash.com/photo-1542197745-c70e10f66af8?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1Nzd8MHwxfHNlYXJjaHwxfHxzbW9rZWQlMjBkdWNrJTIwZGlzaHxlbnwwfHx8fDE3Nzg4MjYwODB8MA&ixlib=rb-4.1.0&q=85",
+      "frozen_snacks_dimsum": "https://images.unsplash.com/photo-1695712641569-05eee7b37b6d?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1Nzd8MHwxfHNlYXJjaHwxfHxkaW1zdW0lMjBzcHJpbmclMjByb2xscyUyMGZvb2R8ZW58MHx8fHwxNzc4ODI2MDk4fDA&ixlib=rb-4.1.0&q=85"
+    }
+  },
+  "component_instructions": {
+    "general": "Build with React, Tailwind CSS, and Shadcn/UI primitives. Mobile-first responsive design.",
+    "testing": "All interactive elements MUST have data-testid attributes (e.g., data-testid='checkout-button').",
+    "buyer_flow": {
+      "hero_section": "Use the hero_background image with a warm gradient overlay (bg-gradient-to-r from-[#78350F]/70 to-transparent) to ensure the Playfair Display text is highly readable.",
+      "product_catalog": "Card-based grid for categories (Bebek Pawon Ayu vs Frozen Snacks). Utilize the product images. Make sure there is a sticky cart bottom bar or prominent FAB on mobile.",
+      "cart_drawer": "Slide-over drawer (Shadcn Sheet component). Keep it clean, list items, total price, and a vibrant CTA to Checkout.",
+      "checkout": "Use Shadcn Forms. Maintain high contrast readability for inputs. Add WhatsApp integration on successful order."
+    },
+    "seller_flow": {
+      "dashboard_overview": "Use Recharts for Sales and Orders data. Use the texture_pattern subtly in the background or header to keep the brand identity alive even in the admin area.",
+      "order_pipeline": "Kanban style or clear table (Shadcn Table) showing WebSocket real-time updates."
+    },
+    "icons": "Use lucide-react (default) with size 24 for standard buttons and 32 for major touch targets.",
+    "animation": "Use subtle Framer Motion effects. Staggered fade-ins for product grids. Hover scaling on product cards."
+  },
+  "main_agent_instructions": "DO NOT use placeholder images. Use only the URLs provided in the media section. Implement real-time WebSocket connection for order updates. WhatsApp links should format correctly to wa.me with order details. Remember to use .js extensions instead of .tsx where applicable."
+}
