@@ -55,9 +55,10 @@ function HeroSlideshow({ slides }) {
       <div className="absolute inset-0 bg-gradient-to-r from-[#451A03]/85 via-[#78350F]/55 to-transparent" />
       {activeSlides.length > 1 && (
         <div className="absolute bottom-5 right-5 flex gap-1.5 z-10">
-          {activeSlides.map((_, i) => (
+          {activeSlides.map((s, i) => (
             <button
               key={i}
+              data-testid={`hero-slide-dot-${i}`}
               onClick={() => setIdx(i)}
               className={`h-1.5 rounded-full transition-all ${i === idx ? 'bg-white w-8' : 'bg-white/40 w-3'}`}
             />

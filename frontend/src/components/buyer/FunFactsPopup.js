@@ -62,7 +62,7 @@ export default function FunFactsPopup() {
           style={{ scrollSnapType: 'x mandatory' }}
         >
           {facts.map((f, i) => (
-            <div key={f.id || i} className="min-w-full snap-center">
+            <div key={f.id || i} data-testid={`funfact-card-${i}`} className="min-w-full snap-center">
               <div className="aspect-[4/3] bg-gray-100 overflow-hidden relative">
                 {f.image_url ? (
                   <img src={f.image_url} alt={f.title || ''} className="w-full h-full object-cover" />
