@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, APIRouter, WebSocket, WebSocketDisconnect, HTTPException, Header, Depends
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -29,6 +29,14 @@ logger = logging.getLogger(__name__)
 
 # Schema version — bump to force re-seed
 SCHEMA_VERSION = "v2.3.1"
+
+SELLER_PIN = os.environ.get("SELLER_PIN", "ciltarasa")
+APP_URL = os.environ.get("APP_URL", "")
+
+def require_seller(x_seller_pin: Optional[str] = Header(None)):
+    if x_seller_pin != SELLER_PIN:
+        raise HTTPException(401, "Akses ditolak. Seller PIN diperlukan.")
+    return True
 
 # ─── WebSocket Manager ───────────────────────────────────────────────────────
 class ConnectionManager:
@@ -692,7 +700,7 @@ async def get_product(pid: str):
     return p
 
 @api_router.post("/products")
-async def create_product(p: ProductCreate):
+async def create_product(p: ProductCreate, _auth: bool = Depends(require_seller)):
     ts = now_iso()
     data = p.model_dump()
     data["media_urls"] = [gdrive_to_direct(u) for u in (data.get("media_urls") or []) if u]
@@ -707,7 +715,7 @@ async def create_product(p: ProductCreate):
     return doc
 
 @api_router.put("/products/{pid}")
-async def update_product(pid: str, update: ProductUpdate):
+async def update_product(pid: str, update: ProductUpdate, _auth: bool = Depends(require_seller)):
     upd = update.model_dump(exclude_unset=True)
     if "media_urls" in upd and upd["media_urls"] is not None:
         upd["media_urls"] = [gdrive_to_direct(u) for u in upd["media_urls"] if u]
@@ -723,7 +731,7 @@ async def update_product(pid: str, update: ProductUpdate):
     return doc
 
 @api_router.delete("/products/{pid}")
-async def delete_product(pid: str):
+async def delete_product(pid: str, _auth: bool = Depends(require_seller)):
     await db.products.delete_one({"id": pid})
     await manager.broadcast({"type": "product_deleted", "data": {"id": pid}})
     return {"success": True}
@@ -785,7 +793,7 @@ async def create_order(order: OrderCreate):
     return doc
 
 @api_router.put("/orders/{oid}/status")
-async def update_order_status(oid: str, update: OrderStatusUpdate):
+async def update_order_status(oid: str, update: OrderStatusUpdate, _auth: bool = Depends(require_seller)):
     ts = now_iso()
     order = await db.orders.find_one({"id": oid}, {"_id": 0})
     if not order:
@@ -800,8 +808,7 @@ async def update_order_status(oid: str, update: OrderStatusUpdate):
     if update.status in STATUS_DESC and doc.get("customer_phone"):
         _, _, enabled = await get_fonnte_config()
         if enabled:
-            app_url = os.environ.get("APP_URL", "")
-            res = await fonnte_send(doc["customer_phone"], build_buyer_status_message(doc, app_url))
+            res = await fonnte_send(doc["customer_phone"], build_buyer_status_message(doc, APP_URL))
             wa_sent = res.get("ok", False)
     doc["_wa_buyer_sent"] = wa_sent
     return doc
@@ -830,7 +837,7 @@ async def get_settings():
     return s or DEFAULT_SETTINGS
 
 @api_router.put("/settings")
-async def update_settings(update: SettingsUpdate):
+async def update_settings(update: SettingsUpdate, _auth: bool = Depends(require_seller)):
     upd = update.model_dump(exclude_unset=True)
     await db.settings.update_one({"_id": "main"}, {"$set": upd}, upsert=True)
     s = await db.settings.find_one({"_id": "main"}, {"_id": 0})
@@ -844,7 +851,7 @@ async def get_store_config():
     return s or {}
 
 @api_router.put("/store-config")
-async def update_store_config(update: StoreConfigUpdate):
+async def update_store_config(update: StoreConfigUpdate, _auth: bool = Depends(require_seller)):
     upd = update.model_dump(exclude_unset=True)
     upd["updated_at"] = now_iso()
     await db.store_config.update_one({"_id": "main"}, {"$set": upd}, upsert=True)
@@ -858,7 +865,7 @@ class TestWAReq(BaseModel):
     message: Optional[str] = None
 
 @api_router.post("/admin/test-wa")
-async def test_wa(req: TestWAReq):
+async def test_wa(req: TestWAReq, _auth: bool = Depends(require_seller)):
     msg = req.message or "🔔 Tes notifikasi dari dashboard Ciltarasa. Jika kamu menerima ini, integrasi Fonnte sukses! ✅"
     res = await fonnte_send(req.target, msg)
     return res
@@ -868,7 +875,7 @@ class ResetCustomersReq(BaseModel):
     scope: str = "all"  # all | orders | users | both
 
 @api_router.post("/admin/reset-customers")
-async def reset_customers(req: ResetCustomersReq):
+async def reset_customers(req: ResetCustomersReq, _auth: bool = Depends(require_seller)):
     if req.confirm != "RESET":
         raise HTTPException(400, "Konfirmasi tidak valid. Kirim {confirm: 'RESET'} untuk lanjut.")
     deleted = {"orders": 0, "users": 0, "reviews": 0}
@@ -892,7 +899,7 @@ async def get_purchases(status: Optional[str] = None):
     return await db.purchases.find(q, {"_id": 0}).sort("ordered_at", -1).to_list(500)
 
 @api_router.post("/purchases")
-async def create_purchase(p: PurchaseCreate):
+async def create_purchase(p: PurchaseCreate, _auth: bool = Depends(require_seller)):
     ts = now_iso()
     total = sum(i.subtotal for i in p.items)
     doc = {
@@ -913,7 +920,7 @@ async def create_purchase(p: PurchaseCreate):
     return doc
 
 @api_router.put("/purchases/{pid}")
-async def update_purchase(pid: str, update: PurchaseUpdate):
+async def update_purchase(pid: str, update: PurchaseUpdate, _auth: bool = Depends(require_seller)):
     upd = update.model_dump(exclude_unset=True)
     if "items" in upd and upd["items"] is not None:
         upd["total"] = sum(i["subtotal"] for i in upd["items"])
@@ -924,7 +931,7 @@ async def update_purchase(pid: str, update: PurchaseUpdate):
     return doc
 
 @api_router.post("/purchases/{pid}/receive")
-async def receive_purchase(pid: str, received_at: Optional[str] = None):
+async def receive_purchase(pid: str, received_at: Optional[str] = None, _auth: bool = Depends(require_seller)):
     ts = received_at or now_iso()
     p = await db.purchases.find_one({"id": pid}, {"_id": 0})
     if not p:
@@ -949,7 +956,7 @@ async def receive_purchase(pid: str, received_at: Optional[str] = None):
     return doc
 
 @api_router.delete("/purchases/{pid}")
-async def delete_purchase(pid: str):
+async def delete_purchase(pid: str, _auth: bool = Depends(require_seller)):
     await db.purchases.delete_one({"id": pid})
     await manager.broadcast({"type": "purchase_deleted", "data": {"id": pid}})
     return {"success": True}
@@ -1098,7 +1105,7 @@ async def get_discounts():
     return await db.discounts.find({}, {"_id": 0}).sort("created_at", -1).to_list(200)
 
 @api_router.post("/discounts")
-async def create_discount(d: DiscountCreate):
+async def create_discount(d: DiscountCreate, _auth: bool = Depends(require_seller)):
     ts = now_iso()
     doc = {"id": str(uuid.uuid4()), "created_at": ts, "updated_at": ts, **d.model_dump()}
     await db.discounts.insert_one(doc)
@@ -1107,7 +1114,7 @@ async def create_discount(d: DiscountCreate):
     return doc
 
 @api_router.put("/discounts/{did}")
-async def update_discount(did: str, update: DiscountUpdate):
+async def update_discount(did: str, update: DiscountUpdate, _auth: bool = Depends(require_seller)):
     upd = update.model_dump(exclude_unset=True)
     upd["updated_at"] = now_iso()
     await db.discounts.update_one({"id": did}, {"$set": upd})
@@ -1116,7 +1123,7 @@ async def update_discount(did: str, update: DiscountUpdate):
     return doc
 
 @api_router.delete("/discounts/{did}")
-async def delete_discount(did: str):
+async def delete_discount(did: str, _auth: bool = Depends(require_seller)):
     await db.discounts.delete_one({"id": did})
     await manager.broadcast({"type": "discount_deleted", "data": {"id": did}})
     return {"success": True}
@@ -1146,14 +1153,14 @@ async def get_financial_entries():
     return await db.financial_entries.find({}, {"_id": 0}).sort("date", -1).to_list(1000)
 
 @api_router.post("/financial-entries")
-async def create_financial_entry(entry: FinancialEntryCreate):
+async def create_financial_entry(entry: FinancialEntryCreate, _auth: bool = Depends(require_seller)):
     doc = {"id": str(uuid.uuid4()), "created_at": now_iso(), **entry.model_dump()}
     await db.financial_entries.insert_one(doc)
     doc.pop("_id", None)
     return doc
 
 @api_router.delete("/financial-entries/{eid}")
-async def delete_financial_entry(eid: str):
+async def delete_financial_entry(eid: str, _auth: bool = Depends(require_seller)):
     await db.financial_entries.delete_one({"id": eid})
     return {"success": True}
 

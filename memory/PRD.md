@@ -23,6 +23,12 @@ Ibu-ibu milenial & Gen Z (kelahiran 1980-2000) yang anaknya SD. Modern, kekinian
 ### Phase 4 ✅ Seller Overhaul + Configuration Pages
 ### Phase 5 ✅ Catalog Shopee-style + Product Detail + Tab Tentang
 ### Phase 6 ✅ Flash Sale + Countdown Timer
+### Phase 8 ✅ Fonnte WhatsApp + Admin Utilities + Security Hardening (Feb 2026)
+- **Real Fonnte API** (`api.fonnte.com/send` via httpx) — Real 6-digit OTP, auto-notify seller on new order + auto-notify buyer on status update (Diproses/Siap/Selesai/Dibatalkan)
+- **Seller pages NEW**: WhatsApp (Fonnte) config, Reset Pelanggan, Cara Pesan (Steps)
+- **Security**: `X-Seller-PIN` header guard on ALL seller mutations; ENV vars `SELLER_PIN`+`APP_URL`; frontend axios interceptor
+- **Branding**: title = "Ciltarasa - Premium Frozen Food"; Emergent badge removed (HTML+CSS+MutationObserver); demo OTP hints removed
+
 ### Phase 7 ✅ CMS + Slideshow + Purchases + Insights + Recommendations + Fun Facts (v2.2)
 - **Editable Homepage Texts** — 13 text fields (viral pill, hero titles/subtitle/CTAs, social proof, section titles, tabs) editable via seller menu "Teks Homepage"
 - **Hero Slideshow** — multi-slide background with per-slide duration, active toggle, reordering, crossfade transition + indicator dots

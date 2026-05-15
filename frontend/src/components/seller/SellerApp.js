@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
 import SellerLogin from './SellerLogin';
 import SellerSidebar from './SellerSidebar';
 import DashboardOverview from './DashboardOverview';
@@ -12,11 +13,39 @@ import PurchaseManagement from './PurchaseManagement';
 import { FonnteConfig, HowToOrderConfig, ResetCustomersConfig } from './AdminPages';
 
 const PIN = 'ciltarasa';
+let _sellerInterceptorId = null;
+
+function attachSellerInterceptor(pin) {
+  if (_sellerInterceptorId !== null) return;
+  _sellerInterceptorId = axios.interceptors.request.use(cfg => {
+    const url = cfg.url || '';
+    // Attach PIN only for seller-mutating endpoints (POST/PUT/DELETE to backend)
+    const method = (cfg.method || 'get').toLowerCase();
+    if (method !== 'get' && (url.includes('/api/products') || url.includes('/api/purchases') || url.includes('/api/discounts') || url.includes('/api/settings') || url.includes('/api/store-config') || url.includes('/api/financial-entries') || url.includes('/api/admin/') || /\/api\/orders\/[^/]+\/status/.test(url))) {
+      cfg.headers = cfg.headers || {};
+      cfg.headers['X-Seller-PIN'] = pin;
+    }
+    return cfg;
+  });
+}
+
+function detachSellerInterceptor() {
+  if (_sellerInterceptorId !== null) {
+    axios.interceptors.request.eject(_sellerInterceptorId);
+    _sellerInterceptorId = null;
+  }
+}
 
 export default function SellerApp() {
   const [authed, setAuthed] = useState(() => localStorage.getItem('seller_auth') === 'true');
   const [activeTab, setActiveTab] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    if (authed) attachSellerInterceptor(PIN);
+    else detachSellerInterceptor();
+    return () => detachSellerInterceptor();
+  }, [authed]);
 
   const handleLogin = (pin) => {
     if (pin === PIN) {
