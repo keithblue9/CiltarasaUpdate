@@ -12,6 +12,7 @@ function ProductCard({ product, onAdd, onOpen, staggerIdx }) {
   const isLow = product.stock > 0 && product.stock < 10;
   const finalPrice = product.final_price || product.price;
   const hasDiscount = product.discount && finalPrice < product.price;
+  const isFlashSale = product.discount?.is_flash_sale;
   const discountPct = hasDiscount ? Math.round((1 - finalPrice / product.price) * 100) : 0;
   const isHot = (product.sold_count || 0) > 100;
   const [added, setAdded] = useState(false);
@@ -35,7 +36,11 @@ function ProductCard({ product, onAdd, onOpen, staggerIdx }) {
 
         {/* Badges */}
         <div className="absolute top-2 left-2 flex flex-col gap-1.5">
-          {hasDiscount && (
+          {isFlashSale ? (
+            <span className="bg-gradient-to-r from-red-600 to-orange-500 text-white text-[10px] font-extrabold px-2 py-0.5 rounded-md shadow flex items-center gap-0.5 animate-pulse">
+              <Flame size={10} className="fill-yellow-300 text-yellow-300" /> FLASH -{discountPct}%
+            </span>
+          ) : hasDiscount && (
             <span className="bg-red-500 text-white text-[10px] font-extrabold px-2 py-0.5 rounded-md shadow flex items-center gap-0.5">
               -{discountPct}%
             </span>

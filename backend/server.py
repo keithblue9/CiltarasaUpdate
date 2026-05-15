@@ -26,7 +26,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Schema version — bump to force re-seed
-SCHEMA_VERSION = "v2.0.2"
+SCHEMA_VERSION = "v2.1.1"
 
 # ─── WebSocket Manager ───────────────────────────────────────────────────────
 class ConnectionManager:
@@ -198,6 +198,7 @@ class DiscountCreate(BaseModel):
     active: bool = True
     starts_at: Optional[str] = None
     ends_at: Optional[str] = None
+    is_flash_sale: bool = False
 
 class DiscountUpdate(BaseModel):
     name: Optional[str] = None
@@ -207,6 +208,7 @@ class DiscountUpdate(BaseModel):
     active: Optional[bool] = None
     starts_at: Optional[str] = None
     ends_at: Optional[str] = None
+    is_flash_sale: Optional[bool] = None
 
 # ─── Default Data ─────────────────────────────────────────────────────────────
 DEFAULT_PRODUCTS = [
@@ -272,7 +274,7 @@ DEFAULT_STORE_CONFIG = {
 }
 
 DEFAULT_DISCOUNTS = [
-    {"id": str(uuid.uuid4()), "name": "Promo Bulan Ini", "type": "percent", "value": 10, "product_ids": [], "active": True, "starts_at": None, "ends_at": None, "created_at": now_iso()},
+    {"id": str(uuid.uuid4()), "name": "Promo Bulan Ini", "type": "percent", "value": 10, "product_ids": [], "active": True, "starts_at": None, "ends_at": None, "is_flash_sale": False, "created_at": now_iso()},
 ]
 
 
@@ -308,6 +310,26 @@ async def seed_database():
     if await db.discounts.count_documents({}) == 0:
         for d in DEFAULT_DISCOUNTS:
             await db.discounts.insert_one(d)
+        # Seed an active 24-hour Flash Sale for viral products
+        now_dt = datetime.now(timezone.utc)
+        flash_id = str(uuid.uuid4())
+        await db.discounts.insert_one({
+            "id": flash_id,
+            "name": "⚡ Flash Sale Hari Ini",
+            "type": "percent",
+            "value": 25,
+            "product_ids": [],
+            "active": True,
+            "is_flash_sale": True,
+            "starts_at": now_dt.isoformat(),
+            "ends_at": (now_dt + timedelta(hours=24)).isoformat(),
+            "created_at": now_iso(),
+        })
+        # Apply to top 4 viral products (by sold_count)
+        all_p = await db.products.find({}, {"_id": 0}).sort("sold_count", -1).to_list(4)
+        for p in all_p:
+            await db.products.update_one({"id": p["id"]}, {"$set": {"discount_id": flash_id}})
+        logger.info(f"Seeded Flash Sale applied to {len(all_p)} products")
 
     # Orders (demo)
     if await db.orders.count_documents({}) == 0:
@@ -446,14 +468,27 @@ async def auth_me(token: str):
 @api_router.get("/products")
 async def get_products():
     products = await db.products.find({}, {"_id": 0}).to_list(1000)
-    # Attach discount info
+    # Attach discount info — only active and within time window
+    now = datetime.now(timezone.utc).isoformat()
     discounts = await db.discounts.find({"active": True}, {"_id": 0}).to_list(100)
+    def in_window(d):
+        s = d.get("starts_at")
+        e = d.get("ends_at")
+        if s and now < s:
+            return False
+        if e and now > e:
+            return False
+        return True
+    discounts = [d for d in discounts if in_window(d)]
     dmap = {d["id"]: d for d in discounts}
-    # Attach review stats
     for p in products:
         d = dmap.get(p.get("discount_id"))
         if d:
-            p["discount"] = {"name": d["name"], "type": d["type"], "value": d["value"]}
+            p["discount"] = {
+                "name": d["name"], "type": d["type"], "value": d["value"],
+                "is_flash_sale": d.get("is_flash_sale", False),
+                "ends_at": d.get("ends_at"), "starts_at": d.get("starts_at"),
+            }
             if d["type"] == "percent":
                 p["final_price"] = round(p["price"] * (1 - d["value"] / 100))
             else:

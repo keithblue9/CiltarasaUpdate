@@ -60,6 +60,15 @@ Full-stack web app for Ciltarasa frozen food brand (Malang) — Shopee/Tokopedia
 - ProductDetailModal with media carousel, full description, reviews list, qty + add-to-cart
 - Tab "Tentang Kami" with stats (1.200+ pelanggan, 4.9★, 5+ thn), cerita paragraphs, contact, social links, Gmaps CTA
 
+### Phase 6 ✅ Flash Sale dengan Countdown Timer (Feb 2026)
+- Backend: extended Discount model dengan `is_flash_sale` flag, `starts_at`/`ends_at` (ISO), product GET filter by time window
+- Seed: 1 default discount + 1 Flash Sale 25% aktif 24-jam auto-apply ke 4 produk terlaris
+- Seller DiscountForm: toggle "Flash Sale Mode" + datetime-local pickers (auto-default 24jam)
+- Buyer FlashSaleBanner: gradient red-orange-yellow dengan pulse animation, countdown JAM:MENIT:DETIK real-time, preview 4 produk
+- Buyer ProductCard: badge "⚡ FLASH -25%" dengan animate-pulse + Flame icon
+- Phase 6 ✅ Flash Sale + Countdown
+- Schema version: v2.1.1
+
 ### MVP (already done)
 - Seller: PIN login, dashboard, products, orders, reports, financial, WhatsApp settings
 - Real-time WebSocket sync across buyer/seller

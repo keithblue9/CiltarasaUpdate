@@ -9,6 +9,7 @@ import CartDrawer from './CartDrawer';
 import Checkout from './Checkout';
 import OrderTracking from './OrderTracking';
 import OnboardingModal from './OnboardingModal';
+import FlashSaleBanner from './FlashSaleBanner';
 
 function ProfileMenu() {
   const { authUser, logout, setAuthMode } = useApp();
@@ -183,6 +184,7 @@ function BuyerHome() {
   return (
     <>
       <Hero />
+      <FlashSaleBanner />
       <Catalog />
     </>
   );

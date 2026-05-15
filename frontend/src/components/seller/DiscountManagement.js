@@ -9,7 +9,15 @@ const fmt = (n) => `Rp ${Number(n).toLocaleString('id-ID')}`;
 const inputCls = "w-full px-4 py-2.5 rounded-xl border border-[#FED7AA] focus:outline-none focus:border-[#F97316] font-body text-[#451A03] bg-white";
 
 function DiscountForm({ initial, products, onSave, onCancel }) {
-  const [f, setF] = useState(initial || { name: '', type: 'percent', value: 10, product_ids: [], active: true });
+  const isoToLocal = (iso) => {
+    if (!iso) return '';
+    try { return new Date(iso).toISOString().slice(0, 16); } catch { return ''; }
+  };
+  const [f, setF] = useState(() => initial ? {
+    ...initial,
+    starts_at: isoToLocal(initial.starts_at),
+    ends_at: isoToLocal(initial.ends_at),
+  } : { name: '', type: 'percent', value: 10, product_ids: [], active: true, is_flash_sale: false, starts_at: '', ends_at: '' });
   const set = (k, v) => setF(prev => ({ ...prev, [k]: v }));
   const toggleProduct = (id) => {
     setF(prev => ({
@@ -18,18 +26,67 @@ function DiscountForm({ initial, products, onSave, onCancel }) {
     }));
   };
 
+  // Toggle flash sale: auto-set 24h window
+  const toggleFlashSale = () => {
+    const newVal = !f.is_flash_sale;
+    if (newVal && !f.ends_at) {
+      const now = new Date();
+      const end = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+      setF(prev => ({
+        ...prev,
+        is_flash_sale: true,
+        starts_at: now.toISOString().slice(0, 16),
+        ends_at: end.toISOString().slice(0, 16),
+      }));
+    } else {
+      set('is_flash_sale', newVal);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[92vh] overflow-y-auto">
         <div className="flex items-center justify-between p-5 border-b border-[#FED7AA] bg-gradient-to-r from-[#FFF7ED] to-[#FEF3C7]">
           <h3 className="font-heading font-bold text-[#7C2D12] text-xl">{initial ? 'Edit Diskon' : 'Tambah Diskon Baru'}</h3>
           <button onClick={onCancel} className="p-2 rounded-full hover:bg-[#FED7AA]"><X size={18} /></button>
         </div>
         <div className="p-5 space-y-4">
+          {/* Flash Sale toggle */}
+          <button
+            type="button"
+            data-testid="toggle-flash-sale"
+            onClick={toggleFlashSale}
+            className={`w-full p-4 rounded-2xl border-2 transition-all flex items-center gap-3 text-left ${f.is_flash_sale ? 'border-red-400 bg-gradient-to-r from-red-50 to-orange-50' : 'border-[#FED7AA] bg-white hover:bg-[#FFF7ED]'}`}
+          >
+            <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-2xl ${f.is_flash_sale ? 'bg-gradient-to-br from-red-500 to-orange-500 animate-pulse' : 'bg-[#FED7AA]'}`}>
+              ⚡
+            </div>
+            <div className="flex-1">
+              <div className="font-bold text-[#7C2D12]">Flash Sale Mode {f.is_flash_sale && '🔥'}</div>
+              <div className="text-xs text-[#9A3412]">{f.is_flash_sale ? 'Aktif — countdown timer akan tampil di buyer' : 'Diskon promo terbatas waktu (kayak TikTok shop!)'}</div>
+            </div>
+            <div className={`w-12 h-7 rounded-full flex items-center transition-all ${f.is_flash_sale ? 'bg-red-500 justify-end' : 'bg-gray-300 justify-start'}`}>
+              <div className="w-6 h-6 bg-white rounded-full m-0.5" />
+            </div>
+          </button>
+
+          {f.is_flash_sale && (
+            <div className="grid grid-cols-2 gap-3 p-4 bg-red-50 rounded-2xl border border-red-200">
+              <div>
+                <label className="block text-xs font-bold text-red-700 mb-1.5 uppercase">Mulai</label>
+                <input data-testid="flash-starts-input" type="datetime-local" className={inputCls} value={f.starts_at || ''} onChange={e => set('starts_at', e.target.value)} />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-red-700 mb-1.5 uppercase">Berakhir</label>
+                <input data-testid="flash-ends-input" type="datetime-local" className={inputCls} value={f.ends_at || ''} onChange={e => set('ends_at', e.target.value)} />
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-bold text-[#7C2D12] mb-1.5 uppercase">Nama Diskon</label>
-              <input data-testid="discount-name-input" className={inputCls} value={f.name} onChange={e => set('name', e.target.value)} placeholder="Promo Spesial Lebaran" />
+              <input data-testid="discount-name-input" className={inputCls} value={f.name} onChange={e => set('name', e.target.value)} placeholder={f.is_flash_sale ? '⚡ Flash Sale Hari Ini' : 'Promo Spesial'} />
             </div>
             <div>
               <label className="block text-xs font-bold text-[#7C2D12] mb-1.5 uppercase">Status</label>
@@ -84,36 +141,32 @@ export default function DiscountManagement() {
 
   const handleSave = async (form) => {
     try {
-      if (editItem) await axios.put(`${API}/api/discounts/${editItem.id}`, form);
-      else await axios.post(`${API}/api/discounts`, form);
-      // Apply discount_id to selected products
+      const payload = {
+        ...form,
+        starts_at: form.starts_at ? new Date(form.starts_at).toISOString() : null,
+        ends_at: form.ends_at ? new Date(form.ends_at).toISOString() : null,
+      };
+      let created;
+      if (editItem) {
+        await axios.put(`${API}/api/discounts/${editItem.id}`, payload);
+        created = editItem;
+      } else {
+        const r = await axios.post(`${API}/api/discounts`, payload);
+        created = r.data;
+      }
+      // Apply discount_id to products
       for (const p of products) {
-        const shouldHave = form.product_ids.includes(p.id) && form.active;
-        const currentId = editItem ? editItem.id : null;
-        if (shouldHave && p.discount_id !== (editItem?.id || 'new')) {
-          // Will be set after creation if new, skip
-        }
-        if (!shouldHave && p.discount_id === currentId) {
+        const wasOnThis = p.discount_id === created.id;
+        const shouldHave = form.product_ids.includes(p.id);
+        if (shouldHave && !wasOnThis) {
+          await axios.put(`${API}/api/products/${p.id}`, { discount_id: created.id });
+        } else if (!shouldHave && wasOnThis) {
           await axios.put(`${API}/api/products/${p.id}`, { discount_id: null });
         }
       }
       await refreshDiscounts();
-      // For new discount, fetch latest list to get its id and apply to products
-      if (!editItem) {
-        const list = await axios.get(`${API}/api/discounts`).then(r => r.data);
-        const created = list.find(d => d.name === form.name && d.value === form.value);
-        if (created) {
-          for (const pid of form.product_ids) {
-            await axios.put(`${API}/api/products/${pid}`, { discount_id: created.id });
-          }
-        }
-      } else {
-        for (const pid of form.product_ids) {
-          await axios.put(`${API}/api/products/${pid}`, { discount_id: editItem.id });
-        }
-      }
       await refreshProducts();
-      toast.success(`Diskon ${editItem ? 'diupdate' : 'ditambahkan'}!`);
+      toast.success(`Diskon ${editItem ? 'diupdate' : 'ditambahkan'}! ${form.is_flash_sale ? '⚡' : ''}`);
       setShowForm(false); setEditItem(null);
     } catch { toast.error('Gagal simpan diskon'); }
   };
@@ -154,18 +207,24 @@ export default function DiscountManagement() {
             const pp = productsWithDiscount(d);
             return (
               <div key={d.id} className="bg-white rounded-2xl border border-[#FED7AA] overflow-hidden">
-                <div className={`px-5 py-3 ${d.active ? 'bg-gradient-to-r from-[#F97316] to-[#EA580C]' : 'bg-gray-400'} text-white flex items-center justify-between`}>
+                <div className={`px-5 py-3 ${d.is_flash_sale ? 'bg-gradient-to-r from-red-500 via-orange-500 to-yellow-500 animate-pulse' : d.active ? 'bg-gradient-to-r from-[#F97316] to-[#EA580C]' : 'bg-gray-400'} text-white flex items-center justify-between`}>
                   <div className="flex items-center gap-2">
-                    <Tag size={16} />
+                    {d.is_flash_sale ? <span className="text-lg">⚡</span> : <Tag size={16} />}
                     <span className="font-bold">{d.name}</span>
                   </div>
-                  <span className="text-xs font-bold bg-white/20 px-2 py-0.5 rounded-full">{d.active ? 'AKTIF' : 'NONAKTIF'}</span>
+                  <div className="flex items-center gap-1.5">
+                    {d.is_flash_sale && <span className="text-[10px] font-extrabold bg-white/30 px-2 py-0.5 rounded-full">FLASH SALE</span>}
+                    <span className="text-xs font-bold bg-white/20 px-2 py-0.5 rounded-full">{d.active ? 'AKTIF' : 'NONAKTIF'}</span>
+                  </div>
                 </div>
                 <div className="p-5">
                   <div className="text-3xl font-extrabold text-[#EA580C] mb-1">
                     {d.type === 'percent' ? `${d.value}%` : fmt(d.value)} OFF
                   </div>
-                  <p className="text-xs text-[#9A3412] mb-3">Berlaku untuk {pp.length} produk</p>
+                  <p className="text-xs text-[#9A3412] mb-1">Berlaku untuk {pp.length} produk</p>
+                  {d.is_flash_sale && d.ends_at && (
+                    <p className="text-xs text-red-600 font-bold mb-2">⏰ Berakhir: {new Date(d.ends_at).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' })}</p>
+                  )}
                   {pp.length > 0 && (
                     <div className="flex flex-wrap gap-1 mb-3 max-h-16 overflow-hidden">
                       {pp.slice(0, 4).map(p => (
