@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { TrendingUp, ShoppingBag, Clock, AlertTriangle, RefreshCw } from 'lucide-react';
+import { TrendingUp, ShoppingBag, Clock, AlertTriangle, RefreshCw, Flame, Lightbulb, Package, Zap } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import axios from 'axios';
 import { useApp } from '../../context/AppContext';
@@ -26,7 +26,7 @@ function KpiCard({ title, value, icon, color, sub }) {
 }
 
 export default function DashboardOverview({ onTabChange }) {
-  const { products, wsEvent } = useApp();
+  const { products, wsEvent, fetchInsights, insights } = useApp();
   const [report, setReport] = useState(null);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -40,13 +40,14 @@ export default function DashboardOverview({ onTabChange }) {
       ]);
       setReport(r.data);
       setOrders(o.data.slice(0, 5));
+      fetchInsights();
     } catch {}
     setLoading(false);
   };
 
   useEffect(() => { load(); }, []);
   useEffect(() => {
-    if (wsEvent?.type === 'order_created' || wsEvent?.type === 'order_updated') {
+    if (wsEvent?.type === 'order_created' || wsEvent?.type === 'order_updated' || wsEvent?.type === 'purchase_updated') {
       load();
     }
   }, [wsEvent]);
@@ -113,6 +114,78 @@ export default function DashboardOverview({ onTabChange }) {
           <div className="h-40 flex items-center justify-center text-[#92400E] font-body">Belum ada data penjualan</div>
         )}
       </div>
+
+      {/* Smart Insights */}
+      {insights && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* Restock Alerts */}
+          <div className="bg-white rounded-2xl border border-[#FED7AA] overflow-hidden">
+            <div className="px-5 py-3 bg-gradient-to-r from-red-500 to-orange-500 text-white flex items-center gap-2">
+              <Lightbulb size={16} />
+              <h3 className="font-bold text-sm">Saran Restock Pintar</h3>
+              {insights.restock_alerts.filter(a => a.urgency === 'high').length > 0 && (
+                <span className="ml-auto text-[10px] font-extrabold bg-white/30 px-2 py-0.5 rounded-full animate-pulse">🚨 URGENT</span>
+              )}
+            </div>
+            <div className="p-4">
+              {insights.restock_alerts.length === 0 ? (
+                <p className="text-sm text-center text-[#9A3412] py-6">✅ Semua stok aman!</p>
+              ) : (
+                <div className="space-y-2 max-h-72 overflow-y-auto">
+                  {insights.restock_alerts.slice(0, 5).map(a => (
+                    <div key={a.id} data-testid={`restock-alert-${a.id}`} className={`flex items-center gap-3 p-2.5 rounded-xl border ${a.urgency === 'high' ? 'border-red-300 bg-red-50' : a.urgency === 'medium' ? 'border-amber-300 bg-amber-50' : 'border-[#FED7AA] bg-[#FFFBF5]'}`}>
+                      <img src={a.image_url} alt="" className="w-11 h-11 rounded-lg object-cover flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-bold text-[#7C2D12] truncate">{a.name}</p>
+                        <div className="flex items-center gap-2 text-[10px] mt-0.5">
+                          <span className="text-[#9A3412]">Stok: <strong>{a.stock}</strong></span>
+                          {a.velocity > 0 && <span className="text-[#9A3412]">Velocity: <strong>{a.velocity}/hari</strong></span>}
+                          {a.days_left < 999 && <span className={a.urgency === 'high' ? 'text-red-700 font-extrabold' : 'text-amber-700 font-bold'}>~{a.days_left} hari lagi</span>}
+                        </div>
+                        <p className="text-[10px] text-[#9A3412] mt-0.5">Lead time rata-rata: {a.avg_lead_days} hari</p>
+                      </div>
+                      <button
+                        data-testid={`quick-restock-${a.id}`}
+                        onClick={() => {
+                          window.dispatchEvent(new CustomEvent('openRestockForm', { detail: a }));
+                          onTabChange('purchases');
+                        }}
+                        className="flex-shrink-0 bg-gradient-to-r from-[#F97316] to-[#EA580C] text-white text-[10px] font-extrabold px-3 py-1.5 rounded-full shadow hover:shadow-lg"
+                      >
+                        Beli +{a.suggested_qty}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Top Sellers */}
+          <div className="bg-white rounded-2xl border border-[#FED7AA] overflow-hidden">
+            <div className="px-5 py-3 bg-gradient-to-r from-amber-500 to-orange-500 text-white flex items-center gap-2">
+              <Flame size={16} />
+              <h3 className="font-bold text-sm">Produk Terlaris (30 hari)</h3>
+            </div>
+            <div className="p-4 space-y-2">
+              {insights.top_sellers.length === 0 ? (
+                <p className="text-sm text-center text-[#9A3412] py-6">Belum ada data penjualan</p>
+              ) : insights.top_sellers.map((p, i) => (
+                <div key={p.id} className="flex items-center gap-3 p-2 rounded-xl hover:bg-[#FFFBF5]">
+                  <div className={`w-7 h-7 rounded-lg flex items-center justify-center font-extrabold text-xs ${i === 0 ? 'bg-gradient-to-br from-yellow-400 to-amber-500 text-white' : i === 1 ? 'bg-gray-300 text-gray-700' : i === 2 ? 'bg-orange-300 text-orange-900' : 'bg-[#FEF3C7] text-[#7C2D12]'}`}>
+                    #{i + 1}
+                  </div>
+                  <img src={p.image_url} alt="" className="w-10 h-10 rounded-lg object-cover" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-bold text-[#7C2D12] truncate">{p.name}</p>
+                    <p className="text-[10px] text-[#9A3412]">{p.sold_count} terjual · {p.velocity}/hari · stok {p.stock}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Recent Orders */}
       <div className="bg-white rounded-2xl border border-[#FED7AA] p-6">

@@ -115,6 +115,7 @@ export default function Catalog() {
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState('terlaris');
   const [detailProduct, setDetailProduct] = useState(null);
+  const txt = storeConfig?.homepage_texts || {};
 
   useEffect(() => {
     const handler = (e) => { setActiveTab('menu'); setCategory(e.detail); };
@@ -153,7 +154,7 @@ export default function Catalog() {
             onClick={() => setActiveTab('menu')}
             className={`px-4 py-3 font-bold text-sm transition-all relative ${activeTab === 'menu' ? 'text-[#EA580C]' : 'text-[#9A3412] hover:text-[#EA580C]'}`}
           >
-            🍽️ Menu Kami
+            🍽️ {txt.tab_menu_label?.replace(/^[^\w]+/, '') || 'Menu Kami'}
             {activeTab === 'menu' && <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-[#F97316] to-[#EA580C] rounded-t-full" />}
           </button>
           <button
@@ -161,7 +162,7 @@ export default function Catalog() {
             onClick={() => setActiveTab('tentang')}
             className={`px-4 py-3 font-bold text-sm transition-all relative ${activeTab === 'tentang' ? 'text-[#EA580C]' : 'text-[#9A3412] hover:text-[#EA580C]'}`}
           >
-            ✨ Tentang Kami
+            ✨ {txt.tab_about_label?.replace(/^[^\w]+/, '') || 'Tentang Kami'}
             {activeTab === 'tentang' && <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-[#F97316] to-[#EA580C] rounded-t-full" />}
           </button>
         </div>
@@ -171,8 +172,8 @@ export default function Catalog() {
         ) : (
           <>
             <div className="text-center mb-8">
-              <h2 className="font-heading text-3xl sm:text-4xl font-bold text-[#78350F] mb-2">Lagi Viral Bulan Ini 🔥</h2>
-              <p className="text-[#92400E] font-body">Pilihan frozen food premium untuk keluarga</p>
+              <h2 className="font-heading text-3xl sm:text-4xl font-bold text-[#78350F] mb-2">{txt.catalog_section_title || 'Lagi Viral Bulan Ini 🔥'}</h2>
+              <p className="text-[#92400E] font-body">{txt.catalog_section_subtitle || 'Pilihan frozen food premium untuk keluarga'}</p>
             </div>
 
             {/* Filter & Search */}

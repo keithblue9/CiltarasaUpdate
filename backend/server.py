@@ -26,7 +26,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Schema version — bump to force re-seed
-SCHEMA_VERSION = "v2.1.1"
+SCHEMA_VERSION = "v2.2.1"
 
 # ─── WebSocket Manager ───────────────────────────────────────────────────────
 class ConnectionManager:
@@ -189,6 +189,30 @@ class StoreConfigUpdate(BaseModel):
     delivery_options: Optional[List[Dict[str, Any]]] = None
     payment_methods: Optional[List[Dict[str, Any]]] = None
     social_links: Optional[Dict[str, str]] = None
+    homepage_texts: Optional[Dict[str, str]] = None
+    hero_slides: Optional[List[Dict[str, Any]]] = None
+    fun_facts: Optional[List[Dict[str, Any]]] = None
+
+class PurchaseItem(BaseModel):
+    product_id: str
+    product_name: str
+    quantity: int
+    unit_cost: float
+    subtotal: float
+
+class PurchaseCreate(BaseModel):
+    items: List[PurchaseItem]
+    supplier: str = ""
+    ordered_at: str  # ISO date
+    notes: str = ""
+
+class PurchaseUpdate(BaseModel):
+    items: Optional[List[PurchaseItem]] = None
+    supplier: Optional[str] = None
+    ordered_at: Optional[str] = None
+    received_at: Optional[str] = None
+    notes: Optional[str] = None
+    status: Optional[str] = None
 
 class DiscountCreate(BaseModel):
     name: str
@@ -270,7 +294,34 @@ DEFAULT_STORE_CONFIG = {
         "instagram": "https://instagram.com/ciltarasa",
         "tiktok": "https://tiktok.com/@ciltarasa",
         "shopee": "",
-    }
+    },
+    "homepage_texts": {
+        "viral_pill": "Lagi Viral di Malang 🔥",
+        "hero_title_1": "Cemilan Frozen",
+        "hero_title_2": "Yang Bikin Nagih",
+        "hero_subtitle": "Frozen snack premium & Bebek Pawon Ayu khas Malang. Tinggal goreng, anak-anak langsung suka! ✨",
+        "hero_cta_primary": "Belanja Sekarang",
+        "hero_cta_secondary": "Lacak Pesananku",
+        "social_proof_text": "1.200+ keluarga di Malang sudah berlangganan",
+        "how_to_order_title": "Cara Pesan",
+        "how_to_order_subtitle": "Mudah, cepat, dan praktis",
+        "catalog_section_title": "Lagi Viral Bulan Ini 🔥",
+        "catalog_section_subtitle": "Pilihan frozen food premium untuk keluarga",
+        "tab_menu_label": "🍽️ Menu Kami",
+        "tab_about_label": "✨ Tentang Kami",
+    },
+    "hero_slides": [
+        {"id": "slide-1", "image_url": "https://static.prod-images.emergentagent.com/jobs/fa7f3ba8-8537-4e4d-b681-0c7370599acf/images/3fd09d3c0fc14b6148e6065a022d94002c52a9aafb799d7dda170d7445053fd9.png", "duration_ms": 5000, "active": True},
+        {"id": "slide-2", "image_url": "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=1600&q=80", "duration_ms": 5000, "active": True},
+        {"id": "slide-3", "image_url": "https://images.unsplash.com/photo-1544025162-d76694265947?w=1600&q=80", "duration_ms": 5000, "active": True},
+    ],
+    "fun_facts": [
+        {"id": "ff-1", "image_url": "https://images.unsplash.com/photo-1625220194771-7ebdea0b70b9?w=600&q=80", "title": "Risoles Bunda Itu Resep Turunan", "text": "Resep risoles kami sudah turun-temurun sejak 1985. Isiannya pakai ragout ayam asli, bukan tepung doang. Itulah kenapa anak-anak suka banget!"},
+        {"id": "ff-2", "image_url": "https://images.unsplash.com/photo-1544025162-d76694265947?w=600&q=80", "title": "Bebek Pawon Ayu Direndam 6 Jam", "text": "Bumbu rempah kami direndam ke bebek selama 6 jam sebelum diasap pakai kayu kelapa. Rasanya beneran beda dari bebek instan."},
+        {"id": "ff-3", "image_url": "https://images.unsplash.com/photo-1626202373052-9d6d5b9bca5b?w=600&q=80", "title": "Tanpa Pengawet, Beneran!", "text": "Semua frozen food kami dibekukan dengan blast freezer dalam 30 menit. Jadi awet tanpa perlu bahan pengawet kimia. Aman buat keluarga."},
+        {"id": "ff-4", "image_url": "https://images.unsplash.com/photo-1606503153255-59d8b8b27a45?w=600&q=80", "title": "Cireng Viral Karena TikTok", "text": "Cireng bumbu rujak kami sempat viral di TikTok awal 2025. Sekarang ribuan ibu-ibu Malang pesan tiap minggu buat camilan anak."},
+        {"id": "ff-5", "image_url": "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=600&q=80", "title": "Nugget Tanpa MSG", "text": "Nugget ayam homemade kami pakai daging ayam kampung asli, tanpa MSG, tanpa pewarna. Anak-anak SD suka dipakai bekal sekolah."},
+    ]
 }
 
 DEFAULT_DISCOUNTS = [
@@ -283,7 +334,7 @@ async def seed_database():
     meta = await db.system_meta.find_one({"_id": "schema"})
     if not meta or meta.get("version") != SCHEMA_VERSION:
         logger.info(f"Schema version mismatch ({meta.get('version') if meta else 'none'} → {SCHEMA_VERSION}). Resetting DB.")
-        for c in ["products", "orders", "settings", "financial_entries", "store_config", "discounts", "reviews", "users"]:
+        for c in ["products", "orders", "settings", "financial_entries", "store_config", "discounts", "reviews", "users", "purchases"]:
             await db[c].drop()
         await db.system_meta.update_one({"_id": "schema"}, {"$set": {"version": SCHEMA_VERSION, "updated_at": now_iso()}}, upsert=True)
 
@@ -656,6 +707,213 @@ async def update_store_config(update: StoreConfigUpdate):
     s = await db.store_config.find_one({"_id": "main"}, {"_id": 0})
     await manager.broadcast({"type": "store_config_updated", "data": s})
     return s
+
+# ─── Purchases (Restock) ─────────────────────────────────────────────────────
+@api_router.get("/purchases")
+async def get_purchases(status: Optional[str] = None):
+    q = {} if not status else {"status": status}
+    return await db.purchases.find(q, {"_id": 0}).sort("ordered_at", -1).to_list(500)
+
+@api_router.post("/purchases")
+async def create_purchase(p: PurchaseCreate):
+    ts = now_iso()
+    total = sum(i.subtotal for i in p.items)
+    doc = {
+        "id": str(uuid.uuid4()),
+        "purchase_number": f"PO-{str(await db.purchases.count_documents({}) + 1).zfill(4)}",
+        "items": [i.model_dump() for i in p.items],
+        "supplier": p.supplier,
+        "ordered_at": p.ordered_at,
+        "received_at": None,
+        "status": "ordered",  # ordered | received
+        "notes": p.notes,
+        "total": total,
+        "created_at": ts, "updated_at": ts,
+    }
+    await db.purchases.insert_one(doc)
+    doc.pop("_id", None)
+    await manager.broadcast({"type": "purchase_updated", "data": doc})
+    return doc
+
+@api_router.put("/purchases/{pid}")
+async def update_purchase(pid: str, update: PurchaseUpdate):
+    upd = update.model_dump(exclude_unset=True)
+    if "items" in upd and upd["items"] is not None:
+        upd["total"] = sum(i["subtotal"] for i in upd["items"])
+    upd["updated_at"] = now_iso()
+    await db.purchases.update_one({"id": pid}, {"$set": upd})
+    doc = await db.purchases.find_one({"id": pid}, {"_id": 0})
+    await manager.broadcast({"type": "purchase_updated", "data": doc})
+    return doc
+
+@api_router.post("/purchases/{pid}/receive")
+async def receive_purchase(pid: str, received_at: Optional[str] = None):
+    ts = received_at or now_iso()
+    p = await db.purchases.find_one({"id": pid}, {"_id": 0})
+    if not p:
+        raise HTTPException(404, "Pembelian tidak ditemukan")
+    if p.get("status") == "received":
+        raise HTTPException(400, "Pembelian sudah diterima sebelumnya")
+    # Increment stock + update cost_price per product
+    for item in p.get("items", []):
+        await db.products.update_one(
+            {"id": item["product_id"]},
+            {"$inc": {"stock": item["quantity"]},
+             "$set": {"cost_price": item["unit_cost"], "updated_at": now_iso()}}
+        )
+    await db.purchases.update_one({"id": pid}, {"$set": {"status": "received", "received_at": ts, "updated_at": now_iso()}})
+    doc = await db.purchases.find_one({"id": pid}, {"_id": 0})
+    await manager.broadcast({"type": "purchase_updated", "data": doc})
+    # Broadcast updated products too
+    for item in p.get("items", []):
+        prod = await db.products.find_one({"id": item["product_id"]}, {"_id": 0})
+        if prod:
+            await manager.broadcast({"type": "product_updated", "data": prod})
+    return doc
+
+@api_router.delete("/purchases/{pid}")
+async def delete_purchase(pid: str):
+    await db.purchases.delete_one({"id": pid})
+    await manager.broadcast({"type": "purchase_deleted", "data": {"id": pid}})
+    return {"success": True}
+
+# ─── Smart Insights ──────────────────────────────────────────────────────────
+@api_router.get("/insights/dashboard")
+async def insights_dashboard():
+    """Returns top sellers, restock alerts with avg lead time + recommended qty."""
+    products = await db.products.find({}, {"_id": 0}).to_list(1000)
+    orders = await db.orders.find({"status": {"$nin": ["dibatalkan"]}}, {"_id": 0}).to_list(1000)
+    purchases = await db.purchases.find({"status": "received"}, {"_id": 0}).to_list(1000)
+
+    now = datetime.now(timezone.utc)
+    # 30-day sales velocity per product (units/day)
+    velocity = {}  # product_id -> units/day
+    cutoff = now - timedelta(days=30)
+    for o in orders:
+        try:
+            ts = datetime.fromisoformat(o.get("created_at", "").replace("Z", "+00:00"))
+        except Exception:
+            continue
+        if ts < cutoff:
+            continue
+        for item in o.get("items", []):
+            velocity[item["product_id"]] = velocity.get(item["product_id"], 0) + item["quantity"]
+    for k in velocity:
+        velocity[k] = velocity[k] / 30.0  # units per day
+
+    # Average lead time per product (days between ordered_at and received_at)
+    lead_time = {}  # product_id -> avg days
+    lead_counts = {}
+    for p in purchases:
+        try:
+            o_dt = datetime.fromisoformat(p["ordered_at"].replace("Z", "+00:00"))
+            r_dt = datetime.fromisoformat(p["received_at"].replace("Z", "+00:00"))
+            days = (r_dt - o_dt).total_seconds() / 86400.0
+        except Exception:
+            continue
+        for item in p.get("items", []):
+            pid = item["product_id"]
+            lead_time[pid] = lead_time.get(pid, 0) + days
+            lead_counts[pid] = lead_counts.get(pid, 0) + 1
+    for k in lead_time:
+        lead_time[k] = lead_time[k] / max(1, lead_counts[k])
+
+    # Top sellers (by sold_count desc)
+    top_sellers = sorted(products, key=lambda p: p.get("sold_count", 0), reverse=True)[:5]
+    top_sellers = [{
+        "id": p["id"], "name": p["name"], "image_url": p.get("image_url", ""),
+        "sold_count": p.get("sold_count", 0), "stock": p.get("stock", 0),
+        "velocity": round(velocity.get(p["id"], 0), 2),
+    } for p in top_sellers]
+
+    # Restock alerts: products where stock < velocity * (lead_time or default 3 days) + safety buffer
+    alerts = []
+    for p in products:
+        v = velocity.get(p["id"], 0)
+        lt = lead_time.get(p["id"], 3)  # default 3 days
+        days_left = (p.get("stock", 0) / v) if v > 0 else 999
+        threshold_days = lt + 2  # 2-day safety buffer
+        if v > 0 and days_left < threshold_days:
+            # Suggested restock qty: cover 30 days + buffer
+            suggested_qty = max(int((30 + lt) * v - p.get("stock", 0)), 5)
+            alerts.append({
+                "id": p["id"], "name": p["name"], "image_url": p.get("image_url", ""),
+                "stock": p.get("stock", 0),
+                "velocity": round(v, 2),
+                "avg_lead_days": round(lt, 1),
+                "days_left": round(days_left, 1),
+                "suggested_qty": suggested_qty,
+                "last_cost": p.get("cost_price", 0),
+                "urgency": "high" if days_left < lt else "medium",
+            })
+        elif p.get("stock", 0) < 10:
+            alerts.append({
+                "id": p["id"], "name": p["name"], "image_url": p.get("image_url", ""),
+                "stock": p.get("stock", 0),
+                "velocity": round(v, 2),
+                "avg_lead_days": round(lt, 1),
+                "days_left": round(days_left, 1),
+                "suggested_qty": max(20, int(30 * max(v, 0.5))),
+                "last_cost": p.get("cost_price", 0),
+                "urgency": "low",
+            })
+    alerts.sort(key=lambda a: (a["urgency"] != "high", a["urgency"] != "medium", a["days_left"]))
+
+    return {
+        "top_sellers": top_sellers,
+        "restock_alerts": alerts[:10],
+        "total_products": len(products),
+        "low_stock_count": len([p for p in products if p.get("stock", 0) < 10]),
+    }
+
+# ─── Recommendations ─────────────────────────────────────────────────────────
+@api_router.get("/recommendations")
+async def get_recommendations(user_id: Optional[str] = None, phone: Optional[str] = None, limit: int = 8):
+    """Repeat order + similar-category recommendations for a buyer."""
+    products = await db.products.find({"active": True}, {"_id": 0}).to_list(1000)
+    user_orders = []
+    if user_id:
+        user_orders = await db.orders.find({"user_id": user_id}, {"_id": 0}).to_list(100)
+    if not user_orders and phone:
+        p = normalize_phone(phone)
+        user_orders = await db.orders.find({"customer_phone": {"$in": [phone, p]}}, {"_id": 0}).to_list(100)
+
+    # Most bought by user
+    bought_count = {}
+    bought_categories = set()
+    for o in user_orders:
+        for item in o.get("items", []):
+            bought_count[item["product_id"]] = bought_count.get(item["product_id"], 0) + item["quantity"]
+    pmap = {p["id"]: p for p in products}
+    for pid in bought_count:
+        p = pmap.get(pid)
+        if p:
+            bought_categories.add(p.get("category"))
+            for c in p.get("categories", []):
+                bought_categories.add(c)
+
+    repeat_orders = sorted(
+        [{"product": pmap[pid], "times_bought": cnt} for pid, cnt in bought_count.items() if pid in pmap],
+        key=lambda x: -x["times_bought"]
+    )[:limit]
+
+    similar = []
+    if bought_categories:
+        for p in products:
+            if p["id"] in bought_count:
+                continue
+            if p.get("category") in bought_categories or any(c in bought_categories for c in p.get("categories", [])):
+                similar.append(p)
+        similar = sorted(similar, key=lambda p: -p.get("sold_count", 0))[:limit]
+    else:
+        # New user → return top selling products
+        similar = sorted(products, key=lambda p: -p.get("sold_count", 0))[:limit]
+
+    return {
+        "repeat_orders": repeat_orders,
+        "similar_products": similar,
+        "has_history": len(user_orders) > 0,
+    }
 
 # ─── Discounts ───────────────────────────────────────────────────────────────
 @api_router.get("/discounts")

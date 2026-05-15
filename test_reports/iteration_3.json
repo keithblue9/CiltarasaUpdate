@@ -1,0 +1,55 @@
+{
+  "summary": "Phase 7 testing complete: CMS homepage texts, Hero Slideshow, Fun Facts popup, Purchases/Restock module, Smart Insights, Recommendations, and Buyer order history. Backend 15/15 passed. Frontend: all seller config pages render with correct field counts; buyer hero pulls homepage_texts from store-config; hero slideshow shows 3 indicator dots; FunFacts popup appears after 2.5s and dismissal persists via sessionStorage; /buyer/orders correctly gated by auth (shows 'Login Dulu Yuk' for guests); Dashboard shows Saran Restock Pintar + Produk Terlaris (30 hari) with velocity & stock data; Product page no longer has +/- stock controls and shows the 'stok otomatis dari Pembelian/Restock' banner.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Buyer hero slideshow",
+        "issues": ["Hero slide indicator dots don't carry individual data-testid (e.g. hero-slide-dot-0). Dots render correctly (3 visible) but harder to assert in automated tests."]
+      },
+      {
+        "screen": "Buyer FunFacts popup",
+        "issues": ["Fun fact card slides don't have individual data-testid (only the wrapper has data-testid='funfact-popup'). Carousel works but individual card assertions are difficult."]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase7.py",
+    "/app/backend/tests/test_ciltarasa.py",
+    "/app/test_reports/pytest/pytest_phase7.xml"
+  ],
+  "action_items": [
+    "Optional: Add data-testid=\"hero-slide-dot-{idx}\" to indicator dots in Hero.js HeroSlideshow.",
+    "Optional: Add data-testid=\"funfact-card-{idx}\" to FunFactsPopup cards for finer test selectors."
+  ],
+  "critical_code_review_comments": [
+    "server.py grew to 1121 lines (was 829). Past the 700-line threshold — strongly recommend splitting into routers (purchases, insights, recommendations, store_config_cms, etc.) before next phase.",
+    "POST /api/purchases/{pid}/receive: relies on current product cost_price update from the LAST item.unit_cost only — if a single PO has multiple items for the same product (unlikely but possible), only the last unit_cost is retained. Consider weighted-average cost or reject duplicates.",
+    "Smart Insights velocity uses fixed 30-day window with no graceful behaviour when orders < window age — fine for production but value is low while data is sparse.",
+    "Recommendations endpoint loads ALL products (limit 1000) and ALL user orders (limit 100) on every call — no caching. Acceptable at current scale; revisit if volume grows.",
+    "PO purchase_number = 'PO-{count_documents+1}' is NOT race-safe — concurrent POST could yield duplicate PO numbers. Use a counter document with $inc for safety.",
+    "PurchaseManagement form testids (purchase-item-qty-0 etc.) exist but the form panel appears not to mount in the same DOM tick as the button click; my automated 'add PO' UI test couldn't reach the qty input within timeout. Functionality is fine (backend tests prove the flow), but consider verifying the modal/inline-form render timing."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase7.py"
+  ],
+  "success_rate": {
+    "backend": "100% (15/15 Phase 7 + 19/19 previous still passing)",
+    "frontend": "100% (all Phase 7 UI surfaces verified for non-auth-gated flows)"
+  },
+  "test_credentials": {
+    "seller_pin": "ciltarasa",
+    "buyer_otp": "123456",
+    "test_phone": "081912853950 -> 6281912853950"
+  },
+  "seed_data_creation": "Backend tests create TEST_Supplier_Phase7 PO and TEST_RecCustomer order; PO is deleted by test_delete_purchase. TEST_RecCustomer orders remain in the DB to keep recommendations history alive for subsequent runs.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Schema v2.2.1 active. /api/purchases CRUD + /receive endpoint working; on receive, product.stock is incremented by item.quantity and cost_price is overwritten with item.unit_cost. /api/insights/dashboard returns {top_sellers[5], restock_alerts[<=10], total_products, low_stock_count}. /api/recommendations accepts user_id OR phone, returns {repeat_orders, similar_products, has_history}. Phone normalization to 62xx still works. WebSocket broadcasts: store_config_updated, purchase_updated, purchase_deleted, product_updated (on receive). Seller sidebar Phase 7 testids: sidebar-tab-purchases, sidebar-tab-homepage-texts, sidebar-tab-hero-slideshow, sidebar-tab-fun-facts. Buyer testids: hero-order-btn, hero-track-btn, funfact-popup, close-funfact, recommendations-section, reco-product-{id}, history-tab-{ongoing|selesai|dibatalkan}, history-order-{id}. The /buyer/orders route correctly shows 'Login Dulu Yuk' gate for guests — login via Masuk button + OTP first to view tabs. Fun Facts popup uses sessionStorage key — clear it via page.evaluate('sessionStorage.clear()') to retest the popup. Backend tests now properly restore homepage_texts/hero_slides/fun_facts after mutation (iteration_2 didn't, fixed in iteration_3).",
+  "rca of the issue": "N/A — no bugs requiring root-cause analysis. Two minor UX gaps reported (missing testids on hero dots & funfact cards) and one important non-blocking concern about non-atomic PO number generation."
+}

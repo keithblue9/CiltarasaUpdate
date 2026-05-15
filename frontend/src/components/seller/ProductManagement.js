@@ -252,6 +252,13 @@ export default function ProductManagement() {
         </button>
       </div>
 
+      <div className="bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-200 rounded-2xl p-3 text-xs text-blue-900 flex items-start gap-2">
+        <span className="text-base">💡</span>
+        <div>
+          <strong>Info:</strong> Stok otomatis bertambah dari menu <strong>Pembelian / Restock</strong>. Di sini Anda hanya menambah/edit info produk, set diskon, dan kelola promo.
+        </div>
+      </div>
+
       <div className="flex gap-2 overflow-x-auto pb-2">
         <button onClick={() => setFilter('all')} className={`px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap ${filter==='all'?'bg-gradient-to-r from-[#F97316] to-[#EA580C] text-white':'bg-white border border-[#FED7AA] text-[#7C2D12]'}`}>Semua ({products.length})</button>
         {allCats.map(c => (
@@ -298,12 +305,8 @@ export default function ProductManagement() {
               </div>
 
               <div className="flex items-center gap-2 mb-3">
-                <span className="text-sm font-semibold text-[#7C2D12]">Stok:</span>
-                <div className="flex items-center border border-[#FED7AA] rounded-full overflow-hidden">
-                  <button onClick={() => handleStockChange(product, -1)} className="px-2.5 py-1 text-[#7C2D12] hover:bg-[#FED7AA] font-bold">-</button>
-                  <span className="px-3 text-sm font-bold text-[#7C2D12] min-w-[32px] text-center">{product.stock}</span>
-                  <button onClick={() => handleStockChange(product, 1)} className="px-2.5 py-1 text-[#7C2D12] hover:bg-[#FED7AA] font-bold">+</button>
-                </div>
+                <span className="text-xs font-semibold text-[#7C2D12]">Stok:</span>
+                <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-[#FEF3C7] text-[#7C2D12]">{product.stock} {product.unit || ''}</span>
                 <button onClick={() => handleToggle(product)} className="ml-auto" data-testid={`toggle-product-${product.id}`}>
                   {product.active ? <ToggleRight size={28} className="text-[#EA580C]" /> : <ToggleLeft size={28} className="text-gray-400" />}
                 </button>

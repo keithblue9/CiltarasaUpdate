@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Save, Plus, Trash2, Store, BookOpen, FolderTree, Truck, CreditCard, Image as ImageIcon, MapPin, Phone, Clock, Instagram, Music2 } from 'lucide-react';
+import { Save, Plus, Trash2, Store, BookOpen, FolderTree, Truck, CreditCard, Image as ImageIcon, MapPin, Phone, Clock, Instagram, Music2, Type, ImagePlus, Sparkles, ChevronUp, ChevronDown } from 'lucide-react';
 import axios from 'axios';
 import { useApp } from '../../context/AppContext';
 import { toast } from 'sonner';
@@ -285,6 +285,177 @@ export function PaymentsConfig() {
                 <div className="col-span-5"><Field label="Detail / Petunjuk"><input className={inputCls} value={it.details} onChange={e => update(idx, 'details', e.target.value)} /></Field></div>
                 <div className="col-span-1 pb-2"><input type="checkbox" checked={it.active} onChange={e => update(idx, 'active', e.target.checked)} className="w-4 h-4 accent-[#EA580C]" /></div>
                 <button onClick={() => remove(idx)} className="col-span-1 p-2.5 rounded-xl bg-red-50 text-red-500"><Trash2 size={16} /></button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Section>
+    </div>
+  );
+}
+
+
+// ─── HOMEPAGE TEXTS (CMS) ──────────────────────────────────────
+const TEXT_FIELDS = [
+  { key: 'viral_pill', label: 'Pill atas Hero (badge viral)', placeholder: 'Lagi Viral di Malang 🔥' },
+  { key: 'hero_title_1', label: 'Hero Judul Baris 1', placeholder: 'Cemilan Frozen' },
+  { key: 'hero_title_2', label: 'Hero Judul Baris 2 (highlight)', placeholder: 'Yang Bikin Nagih' },
+  { key: 'hero_subtitle', label: 'Hero Subtitle', placeholder: 'Frozen snack premium...', multiline: true },
+  { key: 'hero_cta_primary', label: 'Tombol Hero #1 (Beli)', placeholder: 'Belanja Sekarang' },
+  { key: 'hero_cta_secondary', label: 'Tombol Hero #2 (Lacak)', placeholder: 'Lacak Pesananku' },
+  { key: 'social_proof_text', label: 'Teks Social Proof', placeholder: '1.200+ keluarga...' },
+  { key: 'how_to_order_title', label: 'Judul Section "Cara Pesan"', placeholder: 'Cara Pesan' },
+  { key: 'how_to_order_subtitle', label: 'Subtitle "Cara Pesan"', placeholder: 'Mudah, cepat, dan praktis' },
+  { key: 'catalog_section_title', label: 'Judul Katalog', placeholder: 'Lagi Viral Bulan Ini 🔥' },
+  { key: 'catalog_section_subtitle', label: 'Subtitle Katalog', placeholder: 'Pilihan frozen food premium' },
+  { key: 'tab_menu_label', label: 'Label Tab "Menu Kami"', placeholder: '🍽️ Menu Kami' },
+  { key: 'tab_about_label', label: 'Label Tab "Tentang Kami"', placeholder: '✨ Tentang Kami' },
+];
+
+export function HomepageTextsConfig() {
+  const { storeConfig, refreshStoreConfig } = useApp();
+  const [texts, setTexts] = useState({});
+  const [saving, setSaving] = useState(false);
+  useEffect(() => { setTexts(storeConfig?.homepage_texts || {}); }, [storeConfig]);
+  const set = (k, v) => setTexts(prev => ({ ...prev, [k]: v }));
+  const save = async () => {
+    setSaving(true);
+    try { await axios.put(`${API}/api/store-config`, { homepage_texts: texts }); await refreshStoreConfig(); toast.success('Teks homepage tersimpan! Buyer akan lihat update real-time 🎉'); }
+    catch { toast.error('Gagal simpan'); } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="font-heading text-2xl font-bold text-[#7C2D12]">Teks Homepage Buyer</h1>
+          <p className="text-xs text-[#9A3412] mt-0.5">Edit semua tulisan yang muncul di homepage buyer. Update langsung tampil real-time.</p>
+        </div>
+        <button data-testid="save-homepage-texts-btn" onClick={save} disabled={saving} className="flex items-center gap-2 bg-gradient-to-r from-[#F97316] to-[#EA580C] text-white font-bold px-5 py-2.5 rounded-full shadow"><Save size={16} /> {saving ? 'Menyimpan...' : 'Simpan'}</button>
+      </div>
+      <Section title="Teks Hero & Homepage" icon={Type}>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {TEXT_FIELDS.map(f => (
+            <div key={f.key} className={f.multiline ? 'md:col-span-2' : ''}>
+              <Field label={f.label}>
+                {f.multiline ? (
+                  <textarea data-testid={`text-input-${f.key}`} rows={2} className={inputCls + ' resize-none'} value={texts[f.key] || ''} onChange={e => set(f.key, e.target.value)} placeholder={f.placeholder} />
+                ) : (
+                  <input data-testid={`text-input-${f.key}`} className={inputCls} value={texts[f.key] || ''} onChange={e => set(f.key, e.target.value)} placeholder={f.placeholder} />
+                )}
+              </Field>
+            </div>
+          ))}
+        </div>
+      </Section>
+    </div>
+  );
+}
+
+// ─── HERO SLIDESHOW ────────────────────────────────────────────
+export function HeroSlideshowConfig() {
+  const { storeConfig, refreshStoreConfig } = useApp();
+  const [slides, setSlides] = useState([]);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => { setSlides(storeConfig?.hero_slides || []); }, [storeConfig]);
+  const add = () => setSlides([...slides, { id: 'slide-' + Date.now(), image_url: '', duration_ms: 5000, active: true }]);
+  const update = (idx, k, v) => { const u = [...slides]; u[idx] = { ...u[idx], [k]: v }; setSlides(u); };
+  const remove = (idx) => setSlides(slides.filter((_, i) => i !== idx));
+  const move = (idx, dir) => {
+    const ni = idx + dir;
+    if (ni < 0 || ni >= slides.length) return;
+    const u = [...slides];
+    [u[idx], u[ni]] = [u[ni], u[idx]];
+    setSlides(u);
+  };
+  const save = async () => {
+    setSaving(true);
+    try { await axios.put(`${API}/api/store-config`, { hero_slides: slides }); await refreshStoreConfig(); toast.success('Slideshow tersimpan! 🎬'); }
+    catch { toast.error('Gagal simpan'); } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="font-heading text-2xl font-bold text-[#7C2D12]">Slideshow Hero</h1>
+          <p className="text-xs text-[#9A3412] mt-0.5">Slideshow gambar background di homepage buyer. Set durasi per slide (ms).</p>
+        </div>
+        <button data-testid="save-slides-btn" onClick={save} disabled={saving} className="flex items-center gap-2 bg-gradient-to-r from-[#F97316] to-[#EA580C] text-white font-bold px-5 py-2.5 rounded-full shadow"><Save size={16} /> {saving ? 'Menyimpan...' : 'Simpan'}</button>
+      </div>
+      <Section title="Daftar Slide" icon={ImagePlus} action={<button data-testid="add-slide-btn" onClick={add} className="flex items-center gap-1 text-xs font-bold text-[#EA580C] hover:underline"><Plus size={14} /> Tambah</button>}>
+        <p className="text-[11px] text-gray-500 mb-3">💡 Pakai URL gambar landscape resolusi tinggi (min 1600px lebar). Durasi dalam millisecond (5000 = 5 detik).</p>
+        <div className="space-y-3">
+          {slides.length === 0 && <p className="text-sm text-gray-500 text-center py-6">Belum ada slide. Tambahkan slide pertamamu!</p>}
+          {slides.map((s, idx) => (
+            <div key={idx} className="grid grid-cols-12 gap-2 items-center p-3 rounded-xl bg-[#FFFBF5] border border-[#FED7AA]">
+              <div className="col-span-2">
+                <div className="w-full aspect-video rounded-lg bg-gray-100 overflow-hidden">
+                  {s.image_url ? <img src={s.image_url} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-gray-400"><ImageIcon size={20} /></div>}
+                </div>
+                <p className="text-[10px] text-center text-[#9A3412] mt-1 font-bold">#{idx + 1}</p>
+              </div>
+              <div className="col-span-6"><Field label="URL Gambar"><input className={inputCls} value={s.image_url} onChange={e => update(idx, 'image_url', e.target.value)} placeholder="https://..." /></Field></div>
+              <div className="col-span-2"><Field label="Durasi (ms)"><input type="number" className={inputCls} value={s.duration_ms} onChange={e => update(idx, 'duration_ms', Number(e.target.value))} /></Field></div>
+              <div className="col-span-1 flex flex-col items-center gap-1 pt-3">
+                <label className="flex items-center cursor-pointer text-[10px] font-bold text-[#7C2D12]">
+                  <input type="checkbox" checked={s.active !== false} onChange={e => update(idx, 'active', e.target.checked)} className="w-4 h-4 accent-[#EA580C]" />
+                </label>
+              </div>
+              <div className="col-span-1 flex flex-col gap-1">
+                <button onClick={() => move(idx, -1)} disabled={idx === 0} className="p-1 rounded bg-white border border-[#FED7AA] disabled:opacity-30"><ChevronUp size={12} /></button>
+                <button onClick={() => move(idx, 1)} disabled={idx === slides.length - 1} className="p-1 rounded bg-white border border-[#FED7AA] disabled:opacity-30"><ChevronDown size={12} /></button>
+                <button onClick={() => remove(idx)} className="p-1 rounded bg-red-50 text-red-500"><Trash2 size={12} /></button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Section>
+    </div>
+  );
+}
+
+// ─── FUN FACTS ─────────────────────────────────────────────────
+export function FunFactsConfig() {
+  const { storeConfig, refreshStoreConfig } = useApp();
+  const [facts, setFacts] = useState([]);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => { setFacts(storeConfig?.fun_facts || []); }, [storeConfig]);
+  const add = () => setFacts([...facts, { id: 'ff-' + Date.now(), image_url: '', title: '', text: '' }]);
+  const update = (idx, k, v) => { const u = [...facts]; u[idx] = { ...u[idx], [k]: v }; setFacts(u); };
+  const remove = (idx) => setFacts(facts.filter((_, i) => i !== idx));
+  const save = async () => {
+    setSaving(true);
+    try { await axios.put(`${API}/api/store-config`, { fun_facts: facts }); await refreshStoreConfig(); toast.success('Fun facts tersimpan! ✨'); }
+    catch { toast.error('Gagal simpan'); } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="font-heading text-2xl font-bold text-[#7C2D12]">Fun Facts Popup</h1>
+          <p className="text-xs text-[#9A3412] mt-0.5">Popup edukasi pelanggan di homepage buyer (bisa di-swipe). Best practice: 5 fun facts.</p>
+        </div>
+        <button data-testid="save-funfacts-btn" onClick={save} disabled={saving} className="flex items-center gap-2 bg-gradient-to-r from-[#F97316] to-[#EA580C] text-white font-bold px-5 py-2.5 rounded-full shadow"><Save size={16} /> {saving ? 'Menyimpan...' : 'Simpan'}</button>
+      </div>
+      <Section title="Daftar Fun Facts" icon={Sparkles} action={<button data-testid="add-funfact-btn" onClick={add} className="flex items-center gap-1 text-xs font-bold text-[#EA580C] hover:underline"><Plus size={14} /> Tambah</button>}>
+        <div className="space-y-3">
+          {facts.length === 0 && <p className="text-sm text-gray-500 text-center py-6">Belum ada fun fact. Buat 5 fakta menarik tentang toko!</p>}
+          {facts.map((f, idx) => (
+            <div key={idx} className="grid grid-cols-12 gap-3 p-4 rounded-xl bg-[#FFFBF5] border border-[#FED7AA]">
+              <div className="col-span-12 sm:col-span-3">
+                <div className="aspect-[4/3] rounded-lg bg-gray-100 overflow-hidden mb-2">
+                  {f.image_url ? <img src={f.image_url} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-gray-400"><ImageIcon size={32} /></div>}
+                </div>
+                <Field label="URL Gambar"><input className={inputCls + ' text-xs'} value={f.image_url} onChange={e => update(idx, 'image_url', e.target.value)} placeholder="https://..." /></Field>
+              </div>
+              <div className="col-span-11 sm:col-span-8 space-y-2">
+                <Field label={`Judul Fun Fact #${idx + 1}`}><input data-testid={`funfact-title-${idx}`} className={inputCls} value={f.title} onChange={e => update(idx, 'title', e.target.value)} placeholder="Risoles Bunda Itu Resep Turunan" /></Field>
+                <Field label="Narasi / Cerita"><textarea data-testid={`funfact-text-${idx}`} rows={3} className={inputCls + ' resize-none'} value={f.text} onChange={e => update(idx, 'text', e.target.value)} placeholder="Cerita menarik tentang produk atau brand..." /></Field>
+              </div>
+              <div className="col-span-1 flex justify-end">
+                <button onClick={() => remove(idx)} className="p-2 rounded-lg bg-red-50 text-red-500 self-start"><Trash2 size={14} /></button>
               </div>
             </div>
           ))}

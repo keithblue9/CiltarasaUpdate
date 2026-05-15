@@ -30,6 +30,9 @@ export function AppProvider({ children }) {
   const [storeConfig, setStoreConfig] = useState(null);
   const [discounts, setDiscounts] = useState([]);
   const [reviews, setReviews] = useState([]);
+  const [purchases, setPurchases] = useState([]);
+  const [insights, setInsights] = useState(null);
+  const [recommendations, setRecommendations] = useState(null);
   const [wsConnected, setWsConnected] = useState(false);
   const [wsEvent, setWsEvent] = useState(null);
   const [cart, dispatch] = useReducer(cartReducer, []);
@@ -74,6 +77,7 @@ export function AppProvider({ children }) {
     axios.get(`${API}/api/store-config`).then(r => setStoreConfig(r.data)).catch(() => {});
     axios.get(`${API}/api/discounts`).then(r => setDiscounts(r.data)).catch(() => {});
     axios.get(`${API}/api/reviews`).then(r => setReviews(r.data)).catch(() => {});
+    axios.get(`${API}/api/purchases`).then(r => setPurchases(r.data)).catch(() => {});
   };
   useEffect(() => { loadAll(); }, []);
 
@@ -116,6 +120,16 @@ export function AppProvider({ children }) {
           if (msg.type === 'review_created') {
             setReviews(prev => [msg.data, ...prev]);
             axios.get(`${API}/api/products`).then(r => setProducts(r.data)).catch(() => {});
+          }
+          if (msg.type === 'purchase_updated') {
+            setPurchases(prev => {
+              const idx = prev.findIndex(p => p.id === msg.data.id);
+              if (idx >= 0) { const u = [...prev]; u[idx] = msg.data; return u; }
+              return [msg.data, ...prev];
+            });
+          }
+          if (msg.type === 'purchase_deleted') {
+            setPurchases(prev => prev.filter(p => p.id !== msg.data.id));
           }
         } catch {}
       };
@@ -180,6 +194,15 @@ export function AppProvider({ children }) {
     refreshStoreConfig: () => axios.get(`${API}/api/store-config`).then(r => setStoreConfig(r.data)),
     refreshDiscounts: () => axios.get(`${API}/api/discounts`).then(r => setDiscounts(r.data)),
     refreshReviews: () => axios.get(`${API}/api/reviews`).then(r => setReviews(r.data)),
+    purchases,
+    refreshPurchases: () => axios.get(`${API}/api/purchases`).then(r => setPurchases(r.data)),
+    insights,
+    fetchInsights: () => axios.get(`${API}/api/insights/dashboard`).then(r => { setInsights(r.data); return r.data; }),
+    recommendations,
+    fetchRecommendations: (params = {}) => {
+      const qs = new URLSearchParams(params).toString();
+      return axios.get(`${API}/api/recommendations?${qs}`).then(r => { setRecommendations(r.data); return r.data; });
+    },
     // Auth
     authUser,
     authToken,

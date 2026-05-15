@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Package, ShoppingBag, BarChart2, DollarSign, MessageCircle, LogOut, X, Wifi, WifiOff, Store, BookOpen, FolderTree, Truck, CreditCard, Tag, Settings } from 'lucide-react';
+import { LayoutDashboard, Package, ShoppingBag, BarChart2, DollarSign, MessageCircle, LogOut, X, Wifi, WifiOff, Store, BookOpen, FolderTree, Truck, CreditCard, Tag, Settings, Type, ImagePlus, Sparkles, ShoppingCart } from 'lucide-react';
 import { LogoWithText } from '../shared/Logo';
 import { useApp } from '../../context/AppContext';
 
@@ -7,6 +7,7 @@ const operationalTabs = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'orders', label: 'Pesanan Masuk', icon: ShoppingBag },
   { id: 'products', label: 'Produk', icon: Package },
+  { id: 'purchases', label: 'Pembelian / Restock', icon: ShoppingCart },
   { id: 'sales', label: 'Lap. Penjualan', icon: BarChart2 },
   { id: 'financial', label: 'Lap. Keuangan', icon: DollarSign },
 ];
@@ -14,6 +15,9 @@ const operationalTabs = [
 const configTabs = [
   { id: 'store-profile', label: 'Profil Toko', icon: Store },
   { id: 'store-cerita', label: 'Cerita Perjalanan', icon: BookOpen },
+  { id: 'homepage-texts', label: 'Teks Homepage', icon: Type },
+  { id: 'hero-slideshow', label: 'Slideshow Hero', icon: ImagePlus },
+  { id: 'fun-facts', label: 'Fun Facts Popup', icon: Sparkles },
   { id: 'categories', label: 'Kategori Produk', icon: FolderTree },
   { id: 'delivery', label: 'Layanan Pengiriman', icon: Truck },
   { id: 'payments', label: 'Metode Pembayaran', icon: CreditCard },

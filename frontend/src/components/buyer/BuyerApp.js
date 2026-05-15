@@ -10,6 +10,9 @@ import Checkout from './Checkout';
 import OrderTracking from './OrderTracking';
 import OnboardingModal from './OnboardingModal';
 import FlashSaleBanner from './FlashSaleBanner';
+import FunFactsPopup from './FunFactsPopup';
+import RecommendationsStrip from './RecommendationsStrip';
+import OrderHistory from './OrderHistory';
 
 function ProfileMenu() {
   const { authUser, logout, setAuthMode } = useApp();
@@ -51,7 +54,7 @@ function ProfileMenu() {
               <p className="text-xs text-[#9A3412] mt-0.5">+{authUser.phone}</p>
             </div>
             <button
-              onClick={() => { navigate('/buyer/track'); setOpen(false); }}
+              onClick={() => { navigate('/buyer/orders'); setOpen(false); }}
               className="w-full px-4 py-3 flex items-center gap-3 hover:bg-[#FFF7ED] text-left transition-colors"
             >
               <Package size={16} className="text-[#EA580C]" />
@@ -185,6 +188,7 @@ function BuyerHome() {
     <>
       <Hero />
       <FlashSaleBanner />
+      <RecommendationsStrip />
       <Catalog />
     </>
   );
@@ -195,12 +199,14 @@ export default function BuyerApp() {
   return (
     <div className="min-h-screen bg-[#FDF8F0] font-body">
       <OnboardingModal />
+      <FunFactsPopup />
       <BuyerHeader onCartClick={() => setCartOpen(true)} />
       <CartDrawer open={cartOpen} onClose={() => setCartOpen(false)} />
       <Routes>
         <Route index element={<BuyerHome />} />
         <Route path="checkout" element={<Checkout />} />
         <Route path="track" element={<OrderTracking />} />
+        <Route path="orders" element={<OrderHistory />} />
       </Routes>
       <BuyerFooter />
     </div>

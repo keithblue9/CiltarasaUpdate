@@ -7,8 +7,9 @@ import IncomingOrders from './IncomingOrders';
 import SalesReport from './SalesReport';
 import FinancialReport from './FinancialReport';
 import WhatsAppSettings from './WhatsAppSettings';
-import { StoreProfile, StoreCerita, CategoriesConfig, DeliveryConfig, PaymentsConfig } from './StoreConfigPages';
+import { StoreProfile, StoreCerita, CategoriesConfig, DeliveryConfig, PaymentsConfig, HomepageTextsConfig, HeroSlideshowConfig, FunFactsConfig } from './StoreConfigPages';
 import DiscountManagement from './DiscountManagement';
+import PurchaseManagement from './PurchaseManagement';
 
 const PIN = 'ciltarasa';
 
@@ -38,11 +39,15 @@ export default function SellerApp() {
   const tabContent = {
     dashboard: <DashboardOverview onTabChange={setActiveTab} />,
     products: <ProductManagement />,
+    purchases: <PurchaseManagement />,
     orders: <IncomingOrders />,
     sales: <SalesReport />,
     financial: <FinancialReport />,
     'store-profile': <StoreProfile />,
     'store-cerita': <StoreCerita />,
+    'homepage-texts': <HomepageTextsConfig />,
+    'hero-slideshow': <HeroSlideshowConfig />,
+    'fun-facts': <FunFactsConfig />,
     categories: <CategoriesConfig />,
     delivery: <DeliveryConfig />,
     payments: <PaymentsConfig />,
