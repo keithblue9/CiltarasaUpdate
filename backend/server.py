@@ -870,8 +870,15 @@ async def get_store_config():
 @api_router.put("/store-config")
 async def update_store_config(update: StoreConfigUpdate, _auth: bool = Depends(require_seller)):
     upd = update.model_dump(exclude_unset=True)
-    upd["updated_at"] = now_iso()
-    await db.store_config.update_one({"_id": "main"}, {"$set": upd}, upsert=True)
+    # Deep-merge: for dict fields, expand to dot-notation so we don't wipe sibling keys
+    set_ops = {"updated_at": now_iso()}
+    for k, v in upd.items():
+        if isinstance(v, dict):
+            for sk, sv in v.items():
+                set_ops[f"{k}.{sk}"] = sv
+        else:
+            set_ops[k] = v
+    await db.store_config.update_one({"_id": "main"}, {"$set": set_ops}, upsert=True)
     s = await db.store_config.find_one({"_id": "main"}, {"_id": 0})
     await manager.broadcast({"type": "store_config_updated", "data": s})
     return s
