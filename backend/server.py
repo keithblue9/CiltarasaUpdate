@@ -1,4 +1,5 @@
-from fastapi import FastAPI, APIRouter, WebSocket, WebSocketDisconnect, HTTPException, Header, Depends
+from fastapi import FastAPI, APIRouter, WebSocket, WebSocketDisconnect, HTTPException, Header, Depends, UploadFile, File
+from fastapi.responses import Response
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -28,7 +29,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Schema version — bump to force re-seed
-SCHEMA_VERSION = "v2.3.1"
+SCHEMA_VERSION = "v2.4.1"
 
 SELLER_PIN = os.environ.get("SELLER_PIN", "ciltarasa")
 APP_URL = os.environ.get("APP_URL", "")
@@ -288,6 +289,7 @@ class StoreConfigUpdate(BaseModel):
     payment_methods: Optional[List[Dict[str, Any]]] = None
     social_links: Optional[Dict[str, str]] = None
     homepage_texts: Optional[Dict[str, str]] = None
+    onboarding_texts: Optional[Dict[str, str]] = None
     hero_slides: Optional[List[Dict[str, Any]]] = None
     fun_facts: Optional[List[Dict[str, Any]]] = None
     how_to_order_steps: Optional[List[Dict[str, Any]]] = None
@@ -353,7 +355,7 @@ DEFAULT_PRODUCTS = [
 ]
 
 DEFAULT_SETTINGS = {
-    "seller_whatsapp": "6281912853950",
+    "seller_whatsapp": "6285249682337",
     "store_name": "Ciltarasa",
     "auto_whatsapp": True,
     "message_template": "PESANAN BARU - Ciltarasa\n\nOrder ID: #{order_id}\nPelanggan: {customer_name}\nNo. HP: {customer_phone}\nAlamat: {customer_address}\n\nDetail Pesanan:\n{items_detail}\n\nTotal: Rp {total}\nCatatan: {notes}\n\nSilakan konfirmasi pesanan ini di dashboard Ciltarasa."
@@ -364,7 +366,7 @@ DEFAULT_STORE_CONFIG = {
     "name": "Ciltarasa",
     "logo_url": "",
     "tagline": "Frozen Food Premium • Malang",
-    "whatsapp": "6281912853950",
+    "whatsapp": "6285249682337",
     "address": "Jl. Kawi No. 15, Malang, Jawa Timur",
     "operating_hours": "Setiap Hari • 08.00 - 21.00 WIB",
     "cerita": "Ciltarasa lahir dari dapur kecil di Malang tahun 2020. Bermula dari pesanan tetangga yang suka risoles homemade buatan Bunda, kini kami sudah melayani ribuan keluarga di seluruh Malang Raya.\n\nKami percaya makanan beku berkualitas itu bukan instant—tiap produk dibuat fresh tiap hari, dibekukan dengan blast freezer, dan dikirim langsung ke rumah Anda. Tanpa pengawet, tanpa MSG berlebih, hanya rasa autentik yang bikin keluarga ketagihan.\n\nSpesialisasi kami: aneka frozen snack (risoles, lumpia, pastel, cireng) dan Bebek Asap Pawon Ayu—signature dish dengan bumbu rempah Jawa yang sudah turun-temurun.",
@@ -429,6 +431,21 @@ DEFAULT_STORE_CONFIG = {
         {"id": "s2", "icon": "📝", "title": "Isi Data Pesanan", "desc": "Lengkapi nama, nomor HP, dan alamat pengiriman."},
         {"id": "s3", "icon": "🎉", "title": "Pesanan Dikirim", "desc": "Kami proses dan kirim langsung ke pintumu!"},
     ],
+    "onboarding_texts": {
+        "header_title": "Halo, Bunda! 🦆",
+        "header_subtitle": "Frozen Food premium yang lagi viral di Malang",
+        "welcome_title": "Yuk, mulai belanja!",
+        "welcome_subtitle": "Daftar dulu untuk akses promo eksklusif & tracking pesanan yang gampang banget ✨",
+        "register_label": "Daftar Sekarang",
+        "register_subtitle": "Dapatkan poin & promo special",
+        "login_label": "Masuk",
+        "login_subtitle": "Sudah punya akun? Masuk yuk",
+        "guest_label": "Lanjut sebagai Tamu",
+        "guest_subtitle": "Belanja tanpa daftar (no promo)",
+        "tos_text": "Dengan melanjutkan, kamu setuju dengan syarat & ketentuan Ciltarasa",
+        "otp_hint": "📱 Cek WhatsApp kamu untuk lihat kode OTP yang dikirim",
+        "phone_hint": "💡 Pastikan nomor WhatsApp aktif untuk terima kode OTP",
+    },
     "fonnte_token": "QyMJ55FmqmLQGUxmwsBw",
     "seller_notify_phone": "6285249682337",
     "wa_notif_enabled": True,
@@ -1268,6 +1285,43 @@ async def get_financial_report():
         "monthly": monthly, "transactions": completed[:50],
         "expense_entries": entries,
     }
+
+# ─── Media Upload ────────────────────────────────────────────────────────────
+ALLOWED_MIME = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+MAX_UPLOAD_BYTES = 5 * 1024 * 1024  # 5MB
+
+@api_router.post("/media/upload")
+async def media_upload(file: UploadFile = File(...), _auth: bool = Depends(require_seller)):
+    if file.content_type not in ALLOWED_MIME:
+        raise HTTPException(400, "Format tidak didukung. Gunakan JPG/PNG/WEBP/GIF.")
+    data = await file.read()
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(400, f"Ukuran maksimal 5 MB. File kamu {round(len(data)/1024/1024,1)} MB.")
+    import base64
+    mid = str(uuid.uuid4())
+    await db.media.insert_one({
+        "id": mid,
+        "filename": file.filename or "upload",
+        "content_type": file.content_type,
+        "size": len(data),
+        "data_b64": base64.b64encode(data).decode("ascii"),
+        "created_at": now_iso(),
+    })
+    # Build public URL
+    return {"id": mid, "url": f"/api/media/{mid}", "size": len(data), "content_type": file.content_type}
+
+@api_router.get("/media/{mid}")
+async def media_get(mid: str):
+    doc = await db.media.find_one({"id": mid})
+    if not doc:
+        raise HTTPException(404, "Not found")
+    import base64
+    data = base64.b64decode(doc["data_b64"])
+    return Response(
+        content=data,
+        media_type=doc.get("content_type", "image/jpeg"),
+        headers={"Cache-Control": "public, max-age=31536000"},
+    )
 
 # ─── Root ────────────────────────────────────────────────────────────────────
 @api_router.get("/")
