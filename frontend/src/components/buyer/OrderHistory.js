@@ -3,6 +3,7 @@ import { ArrowLeft, Package, Clock, CheckCircle2, XCircle, ShoppingBag } from 'l
 import axios from 'axios';
 import { useApp } from '../../context/AppContext';
 import { useNavigate } from 'react-router-dom';
+import SmartImage from '../shared/SmartImage';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 const fmtRp = (n) => `Rp ${Number(n).toLocaleString('id-ID')}`;
@@ -38,7 +39,7 @@ function OrderItem({ order, onClick }) {
       <div className="flex items-center gap-3">
         {order.items?.slice(0, 3).map((item, i) => (
           <div key={i} className="relative w-12 h-12 rounded-lg overflow-hidden bg-[#FFFBF5] border border-[#FED7AA] flex-shrink-0">
-            {item.image_url && <img src={item.image_url} alt="" className="w-full h-full object-cover" />}
+            {item.image_url && <SmartImage src={item.image_url} alt="" className="w-full h-full object-cover" />}
           </div>
         ))}
         {order.items?.length > 3 && (

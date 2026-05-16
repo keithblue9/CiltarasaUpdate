@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronRight, Sparkles, Flame } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import SmartImage from '../shared/SmartImage';
 
 const DEFAULT_SLIDE = 'https://static.prod-images.emergentagent.com/jobs/fa7f3ba8-8537-4e4d-b681-0c7370599acf/images/3fd09d3c0fc14b6148e6065a022d94002c52a9aafb799d7dda170d7445053fd9.png';
 
@@ -37,7 +38,7 @@ function HeroSlideshow({ slides }) {
   if (activeSlides.length === 0) {
     return (
       <>
-        <img src={DEFAULT_SLIDE} alt="" className="w-full h-full object-cover" />
+        <SmartImage src={DEFAULT_SLIDE} alt="" className="w-full h-full object-cover" />
         <div className="absolute inset-0 bg-gradient-to-r from-[#451A03]/85 via-[#78350F]/55 to-transparent" />
       </>
     );
@@ -45,7 +46,7 @@ function HeroSlideshow({ slides }) {
   return (
     <>
       {activeSlides.map((s, i) => (
-        <img
+        <SmartImage
           key={s.id || i}
           src={s.image_url}
           alt=""

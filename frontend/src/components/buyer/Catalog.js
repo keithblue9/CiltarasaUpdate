@@ -4,6 +4,7 @@ import { useApp } from '../../context/AppContext';
 import { toast } from 'sonner';
 import ProductDetailModal from './ProductDetailModal';
 import AboutSection from './AboutSection';
+import SmartImage from '../shared/SmartImage';
 
 const formatRp = (n) => `Rp ${Number(n).toLocaleString('id-ID')}`;
 
@@ -32,7 +33,7 @@ function ProductCard({ product, onAdd, onOpen, staggerIdx }) {
       className={`group bg-white rounded-2xl border border-[#FED7AA] overflow-hidden cursor-pointer hover:shadow-xl hover:-translate-y-1 transition-all duration-300 fade-in-up stagger-${Math.min(staggerIdx + 1, 8)}`}
     >
       <div className="relative aspect-square overflow-hidden">
-        <img src={product.image_url} alt={product.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
+        <SmartImage src={product.image_url} alt={product.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
 
         {/* Badges */}
         <div className="absolute top-2 left-2 flex flex-col gap-1.5">

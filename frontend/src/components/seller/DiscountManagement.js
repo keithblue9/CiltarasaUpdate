@@ -3,6 +3,7 @@ import { Plus, Trash2, Edit2, Tag, X, Save } from 'lucide-react';
 import axios from 'axios';
 import { useApp } from '../../context/AppContext';
 import { toast } from 'sonner';
+import SmartImage from '../shared/SmartImage';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 const fmt = (n) => `Rp ${Number(n).toLocaleString('id-ID')}`;
@@ -115,7 +116,7 @@ function DiscountForm({ initial, products, onSave, onCancel }) {
               {products.map(p => (
                 <label key={p.id} className="flex items-center gap-3 p-2 hover:bg-[#FFF7ED] rounded-lg cursor-pointer">
                   <input type="checkbox" checked={f.product_ids.includes(p.id)} onChange={() => toggleProduct(p.id)} className="w-4 h-4 accent-[#EA580C]" />
-                  <img src={p.image_url} alt="" className="w-9 h-9 rounded object-cover" />
+                  <SmartImage src={p.image_url} alt="" className="w-9 h-9 rounded object-cover" />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-[#7C2D12] truncate">{p.name}</p>
                     <p className="text-xs text-[#9A3412]">{fmt(p.price)}</p>

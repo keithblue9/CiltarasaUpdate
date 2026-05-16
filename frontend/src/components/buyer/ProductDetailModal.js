@@ -3,6 +3,7 @@ import { X, ChevronLeft, ChevronRight, Star, ShoppingCart, Plus, Minus, Check, F
 import axios from 'axios';
 import { useApp } from '../../context/AppContext';
 import { toast } from 'sonner';
+import SmartImage from '../shared/SmartImage';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 const fmtRp = (n) => `Rp ${Number(n).toLocaleString('id-ID')}`;
@@ -47,7 +48,7 @@ export default function ProductDetailModal({ product, onClose }) {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-0">
             {/* Media carousel */}
             <div className="relative bg-[#FDF8F0] aspect-square">
-              <img src={media[activeMedia]} alt={product.name} className="w-full h-full object-cover" />
+              <SmartImage src={media[activeMedia]} alt={product.name} className="w-full h-full object-cover" />
               {hasDiscount && (
                 <div className="absolute top-4 left-4 bg-red-500 text-white text-xs font-extrabold px-3 py-1.5 rounded-full shadow-lg">
                   -{discountPct}% OFF 🔥
@@ -167,7 +168,7 @@ export default function ProductDetailModal({ product, onClose }) {
                     {r.photos?.length > 0 && (
                       <div className="flex gap-1.5 mt-2">
                         {r.photos.map((p, i) => (
-                          <img key={i} src={p} alt="" className="w-14 h-14 rounded-lg object-cover" />
+                          <SmartImage key={i} src={p} alt="" className="w-14 h-14 rounded-lg object-cover" />
                         ))}
                       </div>
                     )}

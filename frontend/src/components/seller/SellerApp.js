@@ -7,10 +7,12 @@ import ProductManagement from './ProductManagement';
 import IncomingOrders from './IncomingOrders';
 import SalesReport from './SalesReport';
 import FinancialReport from './FinancialReport';
-import { StoreProfile, StoreCerita, CategoriesConfig, DeliveryConfig, PaymentsConfig, HomepageTextsConfig, HeroSlideshowConfig, FunFactsConfig } from './StoreConfigPages';
+import { StoreProfile, StoreCerita, CategoriesConfig, DeliveryConfig, PaymentsConfig, HomepageTextsConfig, HeroSlideshowConfig, FunFactsConfig, OnboardingTextsConfig } from './StoreConfigPages';
 import DiscountManagement from './DiscountManagement';
 import PurchaseManagement from './PurchaseManagement';
 import { FonnteConfig, HowToOrderConfig, ResetCustomersConfig } from './AdminPages';
+import { Smartphone } from 'lucide-react';
+import { detectEnv } from '../pwa/detectEnv';
 
 const PIN = 'ciltarasa';
 let _sellerInterceptorId = null;
@@ -21,7 +23,7 @@ function attachSellerInterceptor(pin) {
     const url = cfg.url || '';
     // Attach PIN only for seller-mutating endpoints (POST/PUT/DELETE to backend)
     const method = (cfg.method || 'get').toLowerCase();
-    if (method !== 'get' && (url.includes('/api/products') || url.includes('/api/purchases') || url.includes('/api/discounts') || url.includes('/api/settings') || url.includes('/api/store-config') || url.includes('/api/financial-entries') || url.includes('/api/admin/') || /\/api\/orders\/[^/]+\/status/.test(url))) {
+    if (method !== 'get' && (url.includes('/api/products') || url.includes('/api/purchases') || url.includes('/api/discounts') || url.includes('/api/settings') || url.includes('/api/store-config') || url.includes('/api/financial-entries') || url.includes('/api/admin/') || url.includes('/api/media/upload') || /\/api\/orders\/[^/]+\/status/.test(url))) {
       cfg.headers = cfg.headers || {};
       cfg.headers['X-Seller-PIN'] = pin;
     }
@@ -75,6 +77,7 @@ export default function SellerApp() {
     'store-profile': <StoreProfile />,
     'store-cerita': <StoreCerita />,
     'homepage-texts': <HomepageTextsConfig />,
+    'onboarding-texts': <OnboardingTextsConfig />,
     'how-to-order': <HowToOrderConfig />,
     'hero-slideshow': <HeroSlideshowConfig />,
     'fun-facts': <FunFactsConfig />,
@@ -103,7 +106,11 @@ export default function SellerApp() {
             </svg>
           </button>
           <span className="font-heading font-bold text-[#78350F]">Ciltarasa Seller</span>
-          <div className="w-10" />
+          {detectEnv().isStandalone ? (
+            <span data-testid="seller-installed-badge" className="flex items-center gap-1 px-2 py-1 rounded-full bg-green-100 text-green-700 text-[10px] font-bold">
+              <Smartphone size={11} /> Installed
+            </span>
+          ) : <div className="w-10" />}
         </div>
         <main className="flex-1 overflow-y-auto p-4 md:p-6">
           {tabContent[activeTab] || tabContent.dashboard}

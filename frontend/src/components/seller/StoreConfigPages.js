@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Save, Plus, Trash2, Store, BookOpen, FolderTree, Truck, CreditCard, Image as ImageIcon, MapPin, Phone, Clock, Instagram, Music2, Type, ImagePlus, Sparkles, ChevronUp, ChevronDown } from 'lucide-react';
+import { Save, Plus, Trash2, Store, BookOpen, FolderTree, Truck, CreditCard, Image as ImageIcon, MapPin, Phone, Clock, Instagram, Music2, Type, ImagePlus, Sparkles, ChevronUp, ChevronDown, LogIn } from 'lucide-react';
 import axios from 'axios';
 import { useApp } from '../../context/AppContext';
 import { toast } from 'sonner';
+import SmartImage from '../shared/SmartImage';
+import ImageUrlInput from '../shared/ImageUrlInput';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -98,7 +100,7 @@ export function StoreProfile() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Field label="Nama Toko"><input data-testid="store-name-input" className={inputCls} value={form.name || ''} onChange={e => set('name', e.target.value)} /></Field>
           <Field label="Tagline"><input className={inputCls} value={form.tagline || ''} onChange={e => set('tagline', e.target.value)} /></Field>
-          <Field label="Logo URL" hint="URL gambar logo (opsional)"><input className={inputCls} value={form.logo_url || ''} onChange={e => set('logo_url', e.target.value)} placeholder="https://..." /></Field>
+          <div className="md:col-span-2"><Field label="Logo Toko" hint="Logo akan tampil di header & onboarding. Upload atau paste URL."><ImageUrlInput value={form.logo_url || ''} onChange={v => set('logo_url', v)} placeholder="https://..." testIdPrefix="store-logo" size="md" /></Field></div>
           <Field label="WhatsApp Bisnis" hint="Format: 6281xxxxxx"><input className={inputCls} value={form.whatsapp || ''} onChange={e => set('whatsapp', e.target.value)} /></Field>
           <div className="md:col-span-2"><Field label="Alamat Toko"><textarea rows={2} className={inputCls + ' resize-none'} value={form.address || ''} onChange={e => set('address', e.target.value)} /></Field></div>
           <Field label="Jam Operasional"><input className={inputCls} value={form.operating_hours || ''} onChange={e => set('operating_hours', e.target.value)} placeholder="Setiap Hari • 08.00 - 21.00" /></Field>
@@ -388,21 +390,26 @@ export function HeroSlideshowConfig() {
         <div className="space-y-3">
           {slides.length === 0 && <p className="text-sm text-gray-500 text-center py-6">Belum ada slide. Tambahkan slide pertamamu!</p>}
           {slides.map((s, idx) => (
-            <div key={idx} className="grid grid-cols-12 gap-2 items-center p-3 rounded-xl bg-[#FFFBF5] border border-[#FED7AA]">
-              <div className="col-span-2">
-                <div className="w-full aspect-video rounded-lg bg-gray-100 overflow-hidden">
-                  {s.image_url ? <img src={s.image_url} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-gray-400"><ImageIcon size={20} /></div>}
-                </div>
-                <p className="text-[10px] text-center text-[#9A3412] mt-1 font-bold">#{idx + 1}</p>
+            <div key={idx} className="grid grid-cols-12 gap-2 items-start p-3 rounded-xl bg-[#FFFBF5] border border-[#FED7AA]">
+              <div className="col-span-12 sm:col-span-8">
+                <Field label={`Gambar Slide #${idx + 1}`}>
+                  <ImageUrlInput
+                    value={s.image_url}
+                    onChange={v => update(idx, 'image_url', v)}
+                    placeholder="Upload atau paste URL gambar landscape (min 1600px)"
+                    testIdPrefix={`slide-${idx}`}
+                    size="lg"
+                  />
+                </Field>
               </div>
-              <div className="col-span-6"><Field label="URL Gambar"><input className={inputCls} value={s.image_url} onChange={e => update(idx, 'image_url', e.target.value)} placeholder="https://..." /></Field></div>
-              <div className="col-span-2"><Field label="Durasi (ms)"><input type="number" className={inputCls} value={s.duration_ms} onChange={e => update(idx, 'duration_ms', Number(e.target.value))} /></Field></div>
-              <div className="col-span-1 flex flex-col items-center gap-1 pt-3">
-                <label className="flex items-center cursor-pointer text-[10px] font-bold text-[#7C2D12]">
+              <div className="col-span-7 sm:col-span-2"><Field label="Durasi (ms)"><input type="number" className={inputCls} value={s.duration_ms} onChange={e => update(idx, 'duration_ms', Number(e.target.value))} /></Field></div>
+              <div className="col-span-3 sm:col-span-1 flex flex-col items-center gap-1 pt-3">
+                <label className="flex flex-col items-center cursor-pointer text-[10px] font-bold text-[#7C2D12]">
                   <input type="checkbox" checked={s.active !== false} onChange={e => update(idx, 'active', e.target.checked)} className="w-4 h-4 accent-[#EA580C]" />
+                  <span className="mt-0.5">Aktif</span>
                 </label>
               </div>
-              <div className="col-span-1 flex flex-col gap-1">
+              <div className="col-span-2 sm:col-span-1 flex flex-col gap-1">
                 <button onClick={() => move(idx, -1)} disabled={idx === 0} className="p-1 rounded bg-white border border-[#FED7AA] disabled:opacity-30"><ChevronUp size={12} /></button>
                 <button onClick={() => move(idx, 1)} disabled={idx === slides.length - 1} className="p-1 rounded bg-white border border-[#FED7AA] disabled:opacity-30"><ChevronDown size={12} /></button>
                 <button onClick={() => remove(idx)} className="p-1 rounded bg-red-50 text-red-500"><Trash2 size={12} /></button>
@@ -444,19 +451,82 @@ export function FunFactsConfig() {
           {facts.length === 0 && <p className="text-sm text-gray-500 text-center py-6">Belum ada fun fact. Buat 5 fakta menarik tentang toko!</p>}
           {facts.map((f, idx) => (
             <div key={idx} className="grid grid-cols-12 gap-3 p-4 rounded-xl bg-[#FFFBF5] border border-[#FED7AA]">
-              <div className="col-span-12 sm:col-span-3">
-                <div className="aspect-[4/3] rounded-lg bg-gray-100 overflow-hidden mb-2">
-                  {f.image_url ? <img src={f.image_url} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-gray-400"><ImageIcon size={32} /></div>}
-                </div>
-                <Field label="URL Gambar"><input className={inputCls + ' text-xs'} value={f.image_url} onChange={e => update(idx, 'image_url', e.target.value)} placeholder="https://..." /></Field>
+              <div className="col-span-12 sm:col-span-4">
+                <Field label={`Gambar Fun Fact #${idx + 1}`}>
+                  <ImageUrlInput
+                    value={f.image_url}
+                    onChange={v => update(idx, 'image_url', v)}
+                    placeholder="Upload atau paste URL gambar 4:3"
+                    testIdPrefix={`funfact-img-${idx}`}
+                    size="lg"
+                  />
+                </Field>
               </div>
-              <div className="col-span-11 sm:col-span-8 space-y-2">
+              <div className="col-span-11 sm:col-span-7 space-y-2">
                 <Field label={`Judul Fun Fact #${idx + 1}`}><input data-testid={`funfact-title-${idx}`} className={inputCls} value={f.title} onChange={e => update(idx, 'title', e.target.value)} placeholder="Risoles Bunda Itu Resep Turunan" /></Field>
-                <Field label="Narasi / Cerita"><textarea data-testid={`funfact-text-${idx}`} rows={3} className={inputCls + ' resize-none'} value={f.text} onChange={e => update(idx, 'text', e.target.value)} placeholder="Cerita menarik tentang produk atau brand..." /></Field>
+                <Field label="Narasi / Cerita"><textarea data-testid={`funfact-text-${idx}`} rows={4} className={inputCls + ' resize-none'} value={f.text} onChange={e => update(idx, 'text', e.target.value)} placeholder="Cerita menarik tentang produk atau brand..." /></Field>
               </div>
               <div className="col-span-1 flex justify-end">
                 <button onClick={() => remove(idx)} className="p-2 rounded-lg bg-red-50 text-red-500 self-start"><Trash2 size={14} /></button>
               </div>
+            </div>
+          ))}
+        </div>
+      </Section>
+    </div>
+  );
+}
+
+
+// ─── ONBOARDING TEXTS (Login/Register Popup) ─────────────────────────
+const ONBOARDING_FIELDS = [
+  { key: 'header_title', label: 'Header Title (atas popup)', placeholder: 'Halo, Bunda! 🦆' },
+  { key: 'header_subtitle', label: 'Header Subtitle', placeholder: 'Frozen Food premium yang lagi viral di Malang' },
+  { key: 'welcome_title', label: 'Welcome Title (judul utama)', placeholder: 'Yuk, mulai belanja!' },
+  { key: 'welcome_subtitle', label: 'Welcome Subtitle', placeholder: 'Daftar dulu untuk akses promo...', multiline: true },
+  { key: 'register_label', label: 'Tombol Daftar - Label', placeholder: 'Daftar Sekarang' },
+  { key: 'register_subtitle', label: 'Tombol Daftar - Subtitle', placeholder: 'Dapatkan poin & promo special' },
+  { key: 'login_label', label: 'Tombol Masuk - Label', placeholder: 'Masuk' },
+  { key: 'login_subtitle', label: 'Tombol Masuk - Subtitle', placeholder: 'Sudah punya akun? Masuk yuk' },
+  { key: 'guest_label', label: 'Tombol Tamu - Label', placeholder: 'Lanjut sebagai Tamu' },
+  { key: 'guest_subtitle', label: 'Tombol Tamu - Subtitle', placeholder: 'Belanja tanpa daftar (no promo)' },
+  { key: 'tos_text', label: 'Teks Syarat & Ketentuan', placeholder: 'Dengan melanjutkan, kamu setuju...', multiline: true },
+  { key: 'phone_hint', label: 'Hint Nomor Telepon', placeholder: '💡 Pastikan nomor WhatsApp aktif...' },
+  { key: 'otp_hint', label: 'Hint Layar OTP', placeholder: '📱 Cek WhatsApp kamu untuk lihat kode OTP' },
+];
+
+export function OnboardingTextsConfig() {
+  const { storeConfig, refreshStoreConfig } = useApp();
+  const [texts, setTexts] = useState({});
+  const [saving, setSaving] = useState(false);
+  useEffect(() => { setTexts(storeConfig?.onboarding_texts || {}); }, [storeConfig]);
+  const set = (k, v) => setTexts(prev => ({ ...prev, [k]: v }));
+  const save = async () => {
+    setSaving(true);
+    try { await axios.put(`${API}/api/store-config`, { onboarding_texts: texts }); await refreshStoreConfig(); toast.success('Teks onboarding tersimpan! Buyer akan lihat update real-time 🎉'); }
+    catch { toast.error('Gagal simpan'); } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="font-heading text-2xl font-bold text-[#7C2D12]">Teks Onboarding Buyer</h1>
+          <p className="text-xs text-[#9A3412] mt-0.5">Edit wording di popup login/register/guest yang tampil pertama kali ke pelanggan baru.</p>
+        </div>
+        <button data-testid="save-onboarding-texts-btn" onClick={save} disabled={saving} className="flex items-center gap-2 bg-gradient-to-r from-[#F97316] to-[#EA580C] text-white font-bold px-5 py-2.5 rounded-full shadow"><Save size={16} /> {saving ? 'Menyimpan...' : 'Simpan'}</button>
+      </div>
+      <Section title="Wording Popup Login & Register" icon={LogIn}>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {ONBOARDING_FIELDS.map(f => (
+            <div key={f.key} className={f.multiline ? 'md:col-span-2' : ''}>
+              <Field label={f.label}>
+                {f.multiline ? (
+                  <textarea data-testid={`onb-text-${f.key}`} rows={2} className={inputCls + ' resize-none'} value={texts[f.key] || ''} onChange={e => set(f.key, e.target.value)} placeholder={f.placeholder} />
+                ) : (
+                  <input data-testid={`onb-text-${f.key}`} className={inputCls} value={texts[f.key] || ''} onChange={e => set(f.key, e.target.value)} placeholder={f.placeholder} />
+                )}
+              </Field>
             </div>
           ))}
         </div>

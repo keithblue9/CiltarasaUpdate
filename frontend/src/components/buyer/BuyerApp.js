@@ -13,6 +13,7 @@ import FlashSaleBanner from './FlashSaleBanner';
 import FunFactsPopup from './FunFactsPopup';
 import RecommendationsStrip from './RecommendationsStrip';
 import OrderHistory from './OrderHistory';
+import PwaInstallHub from '../pwa/PwaInstallHub';
 
 function ProfileMenu() {
   const { authUser, logout, setAuthMode } = useApp();
@@ -209,6 +210,7 @@ export default function BuyerApp() {
         <Route path="orders" element={<OrderHistory />} />
       </Routes>
       <BuyerFooter />
+      <PwaInstallHub />
     </div>
   );
 }

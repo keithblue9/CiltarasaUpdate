@@ -1,0 +1,51 @@
+{
+  "summary": "Phase 9 testing — PWA stack + onboarding_texts CMS + image rollout regression. Backend: 13/13 tests pass (test_phase9.py). PWA assets (manifest.json with maskable 192/512, sw.js, offline.html, icons, screenshots) all return 200. Onboarding texts seed contains all 8 required keys; PUT/GET with full dict persists. Media upload PIN guard works. Frontend: buyer Onboarding modal renders defaults from storeConfig.onboarding_texts; register/login/guest testids all present; guest btn dismisses modal cleanly. PWA help FAB visible bottom-left on /#/buyer, opens modal with OS tabs (android/ios/desktop) and browser tabs (chrome etc.), close works. Seller sidebar-tab-onboarding-texts present; form fields onb-text-header_title/welcome_title/register_label all exist; save button posts PUT /api/store-config (200) with success toast. ONE CRITICAL BACKEND BUG FOUND: PUT /api/store-config replaces sub-dicts instead of merging — sending a partial onboarding_texts wipes the other keys.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "PUT /api/store-config", "issue": "Backend uses MongoDB $set on whole sub-document (server.py line 874). Sending {onboarding_texts: {header_title: 'X'}} REPLACES the entire onboarding_texts dict, deleting all other keys (welcome_title, register_label, login_label, guest_label, tos_text, otp_hint, phone_hint, etc.). Same bug also affects any nested dict update (e.g., partial how_to_order_steps, payment_methods, hero_slides etc.). Frontend OnboardingTextsConfig sends ONLY {onboarding_texts: texts} where texts is its local state — if state is partial (e.g., user only edits header_title and other fields are unloaded/empty due to prior partial save), it cascades the data loss. CONFIRMED via network capture: PUT body was {\"onboarding_texts\":{\"header_title\":\"TEST_DBG_PERSIST_X9\"}} → GET afterward returns onboarding_texts with ONLY header_title key, all other 12 keys gone. FIX: in update_store_config, deep-merge dict-type fields using dot-notation $set (e.g., {'onboarding_texts.header_title': 'X'}) OR fetch current doc, merge in Python, then $set whole field. Recommend dot-notation MongoDB $set for atomic safety.", "priority": "CRITICAL"}
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Seller → Teks Onboarding/Login → Simpan", "issue": "Combined with the backend bug above, the form's <input value={texts[f.key] || ''}> falls back to empty when storeConfig.onboarding_texts loses keys, which then on next save propagates empty strings as new values. Recommended FE-side defensive fix: when sending PUT, merge with full default keys OR send only changed keys via PATCH-style dot-notation. But the proper fix is on backend.", "affected_selectors": ["[data-testid=\"save-onboarding-texts-btn\"]", "[data-testid^=\"onb-text-\"]"]}
+    ],
+    "design_issues": [
+      {"screen": "Buyer /#/buyer initial load", "issues": ["Several 404 console errors observed on page load (4-5 GETs returning 404). Likely missing asset references in index.html or sw.js precache list. Not user-visible but pollutes console. Check sw.js precache URLs and any missing favicons/icons referenced from index.html."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase9.py",
+    "/app/test_reports/pytest/pytest_phase9.xml"
+  ],
+  "action_items": [
+    "CRITICAL: Fix backend PUT /api/store-config to merge nested dicts instead of replacing. Suggested patch in server.py update_store_config: for any dict-type field in `upd`, flatten to dot-notation before $set, e.g., `{'onboarding_texts.header_title': 'X'}` so other keys remain intact. Apply same fix for other nested dicts (e.g., payment_methods, fonnte_token block if any).",
+    "(Optional) Defensive frontend in OnboardingTextsConfig: when saving, build PUT payload as {...storeConfig.onboarding_texts, ...texts} so missing keys don't get nulled out.",
+    "Investigate 4-5 404s in buyer console on first load — check sw.js precache list and index.html asset links."
+  ],
+  "critical_code_review_comments": [
+    "server.py: update_store_config uses $set on whole sub-document — this is the root cause of partial-update data loss. Any nested dict in StoreConfigUpdate (onboarding_texts, hero_slides items, fun_facts items, how_to_order_steps items, payment_methods) is vulnerable.",
+    "server.py is now ~1360 lines. Splitting into routers is overdue (auth, store_config, orders, products, admin, pwa_assets, media).",
+    "StoreConfigPages.js OnboardingTextsConfig (line 504-508) doesn't merge with storeConfig.onboarding_texts when sending — relies fully on local state which can drift from server truth.",
+    "PwaInstallHub FAB position (x=12, y=788 on 390x844 viewport) is correctly bottom-left, 44x44 — meets touch-target guidelines.",
+    "PWA manifest.json includes 10 icons (8 'any' + 2 'maskable'), 2 screenshots, 2 shortcuts — production-ready.",
+    "OTP_hint and phone_hint defaults include emojis (📱, 💡) — confirm Indonesian android keyboards render these consistently across vendors."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase9.py"
+  ],
+  "success_rate": {
+    "backend": "100% (13/13 phase9 pytest pass) — but a CRITICAL nested-dict overwrite bug discovered in PUT /api/store-config which wasn't covered by automated tests (pytest sent FULL dict so didn't trigger). Effective backend correctness ~92%.",
+    "frontend": "95% — all PWA testids, OnboardingModal, sidebar tab, form fields, save button, toast all functional. Save UI flow only fails end-to-end because of the backend nested-dict bug."
+  },
+  "test_credentials": {
+    "seller_pin": "ciltarasa",
+    "buyer_otp_demo_mode": "123456 (only when fonnte_token empty)"
+  },
+  "seed_data_creation": "test_upload_with_pin_accepted uploads a small PNG via /api/media/upload (saved to /app/backend/uploads or equivalent). test_update_onboarding_texts_persists temporarily mutates store_config.onboarding_texts then restores from snapshot. After UI persistence diagnostics, store_config was manually restored via curl PUT with the full default onboarding_texts (13 keys) — verified via GET.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Phase 9 PWA + onboarding_texts CMS verified end-to-end EXCEPT for the critical nested-dict overwrite bug in PUT /api/store-config. The bug also affects any other nested dict in the store_config document. Reproduction: 1) GET store-config (note onboarding_texts has 13 keys). 2) PUT {onboarding_texts:{header_title:'X'}} with X-Seller-PIN. 3) GET — onboarding_texts now has ONLY {header_title:'X', updated_at:...}, all 12 other keys gone. Fix in server.py update_store_config to deep-merge dict fields (recommend MongoDB dot-notation $set, e.g., {'onboarding_texts.header_title':'X', 'onboarding_texts.welcome_title':'Y', ...}). Pytest in test_phase9.py uses FULL dict so passes — write an additional regression test that sends partial dict and asserts other keys remain. PWA assets, icons, screenshots, FAB, help modal all confirmed working. Buyer onboarding modal, guest flow, seller sidebar new tab confirmed. Seller Installed badge correctly absent in non-standalone browser. Restore step already applied — DB now has full default onboarding_texts.",
+  "rca of the issue": "RCA — PUT /api/store-config nested dict overwrite: server.py:872-874 does `upd = update.model_dump(exclude_unset=True); await db.store_config.update_one({'_id':'main'}, {'$set':upd}, upsert=True)`. When upd contains `{'onboarding_texts': {'header_title':'X'}}`, MongoDB's $set replaces the entire `onboarding_texts` field with `{'header_title':'X'}` — this is documented MongoDB behavior. Mitigation: (A) Recommended — at the route, for any field whose type is dict in StoreConfigUpdate, expand to dot-notation pairs: for k,v in upd.items(): if isinstance(v, dict): for sk,sv in v.items(): set_ops[f'{k}.{sk}']=sv else: set_ops[k]=v; then $set: set_ops. (B) Read-modify-write — fetch current doc, merge, $set whole — works but not atomic and may stomp concurrent writes. (C) Frontend defensive merge — send {...storeConfig.onboarding_texts, ...texts} but this only treats symptom, not root cause."
+}

@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Package, ShoppingBag, BarChart2, DollarSign, MessageCircle, LogOut, X, Wifi, WifiOff, Store, BookOpen, FolderTree, Truck, CreditCard, Tag, Settings, Type, ImagePlus, Sparkles, ShoppingCart, ListOrdered, ShieldAlert } from 'lucide-react';
+import { LayoutDashboard, Package, ShoppingBag, BarChart2, DollarSign, MessageCircle, LogOut, X, Wifi, WifiOff, Store, BookOpen, FolderTree, Truck, CreditCard, Tag, Settings, Type, ImagePlus, Sparkles, ShoppingCart, ListOrdered, ShieldAlert, LogIn } from 'lucide-react';
 import { LogoWithText } from '../shared/Logo';
 import { useApp } from '../../context/AppContext';
 
@@ -16,6 +16,7 @@ const configTabs = [
   { id: 'store-profile', label: 'Profil Toko', icon: Store },
   { id: 'store-cerita', label: 'Cerita Perjalanan', icon: BookOpen },
   { id: 'homepage-texts', label: 'Teks Homepage', icon: Type },
+  { id: 'onboarding-texts', label: 'Teks Onboarding/Login', icon: LogIn },
   { id: 'how-to-order', label: 'Cara Pesan (Steps)', icon: ListOrdered },
   { id: 'hero-slideshow', label: 'Slideshow Hero', icon: ImagePlus },
   { id: 'fun-facts', label: 'Fun Facts Popup', icon: Sparkles },

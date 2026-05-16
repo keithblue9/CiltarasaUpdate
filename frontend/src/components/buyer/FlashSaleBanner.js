@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Zap, Flame, ArrowRight } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import SmartImage from '../shared/SmartImage';
 
 const formatRp = (n) => `Rp ${Number(n).toLocaleString('id-ID')}`;
 
@@ -102,7 +103,7 @@ export default function FlashSaleBanner({ onProductClick }) {
                       className="group relative bg-white/95 backdrop-blur rounded-2xl overflow-hidden text-left hover:shadow-2xl hover:-translate-y-1 transition-all"
                     >
                       <div className="aspect-square overflow-hidden">
-                        <img src={p.image_url} alt={p.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                        <SmartImage src={p.image_url} alt={p.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
                       </div>
                       <div className="absolute top-1.5 left-1.5 bg-red-600 text-white text-[10px] font-extrabold px-1.5 py-0.5 rounded-md shadow flex items-center gap-0.5">
                         <Zap size={9} className="fill-white" /> {flashSale.type === 'percent' ? `-${flashSale.value}%` : 'FS'}

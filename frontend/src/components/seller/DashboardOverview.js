@@ -3,6 +3,7 @@ import { TrendingUp, ShoppingBag, Clock, AlertTriangle, RefreshCw, Flame, Lightb
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import axios from 'axios';
 import { useApp } from '../../context/AppContext';
+import SmartImage from '../shared/SmartImage';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 const formatRp = (n) => `Rp ${Number(n).toLocaleString('id-ID')}`;
@@ -134,7 +135,7 @@ export default function DashboardOverview({ onTabChange }) {
                 <div className="space-y-2 max-h-72 overflow-y-auto">
                   {insights.restock_alerts.slice(0, 5).map(a => (
                     <div key={a.id} data-testid={`restock-alert-${a.id}`} className={`flex items-center gap-3 p-2.5 rounded-xl border ${a.urgency === 'high' ? 'border-red-300 bg-red-50' : a.urgency === 'medium' ? 'border-amber-300 bg-amber-50' : 'border-[#FED7AA] bg-[#FFFBF5]'}`}>
-                      <img src={a.image_url} alt="" className="w-11 h-11 rounded-lg object-cover flex-shrink-0" />
+                      <SmartImage src={a.image_url} alt="" className="w-11 h-11 rounded-lg object-cover flex-shrink-0" />
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-bold text-[#7C2D12] truncate">{a.name}</p>
                         <div className="flex items-center gap-2 text-[10px] mt-0.5">
@@ -175,7 +176,7 @@ export default function DashboardOverview({ onTabChange }) {
                   <div className={`w-7 h-7 rounded-lg flex items-center justify-center font-extrabold text-xs ${i === 0 ? 'bg-gradient-to-br from-yellow-400 to-amber-500 text-white' : i === 1 ? 'bg-gray-300 text-gray-700' : i === 2 ? 'bg-orange-300 text-orange-900' : 'bg-[#FEF3C7] text-[#7C2D12]'}`}>
                     #{i + 1}
                   </div>
-                  <img src={p.image_url} alt="" className="w-10 h-10 rounded-lg object-cover" />
+                  <SmartImage src={p.image_url} alt="" className="w-10 h-10 rounded-lg object-cover" />
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-bold text-[#7C2D12] truncate">{p.name}</p>
                     <p className="text-[10px] text-[#9A3412]">{p.sold_count} terjual · {p.velocity}/hari · stok {p.stock}</p>

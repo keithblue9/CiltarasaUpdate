@@ -2,6 +2,7 @@ import React from 'react';
 import { X, Trash2, ShoppingBag, ArrowRight } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useNavigate } from 'react-router-dom';
+import SmartImage from '../shared/SmartImage';
 
 const formatRp = (n) => `Rp ${Number(n).toLocaleString('id-ID')}`;
 
@@ -57,7 +58,7 @@ export default function CartDrawer({ open, onClose }) {
               const hasDiscount = product.final_price && product.final_price < product.price;
               return (
               <div key={product.id} data-testid={`cart-item-${product.id}`} className="flex gap-3 bg-[#FDF8F0] rounded-xl p-3 border border-[#FED7AA]">
-                <img src={product.image_url} alt={product.name} className="w-16 h-16 rounded-lg object-cover flex-shrink-0" />
+                <SmartImage src={product.image_url} alt={product.name} className="w-16 h-16 rounded-lg object-cover flex-shrink-0" />
                 <div className="flex-1 min-w-0">
                   <h4 className="font-semibold text-[#78350F] text-sm leading-snug truncate">{product.name}</h4>
                   <div className="flex items-center gap-1.5 mt-0.5">

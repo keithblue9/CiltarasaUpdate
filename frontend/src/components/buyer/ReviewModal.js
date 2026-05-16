@@ -3,6 +3,7 @@ import { X, Star, Image as ImageIcon, MessageSquare, MapPin, Send, Loader2 } fro
 import axios from 'axios';
 import { useApp } from '../../context/AppContext';
 import { toast } from 'sonner';
+import SmartImage from '../shared/SmartImage';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -134,7 +135,7 @@ export default function ReviewModal({ order, onClose, onSubmitted }) {
             <div key={idx} className="border border-[#FED7AA] rounded-2xl p-4 bg-[#FFFBF5]">
               <div className="flex items-center gap-3 mb-3">
                 {item.image_url && (
-                  <img src={item.image_url} alt={item.product_name} className="w-14 h-14 rounded-xl object-cover" />
+                  <SmartImage src={item.image_url} alt={item.product_name} className="w-14 h-14 rounded-xl object-cover" />
                 )}
                 <div className="flex-1 min-w-0">
                   <p className="font-bold text-sm text-[#7C2D12] truncate">{item.product_name}</p>
@@ -159,7 +160,7 @@ export default function ReviewModal({ order, onClose, onSubmitted }) {
               <div className="mt-3 flex items-center gap-2 flex-wrap">
                 {item.photos.map((p, pIdx) => (
                   <div key={pIdx} className="relative">
-                    <img src={p} alt="" className="w-14 h-14 rounded-lg object-cover" />
+                    <SmartImage src={p} alt="" className="w-14 h-14 rounded-lg object-cover" />
                     <button
                       onClick={() => removePhoto(idx, pIdx)}
                       className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center text-xs"

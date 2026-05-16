@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ciltarasa — Offline</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(135deg, #FDF8F0 0%, #FED7AA 100%);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    color: #451A03;
+    padding: 24px;
+  }
+  .card {
+    max-width: 420px; width: 100%; text-align: center;
+    background: rgba(255,255,255,.85);
+    backdrop-filter: blur(12px);
+    border: 1px solid #FED7AA;
+    border-radius: 28px;
+    padding: 40px 28px;
+    box-shadow: 0 20px 60px -20px rgba(124,45,18,.35);
+  }
+  .logo { width: 96px; height: 96px; margin: 0 auto 16px; display: block; }
+  h1 { font-size: 24px; font-weight: 800; color: #7C2D12; margin: 0 0 8px; letter-spacing: -.02em; }
+  p { color: #9A3412; font-size: 15px; margin: 0 0 24px; line-height: 1.5; }
+  button {
+    background: linear-gradient(135deg, #F97316, #EA580C);
+    color: white; border: 0; padding: 14px 28px; border-radius: 999px;
+    font-weight: 700; font-size: 15px; cursor: pointer;
+    box-shadow: 0 8px 20px -6px rgba(234,88,12,.5);
+    transition: transform .15s ease;
+  }
+  button:active { transform: scale(.97); }
+  .pulse { animation: pulse 2s ease-in-out infinite; }
+  @keyframes pulse { 0%, 100% { transform: scale(1) } 50% { transform: scale(1.05) } }
+</style>
+</head>
+<body>
+  <div class="card">
+    <img src="/icons/icon-192.png" alt="Ciltarasa" class="logo pulse" />
+    <h1>Oops, kamu lagi offline 🌐</h1>
+    <p>Kamu sedang offline. Periksa koneksi internetmu, lalu coba lagi ya, Bunda! ✨</p>
+    <button onclick="location.reload()">🔄 Coba Lagi</button>
+  </div>
+</body>
+</html>

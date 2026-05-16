@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, ChevronLeft, ChevronRight, Sparkles } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import SmartImage from '../shared/SmartImage';
 
 const STORAGE_KEY = 'ciltarasa_funfact_dismissed';
 
@@ -65,7 +66,7 @@ export default function FunFactsPopup() {
             <div key={f.id || i} data-testid={`funfact-card-${i}`} className="min-w-full snap-center">
               <div className="aspect-[4/3] bg-gray-100 overflow-hidden relative">
                 {f.image_url ? (
-                  <img src={f.image_url} alt={f.title || ''} className="w-full h-full object-cover" />
+                  <SmartImage src={f.image_url} alt={f.title || ''} className="w-full h-full object-cover" />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center text-4xl">✨</div>
                 )}

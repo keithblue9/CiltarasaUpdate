@@ -3,6 +3,8 @@ import { Plus, Edit2, Trash2, ToggleLeft, ToggleRight, Save, X, AlertTriangle, I
 import axios from 'axios';
 import { useApp } from '../../context/AppContext';
 import { toast } from 'sonner';
+import SmartImage from '../shared/SmartImage';
+import ImageUrlInput from '../shared/ImageUrlInput';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 const formatRp = (n) => `Rp ${Number(n).toLocaleString('id-ID')}`;
@@ -14,24 +16,17 @@ const EMPTY_FORM = {
   active: true, image_url: '', media_urls: ['', '', '', '', ''], discount_id: ''
 };
 
-function MediaInput({ index, value, onChange, onPreview }) {
+function MediaInput({ index, value, onChange }) {
   return (
     <div className="space-y-1">
-      <label className="text-[10px] font-bold text-[#7C2D12]">FOTO/VIDEO #{index + 1}</label>
-      <div className="flex gap-2">
-        <input
-          data-testid={`media-input-${index}`}
-          value={value}
-          onChange={e => onChange(e.target.value)}
-          placeholder="GDrive / iCloud / URL gambar"
-          className={inputCls + ' text-xs'}
-        />
-        {value && (
-          <button type="button" onClick={() => onPreview(value)} className="px-2 rounded-lg border border-[#FED7AA] hover:bg-[#FEF3C7]">
-            <ImageIcon size={14} className="text-[#9A3412]" />
-          </button>
-        )}
-      </div>
+      <label className="text-[10px] font-bold text-[#7C2D12]">FOTO/VIDEO #{index + 1}{index === 0 && ' (Cover)'}</label>
+      <ImageUrlInput
+        value={value}
+        onChange={onChange}
+        placeholder="GDrive / iCloud / URL gambar"
+        testIdPrefix={`media-${index}`}
+        size="sm"
+      />
     </div>
   );
 }
@@ -85,7 +80,6 @@ function ProductForm({ initial, onSave, onCancel, storeConfig, discounts }) {
                 <MediaInput
                   key={i} index={i} value={form.media_urls[i] || ''}
                   onChange={v => setMedia(i, v)}
-                  onPreview={(u) => window.open(u, '_blank')}
                 />
               ))}
             </div>
@@ -272,7 +266,7 @@ export default function ProductManagement() {
         {filtered.map(product => (
           <div key={product.id} data-testid={`seller-product-${product.id}`} className={`bg-white rounded-2xl border overflow-hidden ${product.active ? 'border-[#FED7AA]' : 'border-gray-200 opacity-70'}`}>
             <div className="relative h-40">
-              <img src={product.image_url} alt={product.name} className="w-full h-full object-cover" />
+              <SmartImage src={product.image_url} alt={product.name} className="w-full h-full object-cover" />
               {!product.active && (
                 <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
                   <span className="bg-gray-700 text-white text-xs font-bold px-3 py-1 rounded-full">Nonaktif</span>

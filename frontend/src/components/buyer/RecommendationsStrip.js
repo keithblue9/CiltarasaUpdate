@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Sparkles, RotateCw, TrendingUp } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import ProductDetailModal from './ProductDetailModal';
+import SmartImage from '../shared/SmartImage';
 
 const fmtRp = (n) => `Rp ${Number(n).toLocaleString('id-ID')}`;
 
@@ -15,7 +16,7 @@ function MiniProductCard({ product, badge, onOpen }) {
       className="group flex-shrink-0 w-40 sm:w-44 bg-white rounded-2xl border border-[#FED7AA] overflow-hidden text-left hover:shadow-lg hover:-translate-y-0.5 transition-all"
     >
       <div className="relative aspect-square overflow-hidden">
-        <img src={product.image_url} alt={product.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+        <SmartImage src={product.image_url} alt={product.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
         {badge && (
           <div className="absolute top-2 left-2 bg-gradient-to-r from-[#F97316] to-[#EA580C] text-white text-[9px] font-extrabold px-2 py-0.5 rounded-md shadow">
             {badge}
