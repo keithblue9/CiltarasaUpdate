@@ -14,6 +14,7 @@ import FunFactsPopup from './FunFactsPopup';
 import RecommendationsStrip from './RecommendationsStrip';
 import OrderHistory from './OrderHistory';
 import PwaInstallHub from '../pwa/PwaInstallHub';
+import useTrackVisit from './useTrackVisit';
 
 function ProfileMenu() {
   const { authUser, logout, setAuthMode } = useApp();
@@ -197,6 +198,7 @@ function BuyerHome() {
 
 export default function BuyerApp() {
   const [cartOpen, setCartOpen] = useState(false);
+  useTrackVisit();
   return (
     <div className="min-h-screen bg-[#FDF8F0] font-body">
       <OnboardingModal />

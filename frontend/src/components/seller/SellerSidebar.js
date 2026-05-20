@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Package, ShoppingBag, BarChart2, DollarSign, MessageCircle, LogOut, X, Wifi, WifiOff, Store, BookOpen, FolderTree, Truck, CreditCard, Tag, Settings, Type, ImagePlus, Sparkles, ShoppingCart, ListOrdered, ShieldAlert, LogIn } from 'lucide-react';
+import { LayoutDashboard, Package, ShoppingBag, BarChart2, DollarSign, MessageCircle, LogOut, X, Wifi, WifiOff, Store, BookOpen, FolderTree, Truck, CreditCard, Tag, Settings, Type, ImagePlus, Sparkles, ShoppingCart, ListOrdered, ShieldAlert, LogIn, KeyRound, TrendingUp } from 'lucide-react';
 import { LogoWithText } from '../shared/Logo';
 import { useApp } from '../../context/AppContext';
 
@@ -10,6 +10,7 @@ const operationalTabs = [
   { id: 'purchases', label: 'Pembelian / Restock', icon: ShoppingCart },
   { id: 'sales', label: 'Lap. Penjualan', icon: BarChart2 },
   { id: 'financial', label: 'Lap. Keuangan', icon: DollarSign },
+  { id: 'traffic', label: 'Statistik Pengunjung', icon: TrendingUp },
 ];
 
 const configTabs = [
@@ -25,6 +26,7 @@ const configTabs = [
   { id: 'payments', label: 'Metode Pembayaran', icon: CreditCard },
   { id: 'discounts', label: 'Diskon Produk', icon: Tag },
   { id: 'whatsapp', label: 'WhatsApp (Fonnte)', icon: MessageCircle },
+  { id: 'change-pin', label: 'Ubah PIN Akses', icon: KeyRound },
   { id: 'reset-customers', label: 'Reset Pelanggan', icon: ShieldAlert },
 ];
 

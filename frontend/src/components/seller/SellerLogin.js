@@ -13,8 +13,7 @@ export default function SellerLogin({ onLogin }) {
     e.preventDefault();
     setLoading(true);
     setError('');
-    await new Promise(r => setTimeout(r, 400));
-    const ok = onLogin(pin);
+    const ok = await onLogin(pin);
     if (!ok) {
       setError('PIN salah. Coba lagi.');
       setPin('');

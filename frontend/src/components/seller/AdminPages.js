@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Save, Send, AlertTriangle, MessageCircle, ListOrdered, Trash2, Plus, RotateCcw, ShieldAlert } from 'lucide-react';
+import { Save, Send, AlertTriangle, MessageCircle, ListOrdered, Trash2, Plus, RotateCcw, ShieldAlert, KeyRound, Eye, EyeOff, Lock, TrendingUp, Users, Smartphone, Globe, Monitor, RefreshCw } from 'lucide-react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import axios from 'axios';
 import { useApp } from '../../context/AppContext';
 import { toast } from 'sonner';
@@ -276,6 +277,256 @@ export function ResetCustomersConfig() {
             <p className="text-green-700 text-xs mt-1">{lastResult.orders} orders, {lastResult.users} users, {lastResult.reviews} reviews</p>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+
+// ─── CHANGE SELLER PIN ───────────────────────────────────────────
+export function ChangePinConfig({ onPinChanged }) {
+  const [form, setForm] = useState({ current_pin: '', new_pin: '', confirm_pin: '' });
+  const [show, setShow] = useState({ current: false, next: false, confirm: false });
+  const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
+
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const toggle = (k) => setShow(s => ({ ...s, [k]: !s[k] }));
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!form.current_pin || !form.new_pin) { toast.error('Semua field wajib diisi'); return; }
+    if (form.new_pin.length < 4) { toast.error('PIN baru minimal 4 karakter'); return; }
+    if (form.new_pin !== form.confirm_pin) { toast.error('Konfirmasi PIN tidak cocok'); return; }
+    if (form.new_pin === form.current_pin) { toast.error('PIN baru harus berbeda dari PIN saat ini'); return; }
+    setLoading(true);
+    try {
+      const r = await axios.post(`${API}/api/admin/change-pin`, { current_pin: form.current_pin, new_pin: form.new_pin });
+      if (r.data?.success) {
+        setSuccess(true);
+        toast.success('PIN berhasil diubah! Kamu akan logout dalam 3 detik...');
+        setTimeout(() => {
+          onPinChanged?.();
+        }, 3000);
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Gagal ubah PIN');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-5 max-w-2xl">
+      <div>
+        <h1 className="font-heading text-2xl font-bold text-[#7C2D12]">Ubah PIN Akses Seller</h1>
+        <p className="text-xs text-[#9A3412] mt-0.5">Ganti PIN dashboard secara berkala biar akun lebih aman.</p>
+      </div>
+
+      <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3">
+        <AlertTriangle size={18} className="text-amber-600 flex-shrink-0 mt-0.5" />
+        <div className="text-xs text-amber-900 leading-relaxed">
+          <strong>Penting:</strong> Setelah PIN diubah, kamu akan otomatis logout. Login lagi dengan PIN baru. Pastikan kamu ingat — kalau lupa, hubungi admin sistem untuk reset via environment variable.
+        </div>
+      </div>
+
+      <form onSubmit={handleSubmit} className="bg-white border border-[#FED7AA] rounded-2xl p-5 space-y-4">
+        {[
+          { key: 'current_pin', toggleKey: 'current', label: 'PIN Saat Ini', placeholder: 'Masukkan PIN sekarang', testid: 'current-pin-input' },
+          { key: 'new_pin', toggleKey: 'next', label: 'PIN Baru', placeholder: 'Min 4 karakter', testid: 'new-pin-input' },
+          { key: 'confirm_pin', toggleKey: 'confirm', label: 'Konfirmasi PIN Baru', placeholder: 'Ulangi PIN baru', testid: 'confirm-pin-input' },
+        ].map(f => (
+          <div key={f.key}>
+            <label className="block text-xs font-bold text-[#7C2D12] mb-1.5 uppercase tracking-wide">{f.label}</label>
+            <div className="relative">
+              <Lock size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-[#9A3412]" />
+              <input
+                data-testid={f.testid}
+                type={show[f.toggleKey] ? 'text' : 'password'}
+                value={form[f.key]}
+                onChange={e => set(f.key, e.target.value)}
+                placeholder={f.placeholder}
+                disabled={success}
+                autoComplete="new-password"
+                className="w-full pl-10 pr-12 py-3 rounded-xl border-2 border-[#FED7AA] focus:outline-none focus:border-[#F97316] font-body text-[#451A03] tracking-wider disabled:opacity-60"
+              />
+              <button type="button" onClick={() => toggle(f.toggleKey)} className="absolute right-4 top-1/2 -translate-y-1/2 text-[#9A3412]">
+                {show[f.toggleKey] ? <EyeOff size={14} /> : <Eye size={14} />}
+              </button>
+            </div>
+          </div>
+        ))}
+
+        <button
+          data-testid="submit-change-pin-btn"
+          type="submit"
+          disabled={loading || success || !form.current_pin || !form.new_pin || !form.confirm_pin}
+          className="w-full bg-gradient-to-r from-[#F97316] to-[#EA580C] text-white font-bold py-3.5 rounded-xl shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-all"
+        >
+          <KeyRound size={16} /> {loading ? 'Mengubah PIN...' : success ? '✅ Berhasil! Logout...' : 'Ubah PIN Sekarang'}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+// ─── TRAFFIC STATS ────────────────────────────────────────────────
+const formatNum = (n) => Number(n || 0).toLocaleString('id-ID');
+const SOURCE_ICONS = { direct: '🌐', google: '🔍', instagram: '📷', facebook: '👤', tiktok: '🎵', whatsapp: '💬', shopee: '🛍️', internal: '🏠', other: '🔗' };
+const DEVICE_ICONS = { ios: '🍎', android: '🤖', desktop: '💻', other: '📱', unknown: '❓' };
+const DEVICE_LABELS = { ios: 'iPhone / iPad', android: 'Android', desktop: 'Desktop', other: 'Lainnya', unknown: 'Tidak diketahui' };
+
+function StatCard({ icon: Icon, label, value, sublabel, color = 'orange' }) {
+  const colors = {
+    orange: 'from-[#F97316] to-[#EA580C]',
+    blue: 'from-blue-500 to-cyan-500',
+    purple: 'from-purple-500 to-pink-500',
+    green: 'from-green-500 to-emerald-500',
+  };
+  return (
+    <div className="bg-white border border-[#FED7AA] rounded-2xl p-4 hover:shadow-md transition-all">
+      <div className="flex items-center gap-3 mb-2">
+        <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${colors[color]} flex items-center justify-center text-white shadow`}>
+          <Icon size={18} />
+        </div>
+        <div>
+          <p className="text-[10px] uppercase tracking-wide text-[#9A3412] font-bold">{label}</p>
+          {sublabel && <p className="text-[10px] text-gray-500">{sublabel}</p>}
+        </div>
+      </div>
+      <p className="text-2xl font-extrabold text-[#7C2D12]">{formatNum(value)}</p>
+    </div>
+  );
+}
+
+export function TrafficStats() {
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const fetchStats = async () => {
+    try {
+      const r = await axios.get(`${API}/api/analytics/stats`);
+      setStats(r.data);
+    } catch {
+      toast.error('Gagal memuat statistik');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => { fetchStats(); }, []);
+
+  const refresh = () => { setRefreshing(true); fetchStats(); };
+
+  if (loading) {
+    return <div className="text-center py-12 text-[#9A3412]">Memuat statistik pengunjung...</div>;
+  }
+  if (!stats) return null;
+
+  const maxSource = Math.max(1, ...stats.sources.map(s => s.count));
+  const maxDevice = Math.max(1, ...stats.devices.map(d => d.count));
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="font-heading text-2xl font-bold text-[#7C2D12]">Statistik Pengunjung</h1>
+          <p className="text-xs text-[#9A3412] mt-0.5">Pantau berapa banyak pengunjung yang sudah mampir ke toko Ciltarasa.</p>
+        </div>
+        <button data-testid="refresh-traffic-btn" onClick={refresh} disabled={refreshing} className="flex items-center gap-2 px-4 py-2 rounded-full bg-white border border-[#FED7AA] text-[#7C2D12] font-bold text-xs hover:bg-[#FFF7ED] disabled:opacity-60">
+          <RefreshCw size={13} className={refreshing ? 'animate-spin' : ''} /> Refresh
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <StatCard data-testid="stat-today" icon={TrendingUp} label="Hari Ini" value={stats.today_visits} color="orange" />
+        <StatCard icon={Users} label="7 Hari Terakhir" value={stats.week_visits} color="blue" />
+        <StatCard icon={Globe} label="30 Hari Terakhir" value={stats.month_visits} color="purple" />
+        <StatCard icon={Smartphone} label="Total Pengunjung" sublabel="sepanjang waktu" value={stats.total_visits} color="green" />
+      </div>
+
+      <div className="bg-white border border-[#FED7AA] rounded-2xl p-5">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="font-heading font-bold text-[#7C2D12]">Trend Pengunjung 30 Hari</h3>
+            <p className="text-[11px] text-[#9A3412]">Jumlah pengunjung unik per hari</p>
+          </div>
+          <div className="text-right">
+            <p className="text-[10px] uppercase tracking-wide text-[#9A3412] font-bold">Total Hits</p>
+            <p className="text-lg font-extrabold text-[#EA580C]">{formatNum(stats.total_hits)}</p>
+          </div>
+        </div>
+        <div data-testid="traffic-chart" style={{ width: '100%', height: 220 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={stats.daily} margin={{ top: 5, right: 15, left: -10, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#FED7AA" />
+              <XAxis dataKey="date" tickFormatter={(v) => v.slice(5)} stroke="#9A3412" fontSize={10} />
+              <YAxis stroke="#9A3412" fontSize={10} allowDecimals={false} />
+              <Tooltip
+                contentStyle={{ borderRadius: 12, border: '1px solid #FED7AA', fontSize: 12 }}
+                labelFormatter={(l) => `Tanggal ${l}`}
+                formatter={(v) => [`${v} pengunjung`, '']}
+              />
+              <Line type="monotone" dataKey="visits" stroke="#EA580C" strokeWidth={3} dot={{ fill: '#F97316', r: 3 }} activeDot={{ r: 6 }} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="bg-white border border-[#FED7AA] rounded-2xl p-5">
+          <h3 className="font-heading font-bold text-[#7C2D12] mb-3 flex items-center gap-2"><Globe size={16} /> Sumber Pengunjung</h3>
+          {stats.sources.length === 0 ? (
+            <p className="text-sm text-gray-500 text-center py-6">Belum ada data sumber.</p>
+          ) : (
+            <div className="space-y-2.5">
+              {stats.sources.slice(0, 8).map((s) => (
+                <div key={s.source} className="flex items-center gap-3" data-testid={`source-${s.source}`}>
+                  <span className="text-lg w-6 text-center">{SOURCE_ICONS[s.source] || '🔗'}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="font-bold text-[#7C2D12] text-sm truncate capitalize">{s.source}</span>
+                      <span className="text-xs font-extrabold text-[#EA580C]">{formatNum(s.count)}</span>
+                    </div>
+                    <div className="h-1.5 bg-[#FEF3C7] rounded-full overflow-hidden mt-1">
+                      <div className="h-full bg-gradient-to-r from-[#F97316] to-[#EA580C] rounded-full" style={{ width: `${(s.count / maxSource) * 100}%` }} />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="bg-white border border-[#FED7AA] rounded-2xl p-5">
+          <h3 className="font-heading font-bold text-[#7C2D12] mb-3 flex items-center gap-2"><Monitor size={16} /> Device Pengunjung</h3>
+          {stats.devices.length === 0 ? (
+            <p className="text-sm text-gray-500 text-center py-6">Belum ada data device.</p>
+          ) : (
+            <div className="space-y-2.5">
+              {stats.devices.map((d) => (
+                <div key={d.device} className="flex items-center gap-3" data-testid={`device-${d.device}`}>
+                  <span className="text-lg w-6 text-center">{DEVICE_ICONS[d.device] || '📱'}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="font-bold text-[#7C2D12] text-sm">{DEVICE_LABELS[d.device] || d.device}</span>
+                      <span className="text-xs font-extrabold text-[#EA580C]">{formatNum(d.count)}</span>
+                    </div>
+                    <div className="h-1.5 bg-[#FEF3C7] rounded-full overflow-hidden mt-1">
+                      <div className="h-full bg-gradient-to-r from-[#F97316] to-[#EA580C] rounded-full" style={{ width: `${(d.count / maxDevice) * 100}%` }} />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="mt-4 p-3 rounded-xl bg-gradient-to-br from-green-50 to-emerald-50 border border-green-200 text-xs text-green-900 flex items-center gap-2">
+            <Smartphone size={14} className="text-green-600" />
+            <span><strong>{formatNum(stats.pwa_visits)}</strong> pengunjung sudah <strong>install PWA</strong> 🎉</span>
+          </div>
+        </div>
       </div>
     </div>
   );

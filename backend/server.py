@@ -31,11 +31,19 @@ logger = logging.getLogger(__name__)
 # Schema version — bump to force re-seed
 SCHEMA_VERSION = "v2.4.1"
 
-SELLER_PIN = os.environ.get("SELLER_PIN", "ciltarasa")
+SELLER_PIN_DEFAULT = os.environ.get("SELLER_PIN", "ciltarasa")
 APP_URL = os.environ.get("APP_URL", "")
 
-def require_seller(x_seller_pin: Optional[str] = Header(None)):
-    if x_seller_pin != SELLER_PIN:
+async def get_active_pin() -> str:
+    """Return current seller PIN — DB override if set, else env default."""
+    doc = await db.auth_config.find_one({"_id": "main"})
+    if doc and doc.get("seller_pin"):
+        return doc["seller_pin"]
+    return SELLER_PIN_DEFAULT
+
+async def require_seller(x_seller_pin: Optional[str] = Header(None)):
+    active = await get_active_pin()
+    if x_seller_pin != active:
         raise HTTPException(401, "Akses ditolak. Seller PIN diperlukan.")
     return True
 
@@ -915,6 +923,163 @@ async def reset_customers(req: ResetCustomersReq, _auth: bool = Depends(require_
         deleted["users"] = r.deleted_count
     await manager.broadcast({"type": "data_reset", "data": deleted})
     return {"success": True, "deleted": deleted}
+
+# ─── Seller Auth: Verify PIN + Change PIN ───────────────────────────────────
+class PinVerifyReq(BaseModel):
+    pin: str
+
+@api_router.post("/admin/verify-pin")
+async def verify_pin(req: PinVerifyReq):
+    """Public endpoint — verify current PIN. Used by SellerLogin."""
+    active = await get_active_pin()
+    if req.pin != active:
+        raise HTTPException(401, "PIN salah")
+    return {"success": True}
+
+class ChangePinReq(BaseModel):
+    current_pin: str
+    new_pin: str
+
+@api_router.post("/admin/change-pin")
+async def change_pin(req: ChangePinReq):
+    """Change seller PIN. Validates current PIN, requires new PIN min 4 chars."""
+    active = await get_active_pin()
+    if req.current_pin != active:
+        raise HTTPException(401, "PIN saat ini salah")
+    new_pin = (req.new_pin or "").strip()
+    if len(new_pin) < 4 or len(new_pin) > 32:
+        raise HTTPException(400, "PIN baru harus 4-32 karakter")
+    if new_pin == active:
+        raise HTTPException(400, "PIN baru harus berbeda dari PIN saat ini")
+    await db.auth_config.update_one(
+        {"_id": "main"},
+        {"$set": {"seller_pin": new_pin, "updated_at": now_iso()}},
+        upsert=True
+    )
+    return {"success": True, "message": "PIN berhasil diubah. Gunakan PIN baru untuk login berikutnya."}
+
+# ─── Analytics / Visitor Tracking ────────────────────────────────────────────
+class TrackVisitReq(BaseModel):
+    session_id: str
+    path: Optional[str] = "/"
+    referrer: Optional[str] = ""
+    user_agent: Optional[str] = ""
+    screen: Optional[str] = ""
+    is_pwa: Optional[bool] = False
+
+def parse_device(ua: str) -> str:
+    if not ua: return "unknown"
+    u = ua.lower()
+    if "iphone" in u or "ipad" in u or "ipod" in u: return "ios"
+    if "android" in u: return "android"
+    if "windows" in u or "macintosh" in u or "linux" in u: return "desktop"
+    return "other"
+
+def parse_referrer_source(ref: str) -> str:
+    if not ref: return "direct"
+    try:
+        from urllib.parse import urlparse
+        host = urlparse(ref).netloc.lower()
+        if not host: return "direct"
+        if "google" in host: return "google"
+        if "instagram" in host or "ig" in host: return "instagram"
+        if "facebook" in host or "fb.com" in host: return "facebook"
+        if "tiktok" in host: return "tiktok"
+        if "whatsapp" in host or "wa.me" in host: return "whatsapp"
+        if "shopee" in host: return "shopee"
+        if "ciltarasa" in host: return "internal"
+        return host
+    except Exception:
+        return "other"
+
+@api_router.post("/analytics/track")
+async def track_visit(req: TrackVisitReq):
+    """Public endpoint — log a visitor session. No PII collected beyond UA."""
+    ts = now_iso()
+    today_key = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    device = parse_device(req.user_agent or "")
+    source = parse_referrer_source(req.referrer or "")
+    # Upsert by session_id: first hit creates doc, subsequent hits bump hit_count + last_seen
+    await db.analytics_visits.update_one(
+        {"session_id": req.session_id},
+        {
+            "$setOnInsert": {
+                "session_id": req.session_id,
+                "first_seen": ts,
+                "first_path": req.path or "/",
+                "device": device,
+                "source": source,
+                "referrer": req.referrer or "",
+                "user_agent": (req.user_agent or "")[:300],
+                "screen": req.screen or "",
+                "is_pwa": bool(req.is_pwa),
+                "first_day": today_key,
+            },
+            "$set": {"last_seen": ts, "last_path": req.path or "/"},
+            "$inc": {"hit_count": 1},
+        },
+        upsert=True
+    )
+    return {"success": True}
+
+@api_router.get("/analytics/stats")
+async def analytics_stats(_auth: bool = Depends(require_seller)):
+    now = datetime.now(timezone.utc)
+    today_key = now.strftime("%Y-%m-%d")
+    week_cutoff = (now - timedelta(days=6)).strftime("%Y-%m-%d")  # last 7 days incl today
+    month_cutoff = (now - timedelta(days=29)).strftime("%Y-%m-%d")  # last 30 days
+
+    pipeline_total = [{"$group": {"_id": None, "visits": {"$sum": 1}, "hits": {"$sum": "$hit_count"}}}]
+    tot_doc = await db.analytics_visits.aggregate(pipeline_total).to_list(1)
+    total_visits = tot_doc[0]["visits"] if tot_doc else 0
+    total_hits = tot_doc[0]["hits"] if tot_doc else 0
+
+    today_visits = await db.analytics_visits.count_documents({"first_day": today_key})
+    week_visits = await db.analytics_visits.count_documents({"first_day": {"$gte": week_cutoff}})
+    month_visits = await db.analytics_visits.count_documents({"first_day": {"$gte": month_cutoff}})
+
+    # PWA installs (sessions that were standalone)
+    pwa_visits = await db.analytics_visits.count_documents({"is_pwa": True})
+
+    # Daily trend last 30 days
+    daily_pipeline = [
+        {"$match": {"first_day": {"$gte": month_cutoff}}},
+        {"$group": {"_id": "$first_day", "visits": {"$sum": 1}}},
+        {"$sort": {"_id": 1}},
+    ]
+    daily_docs = await db.analytics_visits.aggregate(daily_pipeline).to_list(60)
+    daily = [{"date": d["_id"], "visits": d["visits"]} for d in daily_docs]
+
+    # Fill missing days with 0
+    from datetime import date as _date
+    daily_map = {d["date"]: d["visits"] for d in daily}
+    filled = []
+    for i in range(29, -1, -1):
+        day = (now - timedelta(days=i)).strftime("%Y-%m-%d")
+        filled.append({"date": day, "visits": daily_map.get(day, 0)})
+
+    # Source breakdown
+    src_pipeline = [{"$group": {"_id": "$source", "count": {"$sum": 1}}}, {"$sort": {"count": -1}}]
+    src_docs = await db.analytics_visits.aggregate(src_pipeline).to_list(20)
+    sources = [{"source": s["_id"] or "direct", "count": s["count"]} for s in src_docs]
+
+    # Device breakdown
+    dev_pipeline = [{"$group": {"_id": "$device", "count": {"$sum": 1}}}, {"$sort": {"count": -1}}]
+    dev_docs = await db.analytics_visits.aggregate(dev_pipeline).to_list(10)
+    devices = [{"device": d["_id"] or "unknown", "count": d["count"]} for d in dev_docs]
+
+    return {
+        "total_visits": total_visits,
+        "total_hits": total_hits,
+        "today_visits": today_visits,
+        "week_visits": week_visits,
+        "month_visits": month_visits,
+        "pwa_visits": pwa_visits,
+        "daily": filled,
+        "sources": sources,
+        "devices": devices,
+    }
+
 
 # ─── Purchases (Restock) ─────────────────────────────────────────────────────
 @api_router.get("/purchases")

@@ -10,22 +10,27 @@ import FinancialReport from './FinancialReport';
 import { StoreProfile, StoreCerita, CategoriesConfig, DeliveryConfig, PaymentsConfig, HomepageTextsConfig, HeroSlideshowConfig, FunFactsConfig, OnboardingTextsConfig } from './StoreConfigPages';
 import DiscountManagement from './DiscountManagement';
 import PurchaseManagement from './PurchaseManagement';
-import { FonnteConfig, HowToOrderConfig, ResetCustomersConfig } from './AdminPages';
+import { FonnteConfig, HowToOrderConfig, ResetCustomersConfig, ChangePinConfig, TrafficStats } from './AdminPages';
 import { Smartphone } from 'lucide-react';
 import { detectEnv } from '../pwa/detectEnv';
 
-const PIN = 'ciltarasa';
+const API = process.env.REACT_APP_BACKEND_URL;
+const PIN_KEY = 'seller_pin';
 let _sellerInterceptorId = null;
 
-function attachSellerInterceptor(pin) {
+function attachSellerInterceptor(getPin) {
   if (_sellerInterceptorId !== null) return;
   _sellerInterceptorId = axios.interceptors.request.use(cfg => {
     const url = cfg.url || '';
-    // Attach PIN only for seller-mutating endpoints (POST/PUT/DELETE to backend)
     const method = (cfg.method || 'get').toLowerCase();
-    if (method !== 'get' && (url.includes('/api/products') || url.includes('/api/purchases') || url.includes('/api/discounts') || url.includes('/api/settings') || url.includes('/api/store-config') || url.includes('/api/financial-entries') || url.includes('/api/admin/') || url.includes('/api/media/upload') || /\/api\/orders\/[^/]+\/status/.test(url))) {
+    if (method !== 'get' && (url.includes('/api/products') || url.includes('/api/purchases') || url.includes('/api/discounts') || url.includes('/api/settings') || url.includes('/api/store-config') || url.includes('/api/financial-entries') || url.includes('/api/admin/test-wa') || url.includes('/api/admin/reset-customers') || url.includes('/api/admin/change-pin') || url.includes('/api/media/upload') || /\/api\/orders\/[^/]+\/status/.test(url))) {
       cfg.headers = cfg.headers || {};
-      cfg.headers['X-Seller-PIN'] = pin;
+      cfg.headers['X-Seller-PIN'] = getPin();
+    }
+    // Analytics GET (PIN-guarded)
+    if (method === 'get' && url.includes('/api/analytics/stats')) {
+      cfg.headers = cfg.headers || {};
+      cfg.headers['X-Seller-PIN'] = getPin();
     }
     return cfg;
   });
@@ -39,27 +44,32 @@ function detachSellerInterceptor() {
 }
 
 export default function SellerApp() {
-  const [authed, setAuthed] = useState(() => localStorage.getItem('seller_auth') === 'true');
+  const [authed, setAuthed] = useState(() => !!localStorage.getItem(PIN_KEY));
   const [activeTab, setActiveTab] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
-    if (authed) attachSellerInterceptor(PIN);
+    if (authed) attachSellerInterceptor(() => localStorage.getItem(PIN_KEY) || '');
     else detachSellerInterceptor();
     return () => detachSellerInterceptor();
   }, [authed]);
 
-  const handleLogin = (pin) => {
-    if (pin === PIN) {
-      localStorage.setItem('seller_auth', 'true');
-      setAuthed(true);
-      return true;
+  const handleLogin = async (pin) => {
+    try {
+      const r = await axios.post(`${API}/api/admin/verify-pin`, { pin });
+      if (r.data?.success) {
+        localStorage.setItem(PIN_KEY, pin);
+        setAuthed(true);
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
     }
-    return false;
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('seller_auth');
+    localStorage.removeItem(PIN_KEY);
     setAuthed(false);
   };
 
@@ -74,6 +84,7 @@ export default function SellerApp() {
     orders: <IncomingOrders />,
     sales: <SalesReport />,
     financial: <FinancialReport />,
+    traffic: <TrafficStats />,
     'store-profile': <StoreProfile />,
     'store-cerita': <StoreCerita />,
     'homepage-texts': <HomepageTextsConfig />,
@@ -86,6 +97,7 @@ export default function SellerApp() {
     payments: <PaymentsConfig />,
     discounts: <DiscountManagement />,
     whatsapp: <FonnteConfig />,
+    'change-pin': <ChangePinConfig onPinChanged={() => handleLogout()} />,
     'reset-customers': <ResetCustomersConfig />,
   };
 

@@ -111,7 +111,6 @@ export default function ImageUrlInput({ value, onChange, placeholder = 'https://
             <div className="w-full h-full flex items-center justify-center"><Loader2 size={20} className="animate-spin text-[#EA580C]" /></div>
           ) : previewSrc ? (
             <>
-              {/* eslint-disable-next-line jsx-a11y/img-redundant-alt, @next/next/no-img-element */}
               <img
                 src={previewSrc}
                 alt="preview"
