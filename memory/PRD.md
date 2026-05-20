@@ -25,14 +25,20 @@ Ibu-ibu milenial & Gen Z (kelahiran 1980-2000) yang anaknya SD. Modern, kekinian
 - **SmartImage rollout** — every `<img>` in buyer & seller swapped to `<SmartImage>` with CORS-proxy fallback + GDrive/Imgur/ImgBB auto-conversion + branded SVG placeholder on error
 - **ImageUrlInput** — tabbed upload (multipart POST → /api/media) or paste URL with live ✅/❌ preview validation. Used in Hero slideshow, Fun Facts, Store Logo, 5 product media inputs
 - **Media endpoint** — POST /api/media/upload (5 MB max, JPG/PNG/WEBP/GIF, base64 stored in Mongo), GET /api/media/{id} with 1-year cache headers; PIN-guarded
-- **OnboardingTextsConfig** — new Seller menu "Teks Onboarding/Login" editing 13 fields of `storeConfig.onboarding_texts` (header_title/subtitle, welcome, register/login/guest labels & subtitles, ToS, OTP hint, phone hint). OnboardingModal reads from config with sensible defaults
-- **PWA**:
-  - `manifest.json` — id, start_url=/#/buyer, theme #6B0F1A, bg #FDF8F0, 10 icons (72-512 + maskable + apple-touch), 2 screenshots, 2 shortcuts (Lacak Pesanan, Riwayat)
-  - `sw.js` — cache-first static assets, network-first /api/, offline.html fallback, background sync for queued orders, push notification ready structure
-  - PWA install banner (slide-up bottom sheet, dismissable per-session, triggered 30s OR catalog visible)
-  - Floating "?" help FAB (bottom-left) opening modal with browser+OS-detected install instructions (Chrome/Firefox/Edge/Samsung × Android/iOS/Desktop + Safari iOS+Mac)
-  - Standalone detection → hides banner, one-time welcome toast, "Installed" badge in seller mobile header
-- **CRITICAL FIX** — backend `PUT /api/store-config` now deep-merges nested dicts via dot-notation `$set` so partial updates (e.g. only editing one onboarding_text key) don't wipe sibling keys
+- **OnboardingTextsConfig** — new Seller menu "Teks Onboarding/Login" editing 13 fields of `storeConfig.onboarding_texts`. OnboardingModal reads from config with sensible defaults
+- **PWA**: `manifest.json` (10 icons + maskable + apple-touch + 2 screenshots + 2 shortcuts), `sw.js` (cache-first static, network-first API, offline.html fallback, background sync, push-ready), install banner slide-up + floating "?" help FAB with browser+OS-detected install instructions, "Installed" badge in seller header on standalone
+- **CRITICAL FIX** — backend `PUT /api/store-config` deep-merges nested dicts via dot-notation `$set`
+
+### Phase 10 ✅ Editable Seller PIN + Visitor Analytics (Feb 2026)
+- **Editable PIN**: PIN tersimpan di `db.auth_config` (override env). Endpoints:
+  - `POST /api/admin/verify-pin` (public) untuk login
+  - `POST /api/admin/change-pin` (validasi current PIN, min 4 char, harus berbeda)
+- Frontend: menu seller **"Ubah PIN Akses"** dengan form 3 field (current/new/confirm + show-hide toggle). PIN baru otomatis logout setelah 3 detik. `localStorage.seller_pin` menyimpan PIN aktif → dipakai axios interceptor.
+- **Visitor Analytics**:
+  - `POST /api/analytics/track` (public, dipanggil sekali per session via `useTrackVisit` hook di BuyerApp; sessionStorage gate)
+  - `GET /api/analytics/stats` (PIN-guarded) — total/today/week/month/pwa visits + daily 30-day chart + source breakdown (Google/IG/TikTok/WA/Shopee/Direct/...) + device breakdown (iOS/Android/Desktop)
+- Frontend: menu seller **"Statistik Pengunjung"** dengan 4 KPI cards, recharts LineChart 30-hari, source & device breakdown bars + counter PWA installed
+- Idempotent per-session: hit_count di-`$inc` saat session sama, first_seen/source/device hanya ditulis sekali (`$setOnInsert`)
 
 ## Test Credentials
 - Seller PIN: `ciltarasa` (also `X-Seller-PIN` header)
