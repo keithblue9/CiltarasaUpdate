@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { TrendingUp, ShoppingBag, Clock, AlertTriangle, RefreshCw, Flame, Lightbulb, Package, Zap } from 'lucide-react';
+import { TrendingUp, ShoppingBag, Clock, AlertTriangle, RefreshCw, Flame, Lightbulb, Package, Zap, Settings, Check, X } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import axios from 'axios';
 import { useApp } from '../../context/AppContext';
 import SmartImage from '../shared/SmartImage';
+import { toast } from 'sonner';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 const formatRp = (n) => `Rp ${Number(n).toLocaleString('id-ID')}`;
@@ -22,6 +23,81 @@ function KpiCard({ title, value, icon, color, sub }) {
         <p className="text-2xl font-bold text-[#78350F] font-heading mt-0.5">{value}</p>
         {sub && <p className="text-xs text-[#92400E] mt-0.5">{sub}</p>}
       </div>
+    </div>
+  );
+}
+
+function StockThresholdEditor({ threshold, safetyDays, onSaved }) {
+  const [editing, setEditing] = useState(false);
+  const [t, setT] = useState(threshold);
+  const [s, setS] = useState(safetyDays);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { setT(threshold); setS(safetyDays); }, [threshold, safetyDays]);
+
+  const save = async () => {
+    const tn = Number(t), sn = Number(s);
+    if (!Number.isInteger(tn) || tn < 1 || tn > 9999) { toast.error('Threshold harus 1-9999'); return; }
+    if (!Number.isInteger(sn) || sn < 0 || sn > 30) { toast.error('Safety days harus 0-30'); return; }
+    setSaving(true);
+    try {
+      await axios.put(`${API}/api/store-config`, { low_stock_threshold: tn, restock_safety_days: sn });
+      toast.success(`✅ Threshold disimpan: < ${tn} unit (safety ${sn} hari)`);
+      setEditing(false);
+      onSaved?.();
+    } catch {
+      toast.error('Gagal menyimpan threshold');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!editing) {
+    return (
+      <button
+        data-testid="open-stock-threshold-editor"
+        onClick={() => setEditing(true)}
+        className="ml-auto flex items-center gap-1.5 bg-white/25 hover:bg-white/40 text-white text-[10px] font-bold px-2.5 py-1 rounded-full transition-all"
+        title="Atur ambang batas stok rendah"
+      >
+        <Settings size={11} /> &lt;{threshold} unit · {safetyDays}d safety
+      </button>
+    );
+  }
+
+  return (
+    <div className="ml-auto flex items-center gap-1.5 bg-white/95 rounded-full px-2 py-1 text-[10px]">
+      <span className="text-[#7C2D12] font-bold">Alert &lt;</span>
+      <input
+        data-testid="stock-threshold-input"
+        type="number"
+        min={1} max={9999}
+        value={t}
+        onChange={(e) => setT(e.target.value)}
+        className="w-12 px-1.5 py-0.5 rounded border border-[#FED7AA] text-[#451A03] font-bold text-center focus:outline-none focus:border-[#F97316]"
+      />
+      <span className="text-[#7C2D12]">unit ·</span>
+      <input
+        data-testid="safety-days-input"
+        type="number"
+        min={0} max={30}
+        value={s}
+        onChange={(e) => setS(e.target.value)}
+        className="w-9 px-1.5 py-0.5 rounded border border-[#FED7AA] text-[#451A03] font-bold text-center focus:outline-none focus:border-[#F97316]"
+      />
+      <span className="text-[#7C2D12]">d safety</span>
+      <button
+        data-testid="save-stock-threshold"
+        onClick={save}
+        disabled={saving}
+        className="ml-1 p-1 rounded-full bg-green-500 text-white hover:bg-green-600 disabled:opacity-60"
+        title="Simpan"
+      ><Check size={11} /></button>
+      <button
+        onClick={() => { setEditing(false); setT(threshold); setS(safetyDays); }}
+        className="p-1 rounded-full bg-gray-400 text-white hover:bg-gray-500"
+        title="Batal"
+      ><X size={11} /></button>
     </div>
   );
 }
@@ -121,12 +197,17 @@ export default function DashboardOverview({ onTabChange }) {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {/* Restock Alerts */}
           <div className="bg-white rounded-2xl border border-[#FED7AA] overflow-hidden">
-            <div className="px-5 py-3 bg-gradient-to-r from-red-500 to-orange-500 text-white flex items-center gap-2">
+            <div className="px-5 py-3 bg-gradient-to-r from-red-500 to-orange-500 text-white flex items-center gap-2 flex-wrap">
               <Lightbulb size={16} />
               <h3 className="font-bold text-sm">Saran Restock Pintar</h3>
               {insights.restock_alerts.filter(a => a.urgency === 'high').length > 0 && (
-                <span className="ml-auto text-[10px] font-extrabold bg-white/30 px-2 py-0.5 rounded-full animate-pulse">🚨 URGENT</span>
+                <span className="text-[10px] font-extrabold bg-white/30 px-2 py-0.5 rounded-full animate-pulse">🚨 URGENT</span>
               )}
+              <StockThresholdEditor
+                threshold={insights.low_stock_threshold ?? 10}
+                safetyDays={insights.restock_safety_days ?? 2}
+                onSaved={fetchInsights}
+              />
             </div>
             <div className="p-4">
               {insights.restock_alerts.length === 0 ? (

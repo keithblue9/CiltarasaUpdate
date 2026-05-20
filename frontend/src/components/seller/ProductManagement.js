@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import SmartImage from '../shared/SmartImage';
 import ImageUrlInput from '../shared/ImageUrlInput';
 
+
 const API = process.env.REACT_APP_BACKEND_URL;
 const formatRp = (n) => `Rp ${Number(n).toLocaleString('id-ID')}`;
 const inputCls = "w-full px-4 py-2.5 rounded-xl border border-[#FED7AA] focus:outline-none focus:border-[#F97316] font-body text-[#451A03] bg-white";
@@ -181,6 +182,7 @@ export default function ProductManagement() {
   const [showForm, setShowForm] = useState(false);
   const [editProduct, setEditProduct] = useState(null);
   const [filter, setFilter] = useState('all');
+  const lowStockThreshold = storeConfig?.low_stock_threshold ?? 10;
 
   const handleSave = async (form) => {
     if (!form.name || !form.price || form.stock === '') { toast.error('Nama, harga, dan stok wajib diisi!'); return; }
@@ -277,7 +279,7 @@ export default function ProductManagement() {
                   <Tag size={10} /> {product.discount.type === 'percent' ? `${product.discount.value}% OFF` : `Diskon`}
                 </div>
               )}
-              {product.stock < 10 && product.active && (
+              {product.stock < lowStockThreshold && product.active && (
                 <div className="absolute top-2 right-2 bg-orange-500 text-white text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1">
                   <AlertTriangle size={10} /> Stok Rendah
                 </div>

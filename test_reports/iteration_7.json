@@ -1,0 +1,47 @@
+{
+  "summary": "Phase 11 — Conversion KPI + date range filter + editable low-stock threshold. Backend: 15/15 pytest cases passed (analytics/stats new fields, custom/invalid/swapped date ranges, auth guard, conversion math, store-config low_stock_threshold + restock_safety_days CRUD + sibling preservation + zero-edge case + insights reflecting threshold). Frontend: dashboard StockThresholdEditor + traffic page date range filter + chart all rendered with all expected data-testids and triggered correct backend calls. ONE FRONTEND BUG FOUND: 'Konversi Rentang' KPI card renders 'NaN' instead of the conversion percentage because StatCard.formatNum coerces the string value '14.29%' via Number() which yields NaN.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/insights/dashboard", "issue": "When low_stock_threshold is set to 0, server falls back to default 10 because of `cfg.get('low_stock_threshold') or 10` (0 is falsy). Probably intended behaviour for the 'disable low-stock alerts' case, but mark this — frontend allows 1-9999, so user cannot set 0 from UI anyway. If the design intent is to ALLOW 0 = disable alerts, change to `cfg.get('low_stock_threshold') if cfg.get('low_stock_threshold') is not None else 10`."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "AdminPages.js → TrafficStats → 'Konversi Rentang' StatCard",
+        "issue": "Card shows 'NaN' instead of the conversion percentage. Root cause: StatCard renders `value` through formatNum = (n) => Number(n || 0).toLocaleString('id-ID'). The Konversi card passes value=`${stats.conversion_rate}%` (e.g. '14.29%'), but Number('14.29%') === NaN, so .toLocaleString() returns 'NaN'. Suggested fix: either (a) pass the raw number and let StatCard add '%' for percentage cards via an optional `suffix` prop, or (b) special-case StatCard to detect a string value and render as-is without formatNum, or (c) format the number outside StatCard and pass pre-formatted string while bypassing formatNum.",
+        "selector": "StatCard label='Konversi Rentang' (in /app/frontend/src/components/seller/AdminPages.js around line 524 — formatNum defined line 374, StatCard line 379-397)",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "TrafficStats (Statistik Pengunjung)", "issues": ["Recharts ResponsiveContainer prints width(-1)/height(-1) warning on initial mount (carried over from Phase 10, low priority)."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase11.py",
+    "/app/test_reports/pytest/pytest_phase11.xml"
+  ],
+  "action_items": [
+    "FIX 'Konversi Rentang' StatCard rendering NaN. Easiest: in StatCard, if typeof value === 'string' render it as-is (do NOT push through formatNum). Alternatively pass `value={stats.conversion_rate}` and add a `suffix='%'` prop to StatCard.",
+    "(Optional) Decide whether low_stock_threshold=0 should disable alerts or fall back to 10 — currently falls back. Frontend already enforces min=1 so this is only theoretical."
+  ],
+  "critical_code_review_comments": [
+    "AdminPages.js — formatNum (line 374) is unsafe for non-numeric values; either restrict to numbers or short-circuit on string inputs. This caused the 'NaN' bug.",
+    "Backend analytics_stats range_orders uses string comparison `created_at >= 'YYYY-MM-DDT00:00:00'` which only works if `created_at` is consistently stored as ISO string. Confirmed working for default Mongo insertions but fragile — consider storing as datetime BSON.",
+    "Backend /api/insights/dashboard `int(cfg.get('low_stock_threshold') or 10)` — truthy fallback masks the value 0. If 0 should be allowed, switch to explicit `is None` check.",
+    "server.py remains >1500 lines (Phase 10 comment still applies)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase11.py (NEW — 15 pytest cases)"
+  ],
+  "success_rate": {"backend": "100% (15/15)", "frontend": "~95% (1 visible NaN bug on Konversi card; all other testids + flows green)"},
+  "test_credentials": "Seller PIN: ciltarasa (unchanged; verified after run)",
+  "seed_data_creation": "Created 1 TEST_ analytics_visits doc + 1 TEST_ order during conversion math test. Harmless. Restored low_stock_threshold=10, restock_safety_days=2 via PUT.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase 11 backend is solid (15/15). Only outstanding issue is the 'Konversi Rentang' StatCard NaN bug — see ui_bugs[0]. Fix is a 1-line change in AdminPages.js (either fix StatCard to skip formatNum for string values, or restructure how conversion_rate is passed). After fix, just reload /#/seller → sidebar-tab-traffic and confirm the Konversi card shows e.g. '14.29%' instead of 'NaN'. Backend test file /app/backend/tests/test_phase11.py is re-runnable. PIN unchanged.",
+  "rca_of_the_issue": "Bug: 'Konversi Rentang' KPI shows 'NaN'. Reproduction: Login at /#/seller (PIN=ciltarasa) → sidebar-tab-traffic → 'Konversi Rentang' card on top row. Root cause: AdminPages.js line 524 passes `value={`${stats.conversion_rate}%`}` (a string like '14.29%') into StatCard; StatCard formats it via formatNum (line 374) which does `Number(n || 0).toLocaleString('id-ID')`. `Number('14.29%')` evaluates to NaN, then NaN.toLocaleString returns 'NaN'. Mitigation options: (1) make StatCard skip formatNum for string values: `{typeof value === 'string' ? value : formatNum(value)}`; (2) pass numeric value and accept a `suffix` prop in StatCard."
+}

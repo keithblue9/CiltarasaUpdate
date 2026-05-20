@@ -304,6 +304,8 @@ class StoreConfigUpdate(BaseModel):
     fonnte_token: Optional[str] = None
     seller_notify_phone: Optional[str] = None
     wa_notif_enabled: Optional[bool] = None
+    low_stock_threshold: Optional[int] = None
+    restock_safety_days: Optional[int] = None
 
 class PurchaseItem(BaseModel):
     product_id: str
@@ -457,6 +459,8 @@ DEFAULT_STORE_CONFIG = {
     "fonnte_token": "QyMJ55FmqmLQGUxmwsBw",
     "seller_notify_phone": "6285249682337",
     "wa_notif_enabled": True,
+    "low_stock_threshold": 10,
+    "restock_safety_days": 2,
 }
 
 DEFAULT_DISCOUNTS = [
@@ -1023,11 +1027,30 @@ async def track_visit(req: TrackVisitReq):
     return {"success": True}
 
 @api_router.get("/analytics/stats")
-async def analytics_stats(_auth: bool = Depends(require_seller)):
+async def analytics_stats(
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    _auth: bool = Depends(require_seller),
+):
+    """Analytics stats. Optional from_date/to_date (YYYY-MM-DD) for chart + range KPIs.
+    Default: last 30 days incl today."""
     now = datetime.now(timezone.utc)
     today_key = now.strftime("%Y-%m-%d")
-    week_cutoff = (now - timedelta(days=6)).strftime("%Y-%m-%d")  # last 7 days incl today
-    month_cutoff = (now - timedelta(days=29)).strftime("%Y-%m-%d")  # last 30 days
+    week_cutoff = (now - timedelta(days=6)).strftime("%Y-%m-%d")
+    month_cutoff = (now - timedelta(days=29)).strftime("%Y-%m-%d")
+
+    # Parse range params (default last 30 days)
+    def _safe_date(s, default):
+        try:
+            datetime.strptime(s, "%Y-%m-%d")
+            return s
+        except Exception:
+            return default
+
+    range_from = _safe_date(from_date, month_cutoff) if from_date else month_cutoff
+    range_to = _safe_date(to_date, today_key) if to_date else today_key
+    if range_from > range_to:
+        range_from, range_to = range_to, range_from
 
     pipeline_total = [{"$group": {"_id": None, "visits": {"$sum": 1}, "hits": {"$sum": "$hit_count"}}}]
     tot_doc = await db.analytics_visits.aggregate(pipeline_total).to_list(1)
@@ -1037,44 +1060,77 @@ async def analytics_stats(_auth: bool = Depends(require_seller)):
     today_visits = await db.analytics_visits.count_documents({"first_day": today_key})
     week_visits = await db.analytics_visits.count_documents({"first_day": {"$gte": week_cutoff}})
     month_visits = await db.analytics_visits.count_documents({"first_day": {"$gte": month_cutoff}})
-
-    # PWA installs (sessions that were standalone)
     pwa_visits = await db.analytics_visits.count_documents({"is_pwa": True})
 
-    # Daily trend last 30 days
+    # Visits within selected range
+    range_visits = await db.analytics_visits.count_documents(
+        {"first_day": {"$gte": range_from, "$lte": range_to}}
+    )
+
+    # Daily trend within selected range
     daily_pipeline = [
-        {"$match": {"first_day": {"$gte": month_cutoff}}},
+        {"$match": {"first_day": {"$gte": range_from, "$lte": range_to}}},
         {"$group": {"_id": "$first_day", "visits": {"$sum": 1}}},
         {"$sort": {"_id": 1}},
     ]
-    daily_docs = await db.analytics_visits.aggregate(daily_pipeline).to_list(60)
-    daily = [{"date": d["_id"], "visits": d["visits"]} for d in daily_docs]
+    daily_docs = await db.analytics_visits.aggregate(daily_pipeline).to_list(370)
+    daily_map = {d["_id"]: d["visits"] for d in daily_docs}
 
     # Fill missing days with 0
-    from datetime import date as _date
-    daily_map = {d["date"]: d["visits"] for d in daily}
+    start_dt = datetime.strptime(range_from, "%Y-%m-%d")
+    end_dt = datetime.strptime(range_to, "%Y-%m-%d")
+    days_span = (end_dt - start_dt).days
     filled = []
-    for i in range(29, -1, -1):
-        day = (now - timedelta(days=i)).strftime("%Y-%m-%d")
+    for i in range(days_span + 1):
+        day = (start_dt + timedelta(days=i)).strftime("%Y-%m-%d")
         filled.append({"date": day, "visits": daily_map.get(day, 0)})
 
-    # Source breakdown
-    src_pipeline = [{"$group": {"_id": "$source", "count": {"$sum": 1}}}, {"$sort": {"count": -1}}]
+    # Source breakdown (within range)
+    src_pipeline = [
+        {"$match": {"first_day": {"$gte": range_from, "$lte": range_to}}},
+        {"$group": {"_id": "$source", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}},
+    ]
     src_docs = await db.analytics_visits.aggregate(src_pipeline).to_list(20)
     sources = [{"source": s["_id"] or "direct", "count": s["count"]} for s in src_docs]
 
-    # Device breakdown
-    dev_pipeline = [{"$group": {"_id": "$device", "count": {"$sum": 1}}}, {"$sort": {"count": -1}}]
+    # Device breakdown (within range)
+    dev_pipeline = [
+        {"$match": {"first_day": {"$gte": range_from, "$lte": range_to}}},
+        {"$group": {"_id": "$device", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}},
+    ]
     dev_docs = await db.analytics_visits.aggregate(dev_pipeline).to_list(10)
     devices = [{"device": d["_id"] or "unknown", "count": d["count"]} for d in dev_docs]
 
+    # Orders within range (using created_at YYYY-MM-DD prefix)
+    range_orders = await db.orders.count_documents({
+        "status": {"$nin": ["dibatalkan"]},
+        "created_at": {"$gte": f"{range_from}T00:00:00", "$lte": f"{range_to}T23:59:59.999999"},
+    })
+    total_orders = await db.orders.count_documents({"status": {"$nin": ["dibatalkan"]}})
+
+    conv_rate = round((range_orders / range_visits) * 100, 2) if range_visits > 0 else 0
+    overall_conv_rate = round((total_orders / total_visits) * 100, 2) if total_visits > 0 else 0
+
     return {
+        # Overall (all-time)
         "total_visits": total_visits,
         "total_hits": total_hits,
+        "pwa_visits": pwa_visits,
+        "total_orders": total_orders,
+        "overall_conversion_rate": overall_conv_rate,
+        # Standard windows
         "today_visits": today_visits,
         "week_visits": week_visits,
         "month_visits": month_visits,
-        "pwa_visits": pwa_visits,
+        # Selected range
+        "range_from": range_from,
+        "range_to": range_to,
+        "range_visits": range_visits,
+        "range_orders": range_orders,
+        "conversion_rate": conv_rate,
+        # Breakdowns (within range)
         "daily": filled,
         "sources": sources,
         "devices": devices,
@@ -1157,6 +1213,9 @@ async def insights_dashboard():
     products = await db.products.find({}, {"_id": 0}).to_list(1000)
     orders = await db.orders.find({"status": {"$nin": ["dibatalkan"]}}, {"_id": 0}).to_list(1000)
     purchases = await db.purchases.find({"status": "received"}, {"_id": 0}).to_list(1000)
+    cfg = await db.store_config.find_one({"_id": "main"}) or {}
+    low_stock_threshold = int(cfg.get("low_stock_threshold") or 10)
+    safety_days = int(cfg.get("restock_safety_days") or 2)
 
     now = datetime.now(timezone.utc)
     # 30-day sales velocity per product (units/day)
@@ -1205,7 +1264,7 @@ async def insights_dashboard():
         v = velocity.get(p["id"], 0)
         lt = lead_time.get(p["id"], 3)  # default 3 days
         days_left = (p.get("stock", 0) / v) if v > 0 else 999
-        threshold_days = lt + 2  # 2-day safety buffer
+        threshold_days = lt + safety_days  # configurable safety buffer
         if v > 0 and days_left < threshold_days:
             # Suggested restock qty: cover 30 days + buffer
             suggested_qty = max(int((30 + lt) * v - p.get("stock", 0)), 5)
@@ -1219,7 +1278,7 @@ async def insights_dashboard():
                 "last_cost": p.get("cost_price", 0),
                 "urgency": "high" if days_left < lt else "medium",
             })
-        elif p.get("stock", 0) < 10:
+        elif p.get("stock", 0) < low_stock_threshold:
             alerts.append({
                 "id": p["id"], "name": p["name"], "image_url": p.get("image_url", ""),
                 "stock": p.get("stock", 0),
@@ -1236,7 +1295,9 @@ async def insights_dashboard():
         "top_sellers": top_sellers,
         "restock_alerts": alerts[:10],
         "total_products": len(products),
-        "low_stock_count": len([p for p in products if p.get("stock", 0) < 10]),
+        "low_stock_count": len([p for p in products if p.get("stock", 0) < low_stock_threshold]),
+        "low_stock_threshold": low_stock_threshold,
+        "restock_safety_days": safety_days,
     }
 
 # ─── Recommendations ─────────────────────────────────────────────────────────
