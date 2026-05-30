@@ -58,7 +58,7 @@ function HeroSlideshow({ slides }) {
         <div className="absolute bottom-5 right-5 flex gap-1.5 z-10">
           {activeSlides.map((s, i) => (
             <button
-              key={i}
+              key={s.id || `slide-${i}`}
               data-testid={`hero-slide-dot-${i}`}
               onClick={() => setIdx(i)}
               className={`h-1.5 rounded-full transition-all ${i === idx ? 'bg-white w-8' : 'bg-white/40 w-3'}`}
@@ -120,7 +120,7 @@ export default function Hero() {
             <div className="flex items-center gap-4 mt-8 fade-in-up stagger-4">
               <div className="flex -space-x-2">
                 {['👩', '👩‍🦱', '👵', '👨'].map((e, i) => (
-                  <div key={i} className="w-9 h-9 rounded-full bg-white/90 flex items-center justify-center text-lg border-2 border-white shadow">{e}</div>
+                  <div key={`avatar-${e}-${i}`} className="w-9 h-9 rounded-full bg-white/90 flex items-center justify-center text-lg border-2 border-white shadow">{e}</div>
                 ))}
               </div>
               <div>

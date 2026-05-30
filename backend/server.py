@@ -8,6 +8,7 @@ import logging
 import json
 import re
 import random
+import secrets
 import httpx
 from pathlib import Path
 from pydantic import BaseModel, Field
@@ -128,7 +129,9 @@ async def fonnte_send(target: str, message: str) -> Dict[str, Any]:
                 data={"target": target, "message": message, "countryCode": "62"},
             )
             data = r.json() if r.headers.get("content-type", "").startswith("application/json") else {"raw": r.text}
-            return {"ok": r.status_code == 200 and data.get("status", True) is not False, "status": r.status_code, "response": data}
+            status_val = data.get("status", True)
+            ok = r.status_code == 200 and status_val not in (False, "false", "False", 0, "0")
+            return {"ok": ok, "status": r.status_code, "response": data}
     except Exception as e:
         logger.warning(f"Fonnte send failed to {target}: {e}")
         return {"ok": False, "error": str(e)}
@@ -624,7 +627,7 @@ async def request_otp(req: OTPRequest):
     # Generate 6-digit OTP. If WA notif is enabled and token configured, send real OTP.
     token, _, enabled = await get_fonnte_config()
     use_real = bool(token and enabled)
-    otp_code = str(random.randint(100000, 999999)) if use_real else "123456"
+    otp_code = f"{secrets.randbelow(900000) + 100000}" if use_real else "123456"
     ts = now_iso()
     expires = (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()
     await db.users.update_one(

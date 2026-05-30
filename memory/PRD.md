@@ -46,6 +46,14 @@ Ibu-ibu milenial & Gen Z (kelahiran 1980-2000) yang anaknya SD. Modern, kekinian
 - **Editable Low-Stock Threshold**: 2 field baru di `store_config` — `low_stock_threshold` (default 10) & `restock_safety_days` (default 2). `/api/insights/dashboard` baca dari config; ProductManagement "Stok Rendah" badge pakai threshold dinamis dari storeConfig.
 - Frontend Dashboard: header card "Saran Restock Pintar" punya tombol inline editor (chip `<10 unit · 2d safety`) → klik buka editor inline dengan 2 input + Save/Cancel, langsung PUT store-config & refresh insights tanpa pindah halaman.
 
+### Phase 12 ✅ Code Quality Fixes (Feb 2026)
+- **Security**: OTP generator dipindah dari `random.randint` → `secrets.randbelow` (cryptographically strong, anti-prediction).
+- **Robustness**: Fonnte response handler lebih toleran — terima `False`/`"false"`/`0` sebagai status gagal (sebelumnya hanya `is not False` yang ketat).
+- **React keys**: Hero slideshow dots, ProductDetailModal media dots & review photos pakai stable key (uuid/url) instead of index.
+- **Error visibility**: 6 empty catch blocks di seller/buyer (AppContext WS + parse, FinancialReport×2, SalesReport, DashboardOverview, IncomingOrders) sekarang `console.warn` agar mudah debug — tidak lagi silent swallow.
+- **Hook hygiene**: 4 mount-only `useEffect` di AppContext + SellerApp di-annotate `eslint-disable react-hooks/exhaustive-deps` (untuk dependencies yang module-scoped & intentionally stable).
+- Tidak refactor: httpOnly cookies, complexity reduction `seed_database`/`insights_dashboard`/`Catalog`/`Checkout` (P2 backlog — terlalu invasive untuk session ini).
+
 ## Test Credentials
 - Seller PIN: `ciltarasa` (also `X-Seller-PIN` header)
 - Buyer OTP: real Fonnte OTP via WA, fallback `123456` if Fonnte device disconnected/disabled

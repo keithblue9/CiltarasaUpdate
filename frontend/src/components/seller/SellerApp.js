@@ -52,6 +52,8 @@ export default function SellerApp() {
     if (authed) attachSellerInterceptor(() => localStorage.getItem(PIN_KEY) || '');
     else detachSellerInterceptor();
     return () => detachSellerInterceptor();
+    // PIN_KEY, attach/detach are module-scoped constants — safe to omit
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authed]);
 
   const handleLogin = async (pin) => {

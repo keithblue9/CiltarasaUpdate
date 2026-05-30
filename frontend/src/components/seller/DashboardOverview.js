@@ -118,7 +118,7 @@ export default function DashboardOverview({ onTabChange }) {
       setReport(r.data);
       setOrders(o.data.slice(0, 5));
       fetchInsights();
-    } catch {}
+    } catch (err) { console.warn('[DashboardOverview] load failed:', err); }
     setLoading(false);
   };
 

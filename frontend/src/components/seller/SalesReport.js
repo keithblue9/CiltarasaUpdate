@@ -17,7 +17,7 @@ export default function SalesReport() {
     try {
       const res = await axios.get(`${API}/api/reports/sales?period=${p}`);
       setReport(res.data);
-    } catch {}
+    } catch (err) { console.warn('[SalesReport] load failed:', err); }
     setLoading(false);
   };
 

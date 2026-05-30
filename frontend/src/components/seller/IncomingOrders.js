@@ -91,7 +91,7 @@ export default function IncomingOrders() {
     try {
       const res = await axios.get(`${API}/api/orders`);
       setOrders(res.data);
-    } catch {}
+    } catch (err) { console.warn('[IncomingOrders] load failed:', err); }
     setLoading(false);
   };
 

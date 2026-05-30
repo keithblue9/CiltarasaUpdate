@@ -63,8 +63,8 @@ export default function ProductDetailModal({ product, onClose }) {
                     <ChevronRight size={16} />
                   </button>
                   <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5">
-                    {media.map((_, i) => (
-                      <button key={i} onClick={() => setActiveMedia(i)} className={`w-2 h-2 rounded-full transition-all ${i === activeMedia ? 'bg-white w-6' : 'bg-white/60'}`} />
+                    {media.map((url, i) => (
+                      <button key={`media-dot-${url}-${i}`} onClick={() => setActiveMedia(i)} className={`w-2 h-2 rounded-full transition-all ${i === activeMedia ? 'bg-white w-6' : 'bg-white/60'}`} />
                     ))}
                   </div>
                 </>
@@ -168,7 +168,7 @@ export default function ProductDetailModal({ product, onClose }) {
                     {r.photos?.length > 0 && (
                       <div className="flex gap-1.5 mt-2">
                         {r.photos.map((p, i) => (
-                          <SmartImage key={i} src={p} alt="" className="w-14 h-14 rounded-lg object-cover" />
+                          <SmartImage key={`${r.id}-photo-${i}`} src={p} alt="" className="w-14 h-14 rounded-lg object-cover" />
                         ))}
                       </div>
                     )}

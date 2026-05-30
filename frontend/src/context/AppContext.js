@@ -45,11 +45,13 @@ export function AppProvider({ children }) {
   const wsRef = useRef(null);
   const timerRef = useRef(null);
 
-  // Load cart from localStorage
+  // Load cart from localStorage (run once on mount)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     const saved = localStorage.getItem('ciltarasa_cart');
     if (saved) {
-      try { dispatch({ type: 'INIT', cart: JSON.parse(saved) }); } catch {}
+      try { dispatch({ type: 'INIT', cart: JSON.parse(saved) }); }
+      catch (e) { console.warn('[AppContext] Failed to parse saved cart:', e); }
     }
   }, []);
 
@@ -57,7 +59,8 @@ export function AppProvider({ children }) {
     localStorage.setItem('ciltarasa_cart', JSON.stringify(cart));
   }, [cart]);
 
-  // Load auth session
+  // Load auth session (run once on mount)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     const t = localStorage.getItem('ciltarasa_token');
     const guest = localStorage.getItem('ciltarasa_guest');
@@ -79,9 +82,10 @@ export function AppProvider({ children }) {
     axios.get(`${API}/api/reviews`).then(r => setReviews(r.data)).catch(() => {});
     axios.get(`${API}/api/purchases`).then(r => setPurchases(r.data)).catch(() => {});
   };
-  useEffect(() => { loadAll(); }, []);
+  useEffect(() => { loadAll(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
 
   // WebSocket
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     let active = true;
     const connect = () => {
@@ -131,7 +135,7 @@ export function AppProvider({ children }) {
           if (msg.type === 'purchase_deleted') {
             setPurchases(prev => prev.filter(p => p.id !== msg.data.id));
           }
-        } catch {}
+        } catch (err) { console.warn('[AppContext WS] message parse error:', err); }
       };
       ws.onclose = () => {
         if (!active) return;

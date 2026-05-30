@@ -23,7 +23,7 @@ export default function FinancialReport() {
       ]);
       setReport(r.data);
       setEntries(e.data);
-    } catch {}
+    } catch (err) { console.warn('[FinancialReport] load failed:', err); }
     setLoading(false);
   };
 
@@ -45,7 +45,7 @@ export default function FinancialReport() {
     try {
       await axios.delete(`${API}/api/financial-entries/${id}`);
       await load();
-    } catch {}
+    } catch (err) { console.warn('[FinancialReport] delete failed:', err); toast.error('Gagal menghapus entri.'); }
   };
 
   const monthlyChartData = report?.monthly
