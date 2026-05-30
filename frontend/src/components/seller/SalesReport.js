@@ -75,7 +75,7 @@ export default function SalesReport() {
               { label: 'Rata-rata Pesanan', value: formatRp(report?.avg_order || 0), icon: <Target size={20} className="text-green-600" />, bg: 'bg-green-50' },
               { label: 'Produk Terlaris', value: report?.best_seller || '-', icon: <span className="text-lg">🏆</span>, bg: 'bg-yellow-50', small: true },
             ].map((card, i) => (
-              <div key={i} className="bg-white rounded-2xl border border-[#FED7AA] p-4 flex gap-3">
+              <div key={card.label} className="bg-white rounded-2xl border border-[#FED7AA] p-4 flex gap-3">
                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${card.bg}`}>{card.icon}</div>
                 <div className="min-w-0">
                   <p className="text-xs font-semibold text-[#92400E] uppercase tracking-wide">{card.label}</p>
@@ -109,7 +109,7 @@ export default function SalesReport() {
                 <ResponsiveContainer width="100%" height={180}>
                   <PieChart>
                     <Pie data={categoryData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" label={({name, pct}) => `${name}`}>
-                      {categoryData.map((_, i) => <Cell key={i} fill={i === 0 ? '#D97706' : '#78350F'} />)}
+                      {categoryData.map((entry, i) => <Cell key={`cat-cell-${entry.name || i}`} fill={i === 0 ? '#D97706' : '#78350F'} />)}
                     </Pie>
                     <Tooltip formatter={v => [formatRp(v)]} contentStyle={{ fontFamily: 'Nunito', fontSize: 12 }} />
                     <Legend />
@@ -125,7 +125,7 @@ export default function SalesReport() {
                 <ResponsiveContainer width="100%" height={180}>
                   <PieChart>
                     <Pie data={statusData} cx="50%" cy="50%" outerRadius={80} dataKey="value" label={({name}) => name}>
-                      {statusData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                      {statusData.map((entry, i) => <Cell key={`status-cell-${entry.name || i}`} fill={COLORS[i % COLORS.length]} />)}
                     </Pie>
                     <Tooltip contentStyle={{ fontFamily: 'Nunito', fontSize: 12 }} />
                   </PieChart>
@@ -149,7 +149,7 @@ export default function SalesReport() {
                   </thead>
                   <tbody>
                     {report.product_performance.map((p, i) => (
-                      <tr key={i} className="border-b border-[#FED7AA]/50 hover:bg-[#FDF8F0]">
+                      <tr key={p.id || p.name || `row-${i}`} className="border-b border-[#FED7AA]/50 hover:bg-[#FDF8F0]">
                         <td className="py-3 px-3 font-semibold text-[#451A03]">{p.name}</td>
                         <td className="py-3 px-3 text-[#451A03]">{p.units} pcs</td>
                         <td className="py-3 px-3 font-semibold text-[#D97706]">{formatRp(p.revenue)}</td>

@@ -132,7 +132,7 @@ export default function ReviewModal({ order, onClose, onSubmitted }) {
 
         <div className="flex-1 overflow-y-auto px-5 py-5 space-y-5">
           {itemReviews.map((item, idx) => (
-            <div key={idx} className="border border-[#FED7AA] rounded-2xl p-4 bg-[#FFFBF5]">
+            <div key={item.product_id || `item-${idx}`} className="border border-[#FED7AA] rounded-2xl p-4 bg-[#FFFBF5]">
               <div className="flex items-center gap-3 mb-3">
                 {item.image_url && (
                   <SmartImage src={item.image_url} alt={item.product_name} className="w-14 h-14 rounded-xl object-cover" />
@@ -159,7 +159,7 @@ export default function ReviewModal({ order, onClose, onSubmitted }) {
               {/* Photo upload mock */}
               <div className="mt-3 flex items-center gap-2 flex-wrap">
                 {item.photos.map((p, pIdx) => (
-                  <div key={pIdx} className="relative">
+                  <div key={`${item.product_id}-photo-${pIdx}-${p.slice(-12)}`} className="relative">
                     <SmartImage src={p} alt="" className="w-14 h-14 rounded-lg object-cover" />
                     <button
                       onClick={() => removePhoto(idx, pIdx)}

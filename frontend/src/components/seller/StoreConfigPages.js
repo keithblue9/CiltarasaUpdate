@@ -118,7 +118,7 @@ export function StoreProfile() {
         ) : (
           <div className="space-y-3">
             {form.bank_accounts.map((b, idx) => (
-              <div key={idx} className="grid grid-cols-12 gap-2 items-end p-3 rounded-xl bg-[#FFFBF5] border border-[#FED7AA]">
+              <div key={b.id || `bank-${idx}`} className="grid grid-cols-12 gap-2 items-end p-3 rounded-xl bg-[#FFFBF5] border border-[#FED7AA]">
                 <div className="col-span-3"><Field label="Bank"><input className={inputCls} value={b.bank} onChange={e => updateBank(idx, 'bank', e.target.value)} placeholder="BCA" /></Field></div>
                 <div className="col-span-5"><Field label="Nama Pemilik"><input className={inputCls} value={b.name} onChange={e => updateBank(idx, 'name', e.target.value)} /></Field></div>
                 <div className="col-span-3"><Field label="No. Rekening"><input className={inputCls} value={b.number} onChange={e => updateBank(idx, 'number', e.target.value)} /></Field></div>
@@ -198,7 +198,7 @@ export function CategoriesConfig() {
       <Section title="Daftar Kategori" icon={FolderTree} action={<button data-testid="add-category-btn" onClick={add} className="flex items-center gap-1 text-xs font-bold text-[#EA580C] hover:underline"><Plus size={14} /> Tambah</button>}>
         <div className="space-y-2">
           {cats.map((c, idx) => (
-            <div key={idx} className="grid grid-cols-12 gap-2 items-end p-3 rounded-xl bg-[#FFFBF5] border border-[#FED7AA]">
+            <div key={c.id || `cat-${idx}`} className="grid grid-cols-12 gap-2 items-end p-3 rounded-xl bg-[#FFFBF5] border border-[#FED7AA]">
               <div className="col-span-3"><Field label="ID Unik"><input className={inputCls} value={c.id} onChange={e => update(idx, 'id', e.target.value.toLowerCase().replace(/\s/g, '-'))} /></Field></div>
               <div className="col-span-5"><Field label="Nama"><input className={inputCls} value={c.name} onChange={e => update(idx, 'name', e.target.value)} /></Field></div>
               <div className="col-span-3"><Field label="Icon Emoji"><input className={inputCls + ' text-center text-2xl'} value={c.icon} onChange={e => update(idx, 'icon', e.target.value)} /></Field></div>
@@ -231,7 +231,7 @@ export function DeliveryConfig() {
       <Section title="Opsi Pengiriman" icon={Truck} action={<button data-testid="add-delivery-btn" onClick={add} className="flex items-center gap-1 text-xs font-bold text-[#EA580C] hover:underline"><Plus size={14} /> Tambah</button>}>
         <div className="space-y-3">
           {items.map((it, idx) => (
-            <div key={idx} className="p-3 rounded-xl bg-[#FFFBF5] border border-[#FED7AA] space-y-2">
+            <div key={it.id || `del-${idx}`} className="p-3 rounded-xl bg-[#FFFBF5] border border-[#FED7AA] space-y-2">
               <div className="grid grid-cols-12 gap-2">
                 <div className="col-span-4"><Field label="Nama"><input className={inputCls} value={it.name} onChange={e => update(idx, 'name', e.target.value)} placeholder="Kurir Toko" /></Field></div>
                 <div className="col-span-3"><Field label="Ongkir (Rp)"><input type="number" className={inputCls} value={it.fee} onChange={e => update(idx, 'fee', Number(e.target.value))} /></Field></div>
@@ -271,7 +271,7 @@ export function PaymentsConfig() {
       <Section title="Opsi Pembayaran" icon={CreditCard} action={<button data-testid="add-payment-btn" onClick={add} className="flex items-center gap-1 text-xs font-bold text-[#EA580C] hover:underline"><Plus size={14} /> Tambah</button>}>
         <div className="space-y-3">
           {items.map((it, idx) => (
-            <div key={idx} className="p-3 rounded-xl bg-[#FFFBF5] border border-[#FED7AA]">
+            <div key={it.id || `pay-${idx}`} className="p-3 rounded-xl bg-[#FFFBF5] border border-[#FED7AA]">
               <div className="grid grid-cols-12 gap-2 items-end">
                 <div className="col-span-3"><Field label="Nama"><input className={inputCls} value={it.name} onChange={e => update(idx, 'name', e.target.value)} placeholder="Transfer BCA" /></Field></div>
                 <div className="col-span-2">
@@ -390,7 +390,7 @@ export function HeroSlideshowConfig() {
         <div className="space-y-3">
           {slides.length === 0 && <p className="text-sm text-gray-500 text-center py-6">Belum ada slide. Tambahkan slide pertamamu!</p>}
           {slides.map((s, idx) => (
-            <div key={idx} className="grid grid-cols-12 gap-2 items-start p-3 rounded-xl bg-[#FFFBF5] border border-[#FED7AA]">
+            <div key={s.id || `slide-${idx}`} className="grid grid-cols-12 gap-2 items-start p-3 rounded-xl bg-[#FFFBF5] border border-[#FED7AA]">
               <div className="col-span-12 sm:col-span-8">
                 <Field label={`Gambar Slide #${idx + 1}`}>
                   <ImageUrlInput
@@ -450,7 +450,7 @@ export function FunFactsConfig() {
         <div className="space-y-3">
           {facts.length === 0 && <p className="text-sm text-gray-500 text-center py-6">Belum ada fun fact. Buat 5 fakta menarik tentang toko!</p>}
           {facts.map((f, idx) => (
-            <div key={idx} className="grid grid-cols-12 gap-3 p-4 rounded-xl bg-[#FFFBF5] border border-[#FED7AA]">
+            <div key={f.id || `ff-${idx}`} className="grid grid-cols-12 gap-3 p-4 rounded-xl bg-[#FFFBF5] border border-[#FED7AA]">
               <div className="col-span-12 sm:col-span-4">
                 <Field label={`Gambar Fun Fact #${idx + 1}`}>
                   <ImageUrlInput

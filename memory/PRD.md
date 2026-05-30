@@ -49,10 +49,15 @@ Ibu-ibu milenial & Gen Z (kelahiran 1980-2000) yang anaknya SD. Modern, kekinian
 ### Phase 12 ✅ Code Quality Fixes (Feb 2026)
 - **Security**: OTP generator dipindah dari `random.randint` → `secrets.randbelow` (cryptographically strong, anti-prediction).
 - **Robustness**: Fonnte response handler lebih toleran — terima `False`/`"false"`/`0` sebagai status gagal (sebelumnya hanya `is not False` yang ketat).
-- **React keys**: Hero slideshow dots, ProductDetailModal media dots & review photos pakai stable key (uuid/url) instead of index.
-- **Error visibility**: 6 empty catch blocks di seller/buyer (AppContext WS + parse, FinancialReport×2, SalesReport, DashboardOverview, IncomingOrders) sekarang `console.warn` agar mudah debug — tidak lagi silent swallow.
-- **Hook hygiene**: 4 mount-only `useEffect` di AppContext + SellerApp di-annotate `eslint-disable react-hooks/exhaustive-deps` (untuk dependencies yang module-scoped & intentionally stable).
-- Tidak refactor: httpOnly cookies, complexity reduction `seed_database`/`insights_dashboard`/`Catalog`/`Checkout` (P2 backlog — terlalu invasive untuk session ini).
+- **React keys (round 1)**: Hero slideshow dots, ProductDetailModal media dots & review photos pakai stable key (uuid/url).
+- **Error visibility (round 1)**: 6 empty catch blocks → `console.warn` (AppContext WS+parse, FinancialReport×2, SalesReport, DashboardOverview, IncomingOrders).
+- **Hook hygiene**: 4 mount-only useEffect di AppContext + SellerApp annotate `eslint-disable react-hooks/exhaustive-deps`.
+
+### Phase 12b ✅ Code Quality Fixes Round 2 (Feb 2026)
+- **More empty catches → logged**: `SmartImage` CORS proxy, `PwaInstallBanner` install prompt, `useTrackVisit` analytics fail + tracking init.
+- **More React keys (stable IDs)**: StoreConfigPages bank/categories/delivery/payment/slides/funfacts pakai `item.id || fallback-idx`. SalesReport top cards (label), pie cells (entry.name), product table (product id/name). Hero stars (`star-${i}`). ReviewModal item (product_id) + photo (composite product_id+idx+hash).
+- **SmartImage useEffect**: dokumentasi komentar bahwa setters/normalizer stable & sengaja tidak masuk deps.
+- **Tidak dikerjakan (alasan tetap)**: httpOnly cookies (P2 — butuh backend session refactor + CSRF), refactor complexity `seed_database`/`insights_dashboard`/`analytics_stats`/`get_sales_report` (P2 — di backlog), refactor komponen `Catalog`/`Checkout`/`OnboardingModal` (P2), index-as-key di test files (tidak runtime-impact), `is` vs `==` di server.py 752/1173 (false-positive — `is not None` adalah convention Python yang benar).
 
 ## Test Credentials
 - Seller PIN: `ciltarasa` (also `X-Seller-PIN` header)

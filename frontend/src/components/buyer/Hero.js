@@ -125,7 +125,7 @@ export default function Hero() {
               </div>
               <div>
                 <div className="flex items-center gap-1 text-amber-300 text-sm">
-                  {'★★★★★'.split('').map((s, i) => <span key={i}>{s}</span>)}
+                  {'★★★★★'.split('').map((s, i) => <span key={`star-${i}`}>{s}</span>)}
                 </div>
                 <p className="text-xs text-orange-100 font-semibold">{t.social_proof_text}</p>
               </div>

@@ -32,7 +32,11 @@ export default function useTrackVisit() {
         user_agent: navigator.userAgent || '',
         screen: `${window.screen?.width || 0}x${window.screen?.height || 0}`,
         is_pwa: env.isStandalone,
-      }).catch(() => {});
-    } catch { /* noop */ }
+      }).catch((err) => {
+        console.warn('[useTrackVisit] analytics POST failed:', err?.message || err);
+      });
+    } catch (err) {
+      console.warn('[useTrackVisit] tracking init failed:', err);
+    }
   }, []);
 }

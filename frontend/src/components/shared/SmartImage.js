@@ -38,6 +38,8 @@ export default function SmartImage({ src, alt = '', className = '', style = {}, 
   const [stage, setStage] = useState(0); // 0=normal, 1=cors-proxy, 2=fallback
 
   useEffect(() => {
+    // Re-sync internal state whenever incoming src changes.
+    // setCurrent/setStage are stable; normalizeImageUrl is module-scoped.
     setCurrent(normalizeImageUrl(src));
     setStage(0);
   }, [src]);
@@ -50,7 +52,9 @@ export default function SmartImage({ src, alt = '', className = '', style = {}, 
         setCurrent(proxied);
         setStage(1);
         return;
-      } catch {}
+      } catch (err) {
+        console.warn('[SmartImage] CORS proxy fallback failed:', err);
+      }
     }
     if (stage < 2) {
       setCurrent(fallbackSrc);

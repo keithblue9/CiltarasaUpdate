@@ -64,7 +64,9 @@ export default function PwaInstallBanner({ onOpenHelp }) {
           sessionStorage.setItem(SESSION_KEY, '1');
           setShow(false);
         }
-      } catch { /* noop */ }
+      } catch (err) {
+        console.warn('[PWA] Install prompt error:', err);
+      }
       setDeferredPrompt(null);
     } else {
       // No native prompt → open help modal
