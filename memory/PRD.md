@@ -40,6 +40,12 @@ Ibu-ibu milenial & Gen Z (kelahiran 1980-2000) yang anaknya SD. Modern, kekinian
 - Frontend: menu seller **"Statistik Pengunjung"** dengan 4 KPI cards, recharts LineChart 30-hari, source & device breakdown bars + counter PWA installed
 - Idempotent per-session: hit_count di-`$inc` saat session sama, first_seen/source/device hanya ditulis sekali (`$setOnInsert`)
 
+### Phase 11 ✅ Conversion Metric + Date Range Filter + Editable Stock Threshold (Feb 2026)
+- **GET /api/analytics/stats** sekarang menerima `from_date` & `to_date` (YYYY-MM-DD); default = 30 hari terakhir. Tambahan field response: `range_visits`, `range_orders`, `conversion_rate` (% order/visit dalam rentang), `total_orders`, `overall_conversion_rate`. Invalid date → fallback default. from>to → auto-swap.
+- Frontend Traffic page: filter rentang tanggal (preset Hari Ini / 7d / 30d / 90d + date picker custom + tombol Terapkan), 4 KPI baru (Pengunjung rentang, Order rentang, **Konversi Rentang %**, Total Pengunjung + overall conversion subline). StatCard fixed agar render string-value (`14.29%`) tanpa NaN.
+- **Editable Low-Stock Threshold**: 2 field baru di `store_config` — `low_stock_threshold` (default 10) & `restock_safety_days` (default 2). `/api/insights/dashboard` baca dari config; ProductManagement "Stok Rendah" badge pakai threshold dinamis dari storeConfig.
+- Frontend Dashboard: header card "Saran Restock Pintar" punya tombol inline editor (chip `<10 unit · 2d safety`) → klik buka editor inline dengan 2 input + Save/Cancel, langsung PUT store-config & refresh insights tanpa pindah halaman.
+
 ## Test Credentials
 - Seller PIN: `ciltarasa` (also `X-Seller-PIN` header)
 - Buyer OTP: real Fonnte OTP via WA, fallback `123456` if Fonnte device disconnected/disabled

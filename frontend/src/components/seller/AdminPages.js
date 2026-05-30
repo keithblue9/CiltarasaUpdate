@@ -394,7 +394,7 @@ function StatCard({ icon: Icon, label, value, sublabel, color = 'orange' }) {
           {sublabel && <p className="text-[10px] text-gray-500">{sublabel}</p>}
         </div>
       </div>
-      <p className="text-2xl font-extrabold text-[#7C2D12]">{formatNum(value)}</p>
+      <p className="text-2xl font-extrabold text-[#7C2D12]">{typeof value === 'string' ? value : formatNum(value)}</p>
     </div>
   );
 }
