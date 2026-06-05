@@ -27,7 +27,9 @@ export default function SellerPushSettings() {
     try {
       const r = await axios.get(`${API}/api/push/subscriptions`);
       setSubscriptions(r.data.subscriptions || []);
-    } catch { /* ignore */ }
+    } catch (e) {
+      console.warn('Push subscriptions fetch failed (likely PIN not yet set):', e?.message);
+    }
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);

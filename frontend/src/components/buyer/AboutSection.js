@@ -25,8 +25,8 @@ export default function AboutSection() {
           { icon: Users, num: '1.200+', label: 'Pelanggan Setia' },
           { icon: Award, num: '4.9★', label: 'Rating Google' },
           { icon: Heart, num: '5+ thn', label: 'Pengalaman' },
-        ].map((s, i) => (
-          <div key={i} className="bg-white rounded-2xl border border-[#FED7AA] p-4 sm:p-5 text-center hover:shadow-lg transition-all">
+        ].map((s) => (
+          <div key={`stat-${s.label}`} className="bg-white rounded-2xl border border-[#FED7AA] p-4 sm:p-5 text-center hover:shadow-lg transition-all">
             <div className="w-10 h-10 mx-auto mb-2 rounded-xl bg-gradient-to-br from-[#F97316] to-[#EA580C] flex items-center justify-center text-white">
               <s.icon size={18} />
             </div>
@@ -41,7 +41,7 @@ export default function AboutSection() {
         <h3 className="font-heading text-2xl font-bold text-[#7C2D12] mb-4">Perjalanan Kami 📖</h3>
         <div className="space-y-4 text-[#451A03] font-body leading-relaxed">
           {ceritaParas.length > 0 ? (
-            ceritaParas.map((p, i) => <p key={i}>{p}</p>)
+            ceritaParas.map((p, i) => <p key={`para-${i}-${p.slice(0, 16)}`}>{p}</p>)
           ) : (
             <p className="text-gray-500 italic">Cerita perjalanan toko belum diisi.</p>
           )}

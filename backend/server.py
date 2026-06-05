@@ -20,6 +20,7 @@ from datetime import datetime, timezone, timedelta
 try:
     from pywebpush import webpush, WebPushException
     from py_vapid import Vapid
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
     import base64 as _b64
     WEBPUSH_AVAILABLE = True
 except ImportError:
@@ -309,6 +310,7 @@ class OrderCreate(BaseModel):
 
 class OrderStatusUpdate(BaseModel):
     status: str
+    delivery_fee: Optional[float] = None  # FASE 7: ongkir input saat siap kirim (delivery only)
 
 class OrderReceivedUpdate(BaseModel):
     received: bool
@@ -734,11 +736,10 @@ async def seed_database():
                     priv_pem = f.read()
                 with open(pub_path, 'r') as f:
                     pub_pem = f.read()
-                # Public key in base64url for browser
-                pub_b64 = _b64.urlsafe_b64encode(vapid.public_key.public_bytes(
-                    encoding=__import__('cryptography.hazmat.primitives.serialization', fromlist=['Encoding']).Encoding.X962,
-                    format=__import__('cryptography.hazmat.primitives.serialization', fromlist=['PublicFormat']).PublicFormat.UncompressedPoint,
-                )).decode('ascii').rstrip('=')
+                # Public key in base64url for browser (uncompressed EC point)
+                pub_b64 = _b64.urlsafe_b64encode(
+                    vapid.public_key.public_bytes(encoding=Encoding.X962, format=PublicFormat.UncompressedPoint)
+                ).decode('ascii').rstrip('=')
                 await db.auth_config.insert_one({
                     "_id": "vapid",
                     "private_pem": priv_pem,
@@ -749,10 +750,14 @@ async def seed_database():
                 })
                 logger.info("Generated VAPID keys (Web Push enabled)")
             finally:
-                try: os.unlink(priv_path)
-                except Exception: pass
-                try: os.unlink(pub_path)
-                except Exception: pass
+                try:
+                    os.unlink(priv_path)
+                except OSError:
+                    pass
+                try:
+                    os.unlink(pub_path)
+                except OSError:
+                    pass
 
     # Discounts
     if await db.discounts.count_documents({}) == 0:
@@ -1128,6 +1133,66 @@ async def create_order(order: OrderCreate):
         doc["_push_sent"] = 0
     return doc
 
+class PaymentProofSubmit(BaseModel):
+    proof_url: str
+
+
+@api_router.post("/orders/{oid}/payment-proof")
+async def submit_payment_proof(oid: str, body: PaymentProofSubmit):
+    """Buyer submit bukti transfer setelah pesanan siap kirim. Forward foto ke seller via Fonnte."""
+    order = await db.orders.find_one({"id": oid}, {"_id": 0})
+    if not order:
+        raise HTTPException(404, "Order not found")
+    if not body.proof_url:
+        raise HTTPException(400, "proof_url wajib diisi")
+    ts = now_iso()
+    await db.orders.update_one(
+        {"id": oid},
+        {"$set": {
+            "payment_proof_url": body.proof_url,
+            "payment_proof_submitted_at": ts,
+            "payment_proof_submitted": True,
+            "updated_at": ts,
+        }},
+    )
+    doc = await db.orders.find_one({"id": oid}, {"_id": 0})
+    await manager.broadcast({"type": "payment_proof_submitted", "data": doc})
+    # Forward bukti ke seller via Fonnte (sebagai message + image URL)
+    token, seller_phone, enabled = await get_fonnte_config()
+    proof_full_url = body.proof_url if body.proof_url.startswith("http") else f"{APP_URL}{body.proof_url}"
+    wa_sent = False
+    wa_reason = None
+    if enabled and seller_phone:
+        msg = (
+            f"💰 *BUKTI PEMBAYARAN BARU*\n\n"
+            f"Order: #{doc.get('order_number')}\n"
+            f"Pelanggan: {doc.get('customer_name')}\n"
+            f"Total: {fmt_rp_id(doc.get('total', 0))}\n\n"
+            f"Bukti transfer:\n{proof_full_url}\n\n"
+            f"Mohon dicek & konfirmasi 🙏"
+        )
+        try:
+            # Fonnte supports `file` param for media attachment
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                r = await client.post(
+                    FONNTE_URL,
+                    headers={"Authorization": token},
+                    data={"target": seller_phone, "message": msg, "url": proof_full_url, "filename": "bukti-bayar.jpg"},
+                )
+                res = r.json() if r.headers.get("content-type", "").startswith("application/json") else {"raw": r.text}
+                wa_sent = bool(res.get("status"))
+                wa_reason = res.get("reason") or res.get("message")
+        except Exception as e:
+            wa_reason = f"Send error: {str(e)[:120]}"
+            logger.warning(f"Payment proof WA failed for {oid}: {e}")
+    else:
+        wa_reason = "WA disabled or seller_notify_phone empty"
+    doc["_wa_seller_sent"] = wa_sent
+    if wa_reason:
+        doc["_wa_seller_reason"] = wa_reason
+    return doc
+
+
 @api_router.put("/orders/{oid}/status")
 async def update_order_status(oid: str, update: OrderStatusUpdate, _auth: bool = Depends(require_seller)):
     ts = now_iso()
@@ -1139,6 +1204,14 @@ async def update_order_status(oid: str, update: OrderStatusUpdate, _auth: bool =
     status_ts = order.get("status_timestamps", {})
     status_ts[new_status] = ts
     update_fields = {"status": new_status, "status_timestamps": status_ts, "updated_at": ts}
+
+    # ─── FASE 7: Ongkir saat seller mark siap (delivery + delivery_fee provided) ───
+    if new_status == "siap" and update.delivery_fee is not None and update.delivery_fee > 0:
+        delivery_fee = float(update.delivery_fee)
+        subtotal = order.get("subtotal", 0)
+        new_total = subtotal + delivery_fee
+        update_fields["delivery_fee"] = delivery_fee
+        update_fields["total"] = new_total
 
     # ─── BUG FIX #11: Restore stock saat order dibatalkan ───
     # Hanya restore jika transisi dari status non-cancelled ke cancelled & belum direstore
@@ -1359,26 +1432,39 @@ class TrackVisitReq(BaseModel):
     is_pwa: Optional[bool] = False
 
 def parse_device(ua: str) -> str:
-    if not ua: return "unknown"
+    if not ua:
+        return "unknown"
     u = ua.lower()
-    if "iphone" in u or "ipad" in u or "ipod" in u: return "ios"
-    if "android" in u: return "android"
-    if "windows" in u or "macintosh" in u or "linux" in u: return "desktop"
+    if "iphone" in u or "ipad" in u or "ipod" in u:
+        return "ios"
+    if "android" in u:
+        return "android"
+    if "windows" in u or "macintosh" in u or "linux" in u:
+        return "desktop"
     return "other"
 
 def parse_referrer_source(ref: str) -> str:
-    if not ref: return "direct"
+    if not ref:
+        return "direct"
     try:
         from urllib.parse import urlparse
         host = urlparse(ref).netloc.lower()
-        if not host: return "direct"
-        if "google" in host: return "google"
-        if "instagram" in host or "ig" in host: return "instagram"
-        if "facebook" in host or "fb.com" in host: return "facebook"
-        if "tiktok" in host: return "tiktok"
-        if "whatsapp" in host or "wa.me" in host: return "whatsapp"
-        if "shopee" in host: return "shopee"
-        if "ciltarasa" in host: return "internal"
+        if not host:
+            return "direct"
+        if "google" in host:
+            return "google"
+        if "instagram" in host or "ig" in host:
+            return "instagram"
+        if "facebook" in host or "fb.com" in host:
+            return "facebook"
+        if "tiktok" in host:
+            return "tiktok"
+        if "whatsapp" in host or "wa.me" in host:
+            return "whatsapp"
+        if "shopee" in host:
+            return "shopee"
+        if "ciltarasa" in host:
+            return "internal"
         return host
     except Exception:
         return "other"
@@ -1774,7 +1860,8 @@ class PushSubscription(BaseModel):
 
 
 async def _get_vapid():
-    doc = await db.auth_config.find_one({"_id": "vapid"})
+    # _id is a fixed string ("vapid"), not ObjectId — safe to return as-is, but strip _id key to be defensive
+    doc = await db.auth_config.find_one({"_id": "vapid"}, {"_id": 0})
     return doc
 
 
@@ -1884,16 +1971,24 @@ async def broadcast_push(payload: dict):
 
 # ─── FASE 4: Dashboard Analytics (4 tabs) ────────────────────────────────
 def _parse_period(period: str, start: Optional[str] = None, end: Optional[str] = None):
-    """Return (start_dt, end_dt) UTC. Period: 7d|30d|90d|custom"""
+    """Return (start_dt, end_dt) UTC. Period: today|7d|14d|30d|90d|365d|custom"""
     now = datetime.now(timezone.utc)
     if period == "custom" and start and end:
         try:
             s = datetime.fromisoformat(start).replace(tzinfo=timezone.utc) if "T" not in start else datetime.fromisoformat(start.replace("Z", "+00:00"))
             e = datetime.fromisoformat(end).replace(tzinfo=timezone.utc) if "T" not in end else datetime.fromisoformat(end.replace("Z", "+00:00"))
+            # Ensure end_dt covers full day
+            if e.hour == 0 and e.minute == 0:
+                e = e + timedelta(days=1, seconds=-1)
             return s, e
         except Exception:
             pass
-    days = {"7d": 7, "30d": 30, "90d": 90, "365d": 365}.get(period, 30)
+    if period == "today":
+        # WIB midnight to now
+        wib_now = now + timedelta(hours=7)
+        midnight = wib_now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(hours=7)
+        return midnight, now
+    days = {"7d": 7, "14d": 14, "30d": 30, "90d": 90, "365d": 365, "1y": 365}.get(period, 30)
     return now - timedelta(days=days), now
 
 
@@ -1985,6 +2080,13 @@ async def dashboard_inventory(_auth: bool = Depends(require_seller)):
     orders = await db.orders.find({"status": {"$nin": ["dibatalkan"]}}, {"_id": 0}).to_list(5000)
     cfg = await db.store_config.find_one({"_id": "main"}) or {}
     low_stock_threshold = int(cfg.get("low_stock_threshold") or 10)
+    # ─── Categories sync (Task 3): lookup id→name from store_config.categories ───
+    cat_list = cfg.get("categories") or []
+    cat_name_map = {}
+    for c in cat_list:
+        if isinstance(c, dict):
+            cat_name_map[c.get("id", "")] = c.get("name", c.get("id", "Lainnya"))
+            cat_name_map[c.get("name", "")] = c.get("name", "")
 
     now = datetime.now(timezone.utc)
     cutoff_30 = now - timedelta(days=30)
@@ -2010,7 +2112,8 @@ async def dashboard_inventory(_auth: bool = Depends(require_seller)):
 
     cat_break = {}
     for p in products:
-        cat = p.get("category") or "Lainnya"
+        raw_cat = p.get("category") or "Lainnya"
+        cat = cat_name_map.get(raw_cat, raw_cat)  # resolve id→name; else use as-is
         cat_break.setdefault(cat, {"category": cat, "count": 0, "stock": 0, "value": 0})
         cat_break[cat]["count"] += 1
         cat_break[cat]["stock"] += p.get("stock", 0)
@@ -2075,12 +2178,20 @@ async def dashboard_sales(period: str = "30d", start: Optional[str] = None, end:
         pay[m]["revenue"] += o.get("total", 0)
     payment_breakdown = sorted(pay.values(), key=lambda x: -x["revenue"])
 
-    # Category sales
+    # Category sales — sync nama dari store_config.categories
+    cfg = await db.store_config.find_one({"_id": "main"}) or {}
+    cat_list = cfg.get("categories") or []
+    cat_name_map = {}
+    for c in cat_list:
+        if isinstance(c, dict):
+            cat_name_map[c.get("id", "")] = c.get("name", c.get("id", "Lainnya"))
+            cat_name_map[c.get("name", "")] = c.get("name", "")
     cat_sales = {}
     for o in valid:
         for it in o.get("items", []):
             p = pmap.get(it.get("product_id"))
-            cat = (p.get("category") if p else None) or "Lainnya"
+            raw_cat = (p.get("category") if p else None) or "Lainnya"
+            cat = cat_name_map.get(raw_cat, raw_cat)
             cat_sales.setdefault(cat, {"category": cat, "qty": 0, "revenue": 0})
             cat_sales[cat]["qty"] += it.get("quantity", 0)
             cat_sales[cat]["revenue"] += it.get("subtotal", 0)

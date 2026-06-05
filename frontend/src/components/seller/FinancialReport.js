@@ -74,8 +74,8 @@ export default function FinancialReport() {
             { label: 'Laba Kotor', value: report?.gross_profit || 0, color: report?.gross_profit >= 0 ? 'text-green-600' : 'text-red-500', bold: true, separator: true },
             { label: 'Total Biaya Operasional', value: -(report?.total_expenses || 0), color: 'text-red-500' },
             { label: 'LABA BERSIH', value: report?.net_profit || 0, color: report?.net_profit >= 0 ? 'text-green-600' : 'text-red-500', bold: true, big: true, separator: true },
-          ].map((row, i) => (
-            <div key={i}>
+          ].map((row) => (
+            <div key={`fr-row-${row.label}`}>
               {row.separator && <div className="border-t border-[#FED7AA] my-2" />}
               <div className={`flex justify-between items-center ${row.big ? 'py-1' : ''}`}>
                 <span className={`font-body ${row.bold ? 'font-bold text-[#78350F]' : 'text-[#451A03]'} ${row.big ? 'text-base font-heading' : 'text-sm'}`}>{row.label}</span>

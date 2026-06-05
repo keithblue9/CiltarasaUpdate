@@ -98,7 +98,17 @@ function ProofUploader({ value, onChange, label, hint, testId = 'proof-uploader'
 }
 
 // ─── BankTransferFlow: pilih bank → pay_now/pay_later → upload bukti (jika now) ───
-function BankTransferFlow({ banks, texts, paymentBankId, setPaymentBankId, paymentType, setPaymentType, proofUrl, setProofUrl }) {
+function BankTransferFlow({ banks, texts, paymentBankId, setPaymentBankId, paymentType, setPaymentType, proofUrl, setProofUrl, isDelivery }) {
+  // FASE 7: Saat delivery, Pay Now di-disable karena ongkir belum diketahui — buyer wajib pilih Bayar Nanti
+  // Auto-pilih pay_later jika delivery
+  useEffect(() => {
+    if (isDelivery && paymentType === 'now') {
+      setPaymentType('later');
+      setProofUrl('');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDelivery]);
+
   return (
     <div className="space-y-5 mt-4 p-4 rounded-2xl bg-[#FFFBF5] border border-[#FED7AA]">
       <div>
@@ -106,6 +116,11 @@ function BankTransferFlow({ banks, texts, paymentBankId, setPaymentBankId, payme
           <Building2 size={18} /> {texts.bank_transfer_title}
         </h4>
         <p className="text-xs text-[#92400E] mb-3 whitespace-pre-line">{texts.bank_transfer_instructions}</p>
+        {isDelivery && (
+          <div className="mb-3 p-2.5 rounded-xl bg-blue-50 border border-blue-200 text-[11px] text-blue-800">
+            ℹ️ Karena kamu pilih <strong>dikirim</strong>, ongkir akan dihitung oleh seller. Bayar setelah seller siap kirim ya.
+          </div>
+        )}
         {banks.length === 0 ? (
           <p className="text-sm text-red-600 bg-red-50 p-3 rounded-xl">Belum ada rekening bank. Hubungi seller.</p>
         ) : (
@@ -135,23 +150,25 @@ function BankTransferFlow({ banks, texts, paymentBankId, setPaymentBankId, payme
         <div>
           <h4 className="font-heading font-bold text-[#78350F] text-base mb-2">Cara Bayar</h4>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <button type="button" data-testid="pay-type-now" onClick={() => setPaymentType('now')}
+            <button type="button" data-testid="pay-type-now" onClick={() => !isDelivery && setPaymentType('now')}
+              disabled={isDelivery}
               className={`p-4 rounded-xl border-2 text-left transition-all ${
+                isDelivery ? 'border-gray-200 bg-gray-50 opacity-50 cursor-not-allowed' :
                 paymentType === 'now' ? 'border-[#D97706] bg-[#FEF3C7]' : 'border-[#FED7AA] bg-white hover:border-[#D97706]'}`}>
               <p className="font-bold text-[#78350F] text-sm">⚡ {texts.pay_now_label}</p>
-              <p className="text-xs text-[#92400E] mt-1">{texts.pay_now_desc}</p>
+              <p className="text-xs text-[#92400E] mt-1">{isDelivery ? 'Tidak tersedia untuk pengiriman' : texts.pay_now_desc}</p>
             </button>
             <button type="button" data-testid="pay-type-later" onClick={() => { setPaymentType('later'); setProofUrl(''); }}
               className={`p-4 rounded-xl border-2 text-left transition-all ${
                 paymentType === 'later' ? 'border-[#D97706] bg-[#FEF3C7]' : 'border-[#FED7AA] bg-white hover:border-[#D97706]'}`}>
-              <p className="font-bold text-[#78350F] text-sm">🕒 {texts.pay_later_label}</p>
-              <p className="text-xs text-[#92400E] mt-1">{texts.pay_later_desc}</p>
+              <p className="font-bold text-[#78350F] text-sm">🕒 {isDelivery ? 'Bayar setelah ongkir' : texts.pay_later_label}</p>
+              <p className="text-xs text-[#92400E] mt-1">{isDelivery ? 'Seller akan kirim invoice + ongkir nanti' : texts.pay_later_desc}</p>
             </button>
           </div>
         </div>
       )}
 
-      {paymentBankId && paymentType === 'now' && (
+      {paymentBankId && paymentType === 'now' && !isDelivery && (
         <ProofUploader value={proofUrl} onChange={setProofUrl} label={texts.upload_proof_label + ' *'} hint={texts.upload_proof_hint} testId="bank-proof-uploader" />
       )}
     </div>
@@ -159,8 +176,21 @@ function BankTransferFlow({ banks, texts, paymentBankId, setPaymentBankId, payme
 }
 
 // ─── QrisFlow: tampilkan QR → Telah Bayar (upload bukti) / Batalkan ───
-function QrisFlow({ qrisImageUrl, texts, qrisStage, setQrisStage, proofUrl, setProofUrl }) {
+// Saat delivery: skip prepayment, langsung "later"
+function QrisFlow({ qrisImageUrl, texts, qrisStage, setQrisStage, proofUrl, setProofUrl, isDelivery }) {
   const previewSrc = qrisImageUrl?.startsWith('/api/') ? `${API}${qrisImageUrl}` : qrisImageUrl;
+
+  if (isDelivery) {
+    return (
+      <div className="mt-4 p-4 rounded-2xl bg-blue-50 border border-blue-200 flex items-start gap-2">
+        <AlertCircle size={18} className="text-blue-600 flex-shrink-0 mt-0.5" />
+        <div className="text-sm text-blue-800">
+          <p className="font-bold mb-1">QRIS akan dikirim setelah ongkir ditentukan</p>
+          <p className="text-xs">Karena kamu pilih dikirim, seller akan kalkulasi ongkir dulu. Setelah itu kamu dapat resi + QR untuk transfer. Lanjut submit aja ya 🧡</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!qrisImageUrl) {
     return (
@@ -257,21 +287,25 @@ export default function Checkout() {
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   // Validasi: tombol submit hanya enabled jika payment flow lengkap
+  const isDelivery = form.delivery_method === 'delivery';
   const paymentReady = useMemo(() => {
     if (currentPaymentType === 'transfer') {
       if (!form.payment_bank_id) return false;
       if (!form.payment_type) return false;
+      // Saat delivery, hanya 'later' yang diizinkan
+      if (isDelivery && form.payment_type === 'now') return false;
       if (form.payment_type === 'now' && !form.payment_proof_url) return false;
       return true;
     }
     if (currentPaymentType === 'qris') {
+      // Saat delivery, langsung ready (bayar nanti setelah resi)
+      if (isDelivery) return true;
       if (qrisStage !== 'paid') return false;
       if (!form.payment_proof_url) return false;
       return true;
     }
-    // cod & ewallet: tidak butuh extra step
     return true;
-  }, [currentPaymentType, form.payment_bank_id, form.payment_type, form.payment_proof_url, qrisStage]);
+  }, [currentPaymentType, form.payment_bank_id, form.payment_type, form.payment_proof_url, qrisStage, isDelivery]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -429,6 +463,7 @@ export default function Checkout() {
               setPaymentType={(v) => set('payment_type', v)}
               proofUrl={form.payment_proof_url}
               setProofUrl={(v) => set('payment_proof_url', v)}
+              isDelivery={isDelivery}
             />
           )}
           {currentPaymentType === 'qris' && (
@@ -439,6 +474,7 @@ export default function Checkout() {
               setQrisStage={setQrisStage}
               proofUrl={form.payment_proof_url}
               setProofUrl={(v) => set('payment_proof_url', v)}
+              isDelivery={isDelivery}
             />
           )}
           {currentPaymentType === 'cod' && (

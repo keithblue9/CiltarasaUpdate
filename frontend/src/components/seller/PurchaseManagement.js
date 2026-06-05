@@ -72,7 +72,7 @@ function PurchaseForm({ products, prefill, onSave, onCancel }) {
             </div>
             <div className="space-y-2">
               {form.items.map((it, idx) => (
-                <div key={idx} className="grid grid-cols-12 gap-2 items-end p-3 rounded-xl bg-[#FFFBF5] border border-[#FED7AA]">
+                <div key={it._uid || `pitem-${idx}-${it.product_id || ''}`} className="grid grid-cols-12 gap-2 items-end p-3 rounded-xl bg-[#FFFBF5] border border-[#FED7AA]">
                   <div className="col-span-12 sm:col-span-5">
                     <label className="block text-[10px] font-bold text-[#7C2D12] mb-1">Produk</label>
                     <select data-testid={`purchase-item-product-${idx}`} className={inputCls + ' text-xs'} value={it.product_id} onChange={e => updateItem(idx, 'product_id', e.target.value)}>
@@ -159,7 +159,7 @@ function PurchaseCard({ purchase, onReceive, onDelete }) {
 
         <div className="border-t border-[#FED7AA] pt-3 space-y-1.5">
           {purchase.items?.map((item, i) => (
-            <div key={i} className="flex items-center justify-between text-xs">
+            <div key={`${purchase.id}-item-${item.product_id || i}`} className="flex items-center justify-between text-xs">
               <span className="text-[#451A03] truncate flex-1">{item.product_name} <span className="text-[#9A3412]">× {item.quantity}</span></span>
               <span className="font-bold text-[#7C2D12] ml-2">{fmtRp(item.subtotal)}</span>
             </div>

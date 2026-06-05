@@ -18,6 +18,56 @@ const STATUS_MAP = Object.fromEntries(STATUS_STEPS.map(s => [s.key, s]));
 
 const PAYMENT_LABELS = { transfer: 'Transfer Bank', cod: 'COD', qris: 'QRIS' };
 
+// FASE 7: Ongkir Modal — muncul saat seller transition ke 'siap' utk order delivery
+function OngkirModal({ orderInfo, onClose, onConfirm }) {
+  const [addOngkir, setAddOngkir] = useState(true);
+  const [fee, setFee] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const handle = async () => {
+    const feeNum = addOngkir ? Number(fee) : 0;
+    if (addOngkir && (!feeNum || feeNum < 0)) { toast.error('Masukkan ongkir valid'); return; }
+    setSubmitting(true);
+    await onConfirm(feeNum);
+    setSubmitting(false);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+      <div data-testid="ongkir-modal" className="bg-white rounded-2xl w-full max-w-md p-6">
+        <h3 className="font-heading font-bold text-[#78350F] text-lg mb-1">Tambah Ongkir?</h3>
+        <p className="text-xs text-[#92400E] mb-4">Order <strong>#{orderInfo?.order?.order_number}</strong> akan ditandai siap dikirim.</p>
+        <label className="flex items-center gap-3 p-3 rounded-xl bg-amber-50 border border-amber-200 mb-3 cursor-pointer">
+          <input data-testid="ongkir-checkbox" type="checkbox" checked={addOngkir} onChange={e => setAddOngkir(e.target.checked)} className="w-5 h-5 accent-amber-600" />
+          <span className="text-sm font-bold text-[#7C2D12]">Tambahkan ongkir ke total</span>
+        </label>
+        {addOngkir && (
+          <div className="mb-4">
+            <label className="block text-xs font-semibold text-[#78350F] mb-1">Nilai Ongkir (Rp) *</label>
+            <input
+              data-testid="ongkir-amount-input"
+              type="number"
+              value={fee}
+              onChange={e => setFee(e.target.value)}
+              placeholder="Contoh: 15000"
+              autoFocus
+              className="w-full px-4 py-2.5 rounded-xl border border-[#FED7AA] text-base focus:outline-none focus:ring-2 focus:ring-[#D97706]"
+            />
+            <p className="text-[10px] text-[#92400E] mt-1">Total baru: Rp {(Number(orderInfo?.order?.subtotal || 0) + (Number(fee) || 0)).toLocaleString('id-ID')}</p>
+          </div>
+        )}
+        <div className="flex gap-2">
+          <button data-testid="ongkir-cancel-btn" onClick={onClose} className="flex-1 py-2.5 rounded-full border border-[#FED7AA] text-[#7C2D12] font-bold text-sm">Batal</button>
+          <button data-testid="ongkir-confirm-btn" onClick={handle} disabled={submitting}
+            className="flex-1 py-2.5 rounded-full bg-gradient-to-r from-amber-500 to-orange-600 text-white font-bold text-sm">
+            {submitting ? 'Memproses...' : '📦 Tandai Siap Kirim'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function OrderDetailModal({ order, onClose, onStatusChange, onWhatsApp }) {
   const st = STATUS_MAP[order.status];
   return (
@@ -85,6 +135,7 @@ export default function IncomingOrders() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [searchQ, setSearchQ] = useState('');
   const [selectedOrder, setSelectedOrder] = useState(null);
+  const [ongkirModal, setOngkirModal] = useState(null); // { orderId, order }
 
   const load = async () => {
     setLoading(true);
@@ -101,22 +152,35 @@ export default function IncomingOrders() {
       toast.success(`Pesanan baru: ${wsEvent.data?.order_number} dari ${wsEvent.data?.customer_name}!`);
       setOrders(prev => [wsEvent.data, ...prev]);
     }
-    if (wsEvent?.type === 'order_updated') {
+    if (wsEvent?.type === 'order_updated' || wsEvent?.type === 'payment_proof_submitted') {
       setOrders(prev => prev.map(o => o.id === wsEvent.data?.id ? wsEvent.data : o));
       if (selectedOrder?.id === wsEvent.data?.id) setSelectedOrder(wsEvent.data);
+      if (wsEvent.type === 'payment_proof_submitted') {
+        toast.success(`💰 Bukti bayar masuk dari ${wsEvent.data?.customer_name}!`);
+      }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wsEvent]);
 
-  const handleStatusChange = async (orderId, newStatus) => {
+  const handleStatusChange = async (orderId, newStatus, deliveryFee = null) => {
+    // FASE 7: Saat transition ke 'siap' + order delivery → prompt ongkir
+    if (newStatus === 'siap' && deliveryFee === null) {
+      const order = orders.find(o => o.id === orderId);
+      if (order && order.delivery_method === 'delivery' && (!order.delivery_fee || order.delivery_fee === 0)) {
+        setOngkirModal({ orderId, order });
+        return;
+      }
+    }
     try {
-      const res = await axios.put(`${API}/api/orders/${orderId}/status`, { status: newStatus });
+      const payload = { status: newStatus };
+      if (deliveryFee !== null && deliveryFee > 0) payload.delivery_fee = deliveryFee;
+      const res = await axios.put(`${API}/api/orders/${orderId}/status`, payload);
       setOrders(prev => prev.map(o => o.id === orderId ? res.data : o));
       if (selectedOrder?.id === orderId) setSelectedOrder(res.data);
       toast.success(`Status diupdate: ${STATUS_MAP[newStatus]?.label}`);
-      if (res.data?._wa_buyer_sent) {
-        toast.success('✅ Notif WA terkirim ke buyer!', { duration: 2500 });
-      }
+      if (res.data?._wa_buyer_sent) toast.success('✅ Notif WA terkirim ke buyer!', { duration: 2500 });
       setSelectedOrder(null);
+      setOngkirModal(null);
     } catch { toast.error('Gagal update status.'); }
   };
 
@@ -213,6 +277,13 @@ export default function IncomingOrders() {
           onClose={() => setSelectedOrder(null)}
           onStatusChange={handleStatusChange}
           onWhatsApp={handleWhatsApp}
+        />
+      )}
+      {ongkirModal && (
+        <OngkirModal
+          orderInfo={ongkirModal}
+          onClose={() => setOngkirModal(null)}
+          onConfirm={(fee) => handleStatusChange(ongkirModal.orderId, 'siap', fee)}
         />
       )}
     </div>

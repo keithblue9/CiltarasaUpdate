@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Search, MessageCircle, RefreshCw, ArrowLeft, CheckCircle2, AlertTriangle, Star, FileDown } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Search, MessageCircle, RefreshCw, ArrowLeft, CheckCircle2, AlertTriangle, Star, FileDown, Upload, Receipt, Loader2 } from 'lucide-react';
 import axios from 'axios';
 import { useApp } from '../../context/AppContext';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import ReviewModal from './ReviewModal';
 import { generateInvoicePdf } from '../../lib/invoiceGenerator';
+import { generateReceiptPdf } from '../../lib/receiptGenerator';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -112,8 +113,18 @@ function OrderCard({ order, settings, onRefresh }) {
   const isCancelled = order.status === 'dibatalkan';
   const currentIdx = isCancelled ? -1 : STATUS_PIPELINE.indexOf(order.status);
   const isDone = order.status === 'selesai';
-  // Invoice tersedia setelah order diterima (received=true) atau status selesai
   const canDownloadInvoice = order.received || isDone;
+
+  // FASE 7: payment proof submission after status='siap' (delivery + payment_type='later')
+  const needsPaymentProof = order.status === 'siap' && order.delivery_method === 'delivery'
+    && (order.payment_type === 'later' || !order.payment_proof_url)
+    && order.payment_method !== 'cod'
+    && !order.payment_proof_submitted;
+  const fileRef = useRef(null);
+  const [uploading, setUploading] = useState(false);
+  const [proofUrl, setProofUrl] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const API = process.env.REACT_APP_BACKEND_URL;
 
   const handleDownloadInvoice = () => {
     try {
@@ -124,6 +135,48 @@ function OrderCard({ order, settings, onRefresh }) {
       toast.error('Gagal generate invoice');
     }
   };
+
+  const handleDownloadReceipt = () => {
+    try {
+      generateReceiptPdf(order, storeConfig);
+      toast.success('Resi didownload!');
+    } catch (e) {
+      console.error(e);
+      toast.error('Gagal generate resi');
+    }
+  };
+
+  const handleProofUpload = async (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (!/^image\/(jpeg|jpg|png|webp)$/i.test(f.type)) { toast.error('Hanya JPG/PNG'); return; }
+    if (f.size > 5 * 1024 * 1024) { toast.error('Max 5MB'); return; }
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', f);
+      const r = await axios.post(`${API}/api/media/upload-proof`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      setProofUrl(r.data.url);
+      toast.success('Bukti terupload!');
+    } catch { toast.error('Gagal upload'); } finally { setUploading(false); if (fileRef.current) fileRef.current.value = ''; }
+  };
+
+  const handleSubmitProof = async () => {
+    if (!proofUrl) { toast.error('Upload bukti dulu ya'); return; }
+    setSubmitting(true);
+    try {
+      const r = await axios.post(`${API}/api/orders/${order.id}/payment-proof`, { proof_url: proofUrl });
+      if (r.data?._wa_seller_sent) {
+        toast.success('✅ Bukti terkirim ke WhatsApp seller!');
+      } else {
+        toast.success('Bukti tersimpan. (WA: ' + (r.data?._wa_seller_reason || 'pending') + ')');
+      }
+      setProofUrl('');
+      onRefresh && onRefresh();
+    } catch (e) { toast.error('Gagal kirim bukti'); } finally { setSubmitting(false); }
+  };
+
+  const previewSrc = proofUrl?.startsWith('/api/') ? `${API}${proofUrl}` : proofUrl;
 
   // For display, append "diterima" only if order.received
   const displaySteps = order.received ? STATUS_STEPS : STATUS_STEPS.slice(0, 4);
@@ -203,6 +256,59 @@ function OrderCard({ order, settings, onRefresh }) {
           <span className="text-[#D97706]">{formatRp(order.total)}</span>
         </div>
       </div>
+
+      {/* FASE 7: Payment Proof Submission Section (when siap + delivery + not yet submitted) */}
+      {needsPaymentProof && (
+        <div data-testid="payment-proof-section" className="mt-4 p-4 rounded-2xl bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-300">
+          <div className="flex items-start gap-2 mb-3">
+            <Receipt size={20} className="text-amber-700 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="font-heading font-bold text-[#7C2D12] text-sm">Saatnya Bayar! 💸</p>
+              <p className="text-xs text-[#92400E] mt-0.5">Pesanan siap dikirim. Total {order.delivery_fee > 0 ? `(sudah include ongkir Rp ${Number(order.delivery_fee).toLocaleString('id-ID')})` : ''}: <strong>Rp {Number(order.total).toLocaleString('id-ID')}</strong></p>
+            </div>
+          </div>
+
+          <button
+            data-testid="download-receipt-btn"
+            onClick={handleDownloadReceipt}
+            className="w-full mb-3 flex items-center justify-center gap-2 bg-white border-2 border-amber-400 text-amber-800 font-bold py-2.5 rounded-xl hover:bg-amber-100 transition-all text-sm"
+          >
+            <FileDown size={14} /> Download Resi Pembayaran
+          </button>
+
+          {proofUrl ? (
+            <div className="flex items-start gap-2 mb-3 p-2 bg-white rounded-xl border border-green-300">
+              <img src={previewSrc} alt="Bukti" className="w-16 h-16 object-cover rounded-lg" />
+              <div className="flex-1">
+                <p className="text-xs font-bold text-green-700 flex items-center gap-1"><CheckCircle2 size={12} /> Bukti terupload</p>
+                <button data-testid="remove-proof-btn" onClick={() => setProofUrl('')} className="text-[10px] text-red-500 hover:underline">Ganti</button>
+              </div>
+            </div>
+          ) : (
+            <button
+              data-testid="upload-proof-btn"
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              disabled={uploading}
+              className="w-full mb-3 border-2 border-dashed border-amber-400 hover:border-amber-600 rounded-xl p-3 text-center bg-white"
+            >
+              {uploading ? <Loader2 size={20} className="mx-auto animate-spin text-amber-600" /> : <Upload size={20} className="mx-auto text-amber-600 mb-1" />}
+              <p className="text-xs font-bold text-[#7C2D12]">{uploading ? 'Mengupload...' : 'Upload Bukti Transfer (JPG/PNG)'}</p>
+            </button>
+          )}
+          <input ref={fileRef} type="file" accept="image/jpeg,image/jpg,image/png,image/webp" onChange={handleProofUpload} className="hidden" />
+
+          <button
+            data-testid="submit-proof-btn"
+            onClick={handleSubmitProof}
+            disabled={!proofUrl || submitting}
+            className="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white font-bold py-2.5 rounded-xl hover:shadow-lg transition-all disabled:opacity-50 text-sm"
+          >
+            {submitting ? 'Mengirim...' : '✅ Sudah Melakukan Pembayaran'}
+          </button>
+          <p className="text-[10px] text-[#92400E] text-center mt-2">Bukti akan otomatis terkirim ke WhatsApp seller</p>
+        </div>
+      )}
 
       {/* Contact seller + Download Invoice */}
       <div className="mt-4 flex flex-col sm:flex-row gap-2">

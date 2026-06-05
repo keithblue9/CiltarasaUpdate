@@ -27,9 +27,12 @@ const fmtNum = (n) => Number(n || 0).toLocaleString('id-ID');
 const COLORS = ['#F97316', '#EA580C', '#D97706', '#B45309', '#92400E', '#FCA5A5', '#FCD34D', '#A78BFA'];
 
 const PERIODS = [
+  { key: 'today', label: 'Hari Ini' },
   { key: '7d', label: '7 Hari' },
+  { key: '14d', label: '14 Hari' },
   { key: '30d', label: '30 Hari' },
-  { key: '90d', label: '90 Hari' },
+  { key: '1y', label: '1 Tahun' },
+  { key: 'custom', label: '📅 Custom' },
 ];
 
 const TABS = [
@@ -620,7 +623,7 @@ function AiInsightsCard() {
               <p className="text-[10px] font-bold uppercase tracking-wider text-purple-600 mb-2">🔄 Saran Restock</p>
               <div className="space-y-2">
                 {data.restock_suggestions.slice(0, open ? 99 : 3).map((s, i) => (
-                  <div key={i} className="flex items-start gap-2 p-2 rounded-lg hover:bg-purple-50">
+                  <div key={`restock-${s.product_name || i}`} className="flex items-start gap-2 p-2 rounded-lg hover:bg-purple-50">
                     <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold flex-shrink-0 ${urgencyColor[s.urgency] || 'bg-gray-100'}`}>
                       {(s.urgency || '').toUpperCase()}
                     </span>
@@ -649,7 +652,7 @@ function AiInsightsCard() {
                 <p className="text-[10px] font-bold uppercase tracking-wider text-purple-600 mb-2">💎 Insights Bisnis</p>
                 <ul className="space-y-1.5">
                   {data.key_insights.map((insight, i) => (
-                    <li key={i} className="text-xs text-[#451A03] flex gap-2"><span className="text-purple-500 flex-shrink-0">•</span>{insight}</li>
+                    <li key={`insight-${i}-${insight.slice(0, 20)}`} className="text-xs text-[#451A03] flex gap-2"><span className="text-purple-500 flex-shrink-0">•</span>{insight}</li>
                   ))}
                 </ul>
               </div>
@@ -659,7 +662,7 @@ function AiInsightsCard() {
                 <p className="text-[10px] font-bold uppercase tracking-wider text-orange-600 mb-2 flex items-center gap-1"><Zap size={10} /> Action Items</p>
                 <ul className="space-y-1.5">
                   {data.action_items.map((a, i) => (
-                    <li key={i} className="text-xs text-[#451A03] flex gap-2"><span className="text-orange-500 flex-shrink-0">→</span>{a}</li>
+                    <li key={`action-${i}-${a.slice(0, 20)}`} className="text-xs text-[#451A03] flex gap-2"><span className="text-orange-500 flex-shrink-0">→</span>{a}</li>
                   ))}
                 </ul>
               </div>
@@ -679,23 +682,41 @@ export default function Dashboard() {
 
   const [activeTab, setActiveTab] = useState('general');
   const [period, setPeriod] = useState(defaultPeriod);
+  const [customStart, setCustomStart] = useState('');
+  const [customEnd, setCustomEnd] = useState('');
   const [data, setData] = useState({ general: null, inventory: null, sales: null, customer: null });
   const [loading, setLoading] = useState(false);
 
   const widgets = useMemo(() => dashboardConfig[activeTab] || {}, [dashboardConfig, activeTab]);
 
-  const fetchTab = useCallback(async (tab, p) => {
+  const fetchTab = useCallback(async (tab, p, cs, ce) => {
     setLoading(true);
     try {
-      const url = `${API}/api/dashboard/${tab}${tab !== 'inventory' ? `?period=${p}` : ''}`;
+      let qs = '';
+      if (tab !== 'inventory') {
+        if (p === 'custom' && cs && ce) {
+          qs = `?period=custom&start=${cs}&end=${ce}`;
+        } else if (p !== 'custom') {
+          qs = `?period=${p}`;
+        } else {
+          setLoading(false);
+          return; // tunggu user pilih custom range
+        }
+      }
+      const url = `${API}/api/dashboard/${tab}${qs}`;
       const r = await axios.get(url);
       setData(d => ({ ...d, [tab]: r.data }));
     } catch (e) {
-      // Silent retry once after 800ms (axios PIN interceptor may not be ready on first mount)
       if (e?.response?.status === 401) {
         setTimeout(async () => {
           try {
-            const url = `${API}/api/dashboard/${tab}${tab !== 'inventory' ? `?period=${p}` : ''}`;
+            let qs = '';
+            if (tab !== 'inventory') {
+              if (p === 'custom' && cs && ce) qs = `?period=custom&start=${cs}&end=${ce}`;
+              else if (p !== 'custom') qs = `?period=${p}`;
+              else return;
+            }
+            const url = `${API}/api/dashboard/${tab}${qs}`;
             const r = await axios.get(url);
             setData(d => ({ ...d, [tab]: r.data }));
           } catch { toast.error(`Gagal load tab ${tab}`); }
@@ -709,10 +730,10 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
-    fetchTab(activeTab, period);
-  }, [activeTab, period, fetchTab]);
+    fetchTab(activeTab, period, customStart, customEnd);
+  }, [activeTab, period, customStart, customEnd, fetchTab]);
 
-  const refresh = () => fetchTab(activeTab, period);
+  const refresh = () => fetchTab(activeTab, period, customStart, customEnd);
 
   return (
     <div className="space-y-5">
@@ -722,16 +743,37 @@ export default function Dashboard() {
           <h1 className="font-heading text-2xl font-bold text-[#7C2D12]">Dashboard</h1>
           <p className="text-xs text-[#9A3412]">Analitik real-time toko kamu — data 100% aktual dari database.</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {activeTab !== 'inventory' && (
-            <div className="flex items-center gap-1 bg-white rounded-full border border-[#FED7AA] p-1">
-              {PERIODS.map(p => (
-                <button key={p.key} data-testid={`period-${p.key}`} onClick={() => setPeriod(p.key)}
-                  className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${period === p.key ? 'bg-[#D97706] text-white' : 'text-[#7C2D12] hover:bg-amber-50'}`}>
-                  {p.label}
-                </button>
-              ))}
-            </div>
+            <>
+              <div className="flex items-center gap-1 bg-white rounded-full border border-[#FED7AA] p-1 flex-wrap">
+                {PERIODS.map(p => (
+                  <button key={p.key} data-testid={`period-${p.key}`} onClick={() => setPeriod(p.key)}
+                    className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${period === p.key ? 'bg-[#D97706] text-white' : 'text-[#7C2D12] hover:bg-amber-50'}`}>
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+              {period === 'custom' && (
+                <div className="flex items-center gap-1 bg-white rounded-full border border-[#FED7AA] px-2 py-1">
+                  <input
+                    type="date"
+                    data-testid="period-custom-start"
+                    value={customStart}
+                    onChange={e => setCustomStart(e.target.value)}
+                    className="text-xs px-1 py-0.5 outline-none"
+                  />
+                  <span className="text-xs text-[#92400E]">s/d</span>
+                  <input
+                    type="date"
+                    data-testid="period-custom-end"
+                    value={customEnd}
+                    onChange={e => setCustomEnd(e.target.value)}
+                    className="text-xs px-1 py-0.5 outline-none"
+                  />
+                </div>
+              )}
+            </>
           )}
           <button data-testid="dashboard-refresh-btn" onClick={refresh} disabled={loading}
             className="p-2 bg-white border border-[#FED7AA] rounded-full hover:bg-amber-50 transition-all">

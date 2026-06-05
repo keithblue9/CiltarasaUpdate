@@ -91,9 +91,9 @@ export default function FunFactsPopup() {
             <ChevronLeft size={18} />
           </button>
           <div className="flex gap-1.5">
-            {facts.map((_, i) => (
+            {facts.map((f, i) => (
               <button
-                key={i}
+                key={`dot-${f?.id || f?.title || i}`}
                 onClick={() => goTo(i)}
                 className={`h-2 rounded-full transition-all ${i === idx ? 'bg-[#EA580C] w-6' : 'bg-[#FED7AA] w-2'}`}
               />

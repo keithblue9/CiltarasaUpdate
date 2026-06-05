@@ -46,7 +46,7 @@ export async function requestSubscribe(pin, label) {
   // Unsubscribe existing first (in case of stale)
   const existing = await reg.pushManager.getSubscription();
   if (existing) {
-    try { await existing.unsubscribe(); } catch { /* noop */ }
+    try { await existing.unsubscribe(); } catch (e) { console.warn('Existing sub unsubscribe failed:', e?.message); }
   }
   const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: appKey });
   const subJson = sub.toJSON();
@@ -69,7 +69,7 @@ export async function requestSubscribe(pin, label) {
 export async function unsubscribe(pin) {
   const sub = await getExistingSubscription();
   if (!sub) return { ok: true, already: true };
-  try { await sub.unsubscribe(); } catch { /* noop */ }
+  try { await sub.unsubscribe(); } catch (e) { console.warn('Local unsubscribe failed (proceeding with server cleanup):', e?.message); }
   const resp = await fetch(`${API}/api/push/unsubscribe`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Seller-PIN': pin },

@@ -59,6 +59,53 @@ Ibu-ibu milenial & Gen Z (kelahiran 1980-2000) yang anaknya SD. Modern, kekinian
 - **SmartImage useEffect**: dokumentasi komentar bahwa setters/normalizer stable & sengaja tidak masuk deps.
 - **Tidak dikerjakan (alasan tetap)**: httpOnly cookies (P2 — butuh backend session refactor + CSRF), refactor complexity `seed_database`/`insights_dashboard`/`analytics_stats`/`get_sales_report` (P2 — di backlog), refactor komponen `Catalog`/`Checkout`/`OnboardingModal` (P2), index-as-key di test files (tidak runtime-impact), `is` vs `==` di server.py 752/1173 (false-positive — `is not None` adalah convention Python yang benar).
 
+### Phase 19 ✅ FASE 7 — Delivery+Ongkir Flow Rework + Receipt + Category Sync + Period Expand (Feb 2026)
+
+**Task 1 — Buyer Checkout Pengiriman Flow**:
+- `BankTransferFlow.isDelivery` prop: saat buyer pilih `delivery`, "Pay Now" button **disabled** (alasan: ongkir belum ditentukan seller), auto-set ke "Pay Later". Info banner biru muncul.
+- `QrisFlow.isDelivery`: saat delivery, skip QR display entirely → banner biru "QRIS akan dikirim setelah ongkir ditentukan", submit langsung sebagai pay_later.
+- `paymentReady` logic update: delivery + transfer/qris → ready tanpa proof upload di checkout.
+
+**Task 2 — Seller Ongkir + Buyer Payment Proof Submission**:
+- Backend `OrderStatusUpdate.delivery_fee: Optional[float]` — saat `PUT /api/orders/{id}/status` dengan `status='siap'` + `delivery_fee>0` → recompute `total = subtotal + delivery_fee`.
+- Frontend `OngkirModal` di IncomingOrders: muncul saat seller klik "Siap" untuk order delivery. Checkbox "Tambahkan ongkir" + input nilai + tombol "Tandai Siap Kirim". Update total live.
+- Backend new endpoint `POST /api/orders/{id}/payment-proof` (public — buyer-facing): accept `{proof_url}`, marks `payment_proof_submitted=true`, forward foto bukti ke seller via Fonnte (param `url` + `filename` untuk media attachment).
+- Frontend OrderTracking `OrderCard`: setelah status=`siap` + delivery + bukan COD + belum submit → tampilkan section "Saatnya Bayar!" dengan: total (include ongkir), tombol "Download Resi Pembayaran" (small thermal-style PDF, BUKAN A5 invoice), upload bukti JPG/PNG, tombol "✅ Sudah Melakukan Pembayaran" → trigger forward ke WA seller.
+- New `receiptGenerator.js`: jsPDF thermal 80mm style (dotted dividers, items, bank info di footer, "Terimakasih") — match contoh user.
+
+**Task 3 — Categories Live Sync**:
+- `dashboard_inventory.category_breakdown` & `dashboard_sales.category_sales`: lookup nama kategori dari `store_config.categories` (resolve `category_id → name`, fallback `name` apa adanya). Sekarang dashboard kategori 100% dinamis nyambung config.
+
+**Task 4 — Date Filter Expand**:
+- Backend `_parse_period`: tambah `today` (WIB midnight → now), `14d`, `1y` (alias 365d), tetap support `7d/30d/90d/custom`.
+- Frontend Dashboard PERIODS: **Hari Ini, 7 Hari, 14 Hari, 30 Hari, 1 Tahun, 📅 Custom**. Custom pakai 2 `<input type="date">` (start s/d end). Apply ke 3 tab (general/sales/customer); inventory tetap tanpa filter (real-time snapshot).
+
+**Smoke test results**:
+- Periods: today=15, 7d=18, 14d=18, 30d=18, 1y=18, custom OK ✓
+- Ongkir flow: subtotal 50000 + ongkir 15000 → total 65000 ✓
+- Payment proof submit: `submitted=true`, WA forward dengan `url` param ke Fonnte ✓ (delivery gagal hanya karena token Fonnte expired — sesuai expected)
+- All lint clean (0 advisory).
+
+### Phase 18b ✅ Code Quality Fixes Round 3 (Feb 2026)
+- **Backend dynamic imports → static**: `cryptography.hazmat.primitives.serialization` (Encoding, PublicFormat) imported di top-level. Hapus 2 instances `__import__()` dinamis di VAPID key gen (line 738-740 server.py).
+- **Backend E701 cleanup**: 17 instances "multiple statements on one line" diperbaiki di `parse_device()`, `parse_referrer_source()`, dan VAPID `os.unlink` finally block. Code style consistent.
+- **Backend ObjectId safety**: `_get_vapid()` sekarang projection `{"_id": 0}` defensive (meskipun _id="vapid" string, bukan ObjectId).
+- **Frontend empty catch (3 instances) → logged**: `SellerPushSettings.refresh` (subscriptions fetch), `sellerPush.js` requestSubscribe existing unsub, unsubscribe local unsub — semua sekarang `console.warn` dengan context.
+- **Frontend array-index keys (7 instances) → stable IDs**:
+  - Dashboard.js AI insights: `restock-${product_name}`, `insight-${i}-${slice}`, `action-${i}-${slice}`
+  - AdminPages.js steps: `s.id || step-${idx}-${title}`
+  - AboutSection.js stats: `stat-${s.label}`; cerita paras: `para-${i}-${slice}`
+  - FunFactsPopup.js dots: `dot-${id || title || i}`
+  - PurchaseManagement.js items: `purchase.id-item-product_id` + `it._uid || pitem-${idx}-${product_id}`
+  - FinancialReport.js rows: `fr-row-${row.label}`
+- **Tidak dikerjakan (rationale)**:
+  - **localStorage PIN**: Bukan token JWT — PIN seller adalah shared secret untuk single-tenant UMKM app. Migrasi ke httpOnly cookies butuh backend session/CSRF refactor major + breaking change utk semua existing axios calls. P2 backlog.
+  - **Hook deps "missing"**: 72 instance ESLint warnings — mayoritas BUKAN bug (loadAll/setState/setData stable, sengaja run once on mount). Adding all deps = infinite re-render loops. Code is sound; warnings are stylistic.
+  - **seed_database / Checkout / Catalog complexity refactor**: working code, high regression risk, low return. P2 backlog dengan explicit test coverage prerequisite.
+  - **create_order / update_order_status refactor**: Sudah sebagian extracted (broadcast_push, fonnte helpers). Further refactor menunggu Backend Refactor Phase (server.py → /routes/).
+- **All linters clean**: backend ruff 0 advisory, frontend eslint 0 advisory.
+- **Smoke test**: buyer page 0 console errors. Backend health: products 12, VAPID key 87 chars, maintenance enabled=false. All endpoints functional post-cleanup.
+
 ### Phase 18 ✅ FASE 6 — Maintenance Mode + AI Insights + Modular Routes (Feb 2026)
 - **Maintenance / Store Closed Mode**: Seller toggle on/off via UI besar. Wording configurable (judul, pesan dengan placeholder `{return_date}` & `{return_time}`, tanggal+jam buka kembali, teks tombol WA). Background image uploadable (PC/HP/Google Drive). Buyer otomatis lihat MaintenanceScreen full-screen menggantikan katalog saat enabled. Polling 60s + WebSocket broadcast untuk near-realtime update.
 - **AI-Powered Insights** (Claude Sonnet 4-6 via Emergent LLM Key):

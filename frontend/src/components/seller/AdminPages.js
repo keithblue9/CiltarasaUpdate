@@ -230,7 +230,7 @@ export function HowToOrderConfig() {
         <div className="space-y-2">
           {steps.length === 0 && <p className="text-sm text-gray-500 text-center py-6">Belum ada step. Klik "Tambah Step" untuk mulai.</p>}
           {steps.map((s, idx) => (
-            <div key={idx} className="grid grid-cols-12 gap-2 items-end p-3 rounded-xl bg-[#FFFBF5] border border-[#FED7AA]">
+            <div key={s.id || `step-${idx}-${s.title?.slice(0, 10) || idx}`} className="grid grid-cols-12 gap-2 items-end p-3 rounded-xl bg-[#FFFBF5] border border-[#FED7AA]">
               <div className="col-span-2 text-center">
                 <label className="block text-[10px] font-bold text-[#7C2D12] mb-1">Icon (Emoji)</label>
                 <input className={inputCls + ' text-center text-2xl'} value={s.icon || ''} onChange={e => update(idx, 'icon', e.target.value)} maxLength={4} />
