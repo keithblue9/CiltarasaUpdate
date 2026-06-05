@@ -7,7 +7,7 @@
  *  - background sync queue for offline orders
  */
 
-const VERSION = 'ciltarasa-v1.0.0';
+const VERSION = 'ciltarasa-v1.1.0-pwa-seller';
 const STATIC_CACHE = `${VERSION}-static`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 const API_CACHE = `${VERSION}-api`;
@@ -122,24 +122,48 @@ async function replayQueuedOrders() {
   } catch (e) { /* noop */ }
 }
 
-// ---- Push notifications (ready structure) ----
+// ---- Push notifications (Ciltarasa Seller) ----
 self.addEventListener('push', (event) => {
-  const data = event.data ? (() => { try { return event.data.json(); } catch { return { title: 'Ciltarasa', body: event.data.text() }; } })() : { title: 'Ciltarasa', body: 'Notifikasi baru' };
+  let data = { title: 'Ciltarasa', body: 'Notifikasi baru' };
+  if (event.data) {
+    try { data = event.data.json(); } catch { data = { title: 'Ciltarasa', body: event.data.text() }; }
+  }
   event.waitUntil(
     self.registration.showNotification(data.title || 'Ciltarasa', {
       body: data.body || '',
       icon: '/icons/icon-192.png',
       badge: '/icons/icon-96.png',
-      vibrate: [80, 40, 80],
-      data: data.data || {},
+      vibrate: [120, 60, 120, 60, 240],
+      tag: data.tag || 'order-new',
+      renotify: true,
+      requireInteraction: !!data.requireInteraction,
+      data: {
+        url: data.url || '/#/seller',
+        order_number: data.order_number || null,
+        ...(data.data || {}),
+      },
+      actions: data.actions || [
+        { action: 'open', title: 'Buka Dashboard' },
+      ],
     })
   );
 });
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const url = event.notification.data?.url || '/#/buyer';
-  event.waitUntil(self.clients.openWindow(url));
+  const url = event.notification.data?.url || '/#/seller';
+  // Focus existing tab jika ada, else open new
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      for (const c of clientList) {
+        if (c.url.includes(url.split('?')[0]) && 'focus' in c) {
+          c.postMessage({ type: 'NAVIGATE', url });
+          return c.focus();
+        }
+      }
+      return self.clients.openWindow(url);
+    })
+  );
 });
 
 // ---- Messaging from page ----

@@ -1,0 +1,52 @@
+{
+  "name": "Ciltarasa Seller",
+  "short_name": "Ciltarasa Seller",
+  "description": "Dashboard Seller Ciltarasa — kelola pesanan, produk, & analitik toko",
+  "id": "/?source=pwa-seller",
+  "start_url": "/#/seller",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "any",
+  "theme_color": "#7C2D12",
+  "background_color": "#FFFBF5",
+  "lang": "id-ID",
+  "dir": "ltr",
+  "categories": ["business", "productivity"],
+  "icons": [
+    { "src": "/icons/icon-72.png", "sizes": "72x72", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-96.png", "sizes": "96x96", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-128.png", "sizes": "128x128", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-144.png", "sizes": "144x144", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-152.png", "sizes": "152x152", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-384.png", "sizes": "384x384", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    {
+      "name": "Pesanan Masuk",
+      "short_name": "Pesanan",
+      "description": "Lihat pesanan baru yang masuk",
+      "url": "/#/seller?tab=orders",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Dashboard Analitik",
+      "short_name": "Dashboard",
+      "description": "Lihat KPI & charts realtime",
+      "url": "/#/seller?tab=dashboard",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Produk",
+      "short_name": "Produk",
+      "description": "Kelola stok produk",
+      "url": "/#/seller?tab=products",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    }
+  ],
+  "prefer_related_applications": false
+}

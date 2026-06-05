@@ -12,6 +12,9 @@ import { StoreProfile, StoreCerita, CategoriesConfig, DeliveryConfig, PaymentsCo
 import DiscountManagement from './DiscountManagement';
 import PurchaseManagement from './PurchaseManagement';
 import { FonnteConfig, HowToOrderConfig, ResetCustomersConfig, ChangePinConfig, TrafficStats, AutoChatConfig, InvoiceConfig, DashboardWidgetsConfig } from './AdminPages';
+import SellerPushSettings from './SellerPushSettings';
+import SellerPwaInstallBanner from './SellerPwaInstallBanner';
+import { setSellerManifest, restoreBuyerManifest } from '../pwa/sellerPush';
 import { Smartphone } from 'lucide-react';
 import { detectEnv } from '../pwa/detectEnv';
 
@@ -24,12 +27,12 @@ function attachSellerInterceptor(getPin) {
   _sellerInterceptorId = axios.interceptors.request.use(cfg => {
     const url = cfg.url || '';
     const method = (cfg.method || 'get').toLowerCase();
-    if (method !== 'get' && (url.includes('/api/products') || url.includes('/api/purchases') || url.includes('/api/discounts') || url.includes('/api/settings') || url.includes('/api/store-config') || url.includes('/api/financial-entries') || url.includes('/api/admin/test-wa') || url.includes('/api/admin/reset-customers') || url.includes('/api/admin/change-pin') || url.includes('/api/media/upload') || /\/api\/orders\/[^/]+\/status/.test(url))) {
+    if (method !== 'get' && (url.includes('/api/products') || url.includes('/api/purchases') || url.includes('/api/discounts') || url.includes('/api/settings') || url.includes('/api/store-config') || url.includes('/api/financial-entries') || url.includes('/api/admin/test-wa') || url.includes('/api/admin/reset-customers') || url.includes('/api/admin/change-pin') || url.includes('/api/media/upload') || url.includes('/api/push/') || /\/api\/orders\/[^/]+\/status/.test(url))) {
       cfg.headers = cfg.headers || {};
       cfg.headers['X-Seller-PIN'] = getPin();
     }
     // Analytics GET (PIN-guarded)
-    if (method === 'get' && (url.includes('/api/analytics/stats') || url.includes('/api/dashboard/') || url.includes('/api/admin/fonnte-status'))) {
+    if (method === 'get' && (url.includes('/api/analytics/stats') || url.includes('/api/dashboard/') || url.includes('/api/admin/fonnte-status') || url.includes('/api/push/subscriptions'))) {
       cfg.headers = cfg.headers || {};
       cfg.headers['X-Seller-PIN'] = getPin();
     }
@@ -56,6 +59,12 @@ export default function SellerApp() {
     // PIN_KEY, attach/detach are module-scoped constants — safe to omit
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authed]);
+
+  // FASE 5: Swap manifest to seller-manifest while in seller scope
+  useEffect(() => {
+    setSellerManifest();
+    return () => restoreBuyerManifest();
+  }, []);
 
   const handleLogin = async (pin) => {
     try {
@@ -102,6 +111,7 @@ export default function SellerApp() {
     'auto-chat': <AutoChatConfig />,
     invoice: <InvoiceConfig />,
     'dashboard-widgets': <DashboardWidgetsConfig />,
+    'push-notif': <SellerPushSettings />,
     discounts: <DiscountManagement />,
     whatsapp: <FonnteConfig />,
     'change-pin': <ChangePinConfig onPinChanged={() => handleLogout()} />,
@@ -135,6 +145,7 @@ export default function SellerApp() {
           {tabContent[activeTab] || tabContent.dashboard}
         </main>
       </div>
+      <SellerPwaInstallBanner />
     </div>
   );
 }

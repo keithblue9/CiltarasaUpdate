@@ -16,6 +16,15 @@ from typing import List, Optional, Dict, Any
 import uuid
 from datetime import datetime, timezone, timedelta
 
+# ─── Web Push (VAPID) ───
+try:
+    from pywebpush import webpush, WebPushException
+    from py_vapid import Vapid
+    import base64 as _b64
+    WEBPUSH_AVAILABLE = True
+except ImportError:
+    WEBPUSH_AVAILABLE = False
+
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
@@ -687,6 +696,45 @@ async def seed_database():
             await db.store_config.update_one({"_id": "main"}, {"$set": backfill})
             logger.info(f"Backfilled store_config: {list(backfill.keys())}")
 
+    # ─── FASE 5: VAPID keys (Web Push) ───
+    if WEBPUSH_AVAILABLE:
+        existing_vapid = await db.auth_config.find_one({"_id": "vapid"})
+        if not existing_vapid:
+            # Generate VAPID key pair
+            vapid = Vapid()
+            vapid.generate_keys()
+            import tempfile
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.pem', delete=False) as tf:
+                priv_path = tf.name
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.pem', delete=False) as tf:
+                pub_path = tf.name
+            try:
+                vapid.save_key(priv_path)
+                vapid.save_public_key(pub_path)
+                with open(priv_path, 'r') as f:
+                    priv_pem = f.read()
+                with open(pub_path, 'r') as f:
+                    pub_pem = f.read()
+                # Public key in base64url for browser
+                pub_b64 = _b64.urlsafe_b64encode(vapid.public_key.public_bytes(
+                    encoding=__import__('cryptography.hazmat.primitives.serialization', fromlist=['Encoding']).Encoding.X962,
+                    format=__import__('cryptography.hazmat.primitives.serialization', fromlist=['PublicFormat']).PublicFormat.UncompressedPoint,
+                )).decode('ascii').rstrip('=')
+                await db.auth_config.insert_one({
+                    "_id": "vapid",
+                    "private_pem": priv_pem,
+                    "public_pem": pub_pem,
+                    "public_b64": pub_b64,
+                    "subject": os.environ.get("VAPID_SUBJECT", "mailto:admin@ciltarasa.local"),
+                    "created_at": now_iso(),
+                })
+                logger.info("Generated VAPID keys (Web Push enabled)")
+            finally:
+                try: os.unlink(priv_path)
+                except Exception: pass
+                try: os.unlink(pub_path)
+                except Exception: pass
+
     # Discounts
     if await db.discounts.count_documents({}) == 0:
         for d in DEFAULT_DISCOUNTS:
@@ -1043,6 +1091,22 @@ async def create_order(order: OrderCreate):
     doc["_wa_buyer_sent"] = wa_buyer_sent
     if wa_buyer_reason:
         doc["_wa_buyer_reason"] = wa_buyer_reason
+    # ─── FASE 5: Web Push notification ke semua seller device subscribers ───
+    try:
+        items_short = ", ".join([f"{it.get('product_name','')} x{it.get('quantity',0)}" for it in (doc.get('items') or [])[:3]])
+        if len(doc.get('items') or []) > 3:
+            items_short += f" +{len(doc['items'])-3} lainnya"
+        push_res = await broadcast_push({
+            "title": f"🛒 Pesanan Baru #{doc.get('order_number','')}",
+            "body": f"{doc.get('customer_name','-')}\n{items_short}\n💰 Total: {fmt_rp_id(doc.get('total',0))}",
+            "tag": f"order-{doc.get('id')}",
+            "url": "/#/seller",
+            "order_number": doc.get('order_number'),
+        })
+        doc["_push_sent"] = push_res.get("sent", 0)
+    except Exception as e:
+        logger.warning(f"Push broadcast failed for order {doc.get('order_number')}: {e}")
+        doc["_push_sent"] = 0
     return doc
 
 @api_router.put("/orders/{oid}/status")
@@ -1681,6 +1745,123 @@ async def delete_discount(did: str, _auth: bool = Depends(require_seller)):
     await db.discounts.delete_one({"id": did})
     await manager.broadcast({"type": "discount_deleted", "data": {"id": did}})
     return {"success": True}
+
+# ─── FASE 5: Web Push Notifications (VAPID) ──────────────────────────────
+class PushSubscription(BaseModel):
+    endpoint: str
+    keys: Dict[str, str]
+    user_agent: Optional[str] = None
+    label: Optional[str] = None  # e.g. "iPhone Andi", "Laptop Toko"
+
+
+async def _get_vapid():
+    doc = await db.auth_config.find_one({"_id": "vapid"})
+    return doc
+
+
+@api_router.get("/push/vapid-key")
+async def get_vapid_public_key():
+    """Public VAPID key (browser-readable). Tidak butuh auth."""
+    if not WEBPUSH_AVAILABLE:
+        return {"available": False, "key": None}
+    v = await _get_vapid()
+    if not v:
+        return {"available": False, "key": None}
+    return {"available": True, "key": v.get("public_b64", "")}
+
+
+@api_router.post("/push/subscribe")
+async def push_subscribe(sub: PushSubscription, x_seller_pin: Optional[str] = Header(None)):
+    """Seller subscribe ke push notif (butuh PIN)."""
+    pin = await get_active_pin()
+    if x_seller_pin != pin:
+        raise HTTPException(401, "PIN salah")
+    if not WEBPUSH_AVAILABLE:
+        raise HTTPException(501, "Web Push tidak tersedia di server")
+    sub_id = str(uuid.uuid4())
+    doc = {
+        "id": sub_id,
+        "endpoint": sub.endpoint,
+        "keys": sub.keys,
+        "user_agent": sub.user_agent or "",
+        "label": sub.label or "Device",
+        "created_at": now_iso(),
+        "last_seen": now_iso(),
+    }
+    # Upsert by endpoint (1 device = 1 subscription)
+    await db.push_subscriptions.update_one(
+        {"endpoint": sub.endpoint},
+        {"$set": doc},
+        upsert=True,
+    )
+    saved = await db.push_subscriptions.find_one({"endpoint": sub.endpoint}, {"_id": 0})
+    return {"ok": True, "subscription": saved}
+
+
+@api_router.post("/push/unsubscribe")
+async def push_unsubscribe(payload: Dict[str, str], _auth: bool = Depends(require_seller)):
+    endpoint = payload.get("endpoint")
+    if not endpoint:
+        raise HTTPException(400, "endpoint required")
+    r = await db.push_subscriptions.delete_one({"endpoint": endpoint})
+    return {"ok": True, "deleted": r.deleted_count}
+
+
+@api_router.get("/push/subscriptions")
+async def list_push_subscriptions(_auth: bool = Depends(require_seller)):
+    subs = await db.push_subscriptions.find({}, {"_id": 0}).to_list(100)
+    return {"count": len(subs), "subscriptions": subs}
+
+
+@api_router.post("/push/test")
+async def push_test(_auth: bool = Depends(require_seller)):
+    """Kirim test push ke semua subscriber."""
+    if not WEBPUSH_AVAILABLE:
+        raise HTTPException(501, "Web Push tidak tersedia")
+    r = await broadcast_push({
+        "title": "🔔 Tes Push Ciltarasa",
+        "body": "Push notification berfungsi! Order baru akan auto-notify di sini.",
+        "tag": "test",
+        "url": "/#/seller",
+    })
+    return r
+
+
+async def broadcast_push(payload: dict):
+    """Send push ke SEMUA active subscriptions. Auto-clean stale 410/404 subs."""
+    if not WEBPUSH_AVAILABLE:
+        return {"sent": 0, "failed": 0, "reason": "Web Push unavailable"}
+    v = await _get_vapid()
+    if not v:
+        return {"sent": 0, "failed": 0, "reason": "VAPID keys not generated"}
+    subs = await db.push_subscriptions.find({}, {"_id": 0}).to_list(500)
+    sent = 0
+    failed = 0
+    stale = []
+    for sub in subs:
+        try:
+            webpush(
+                subscription_info={"endpoint": sub["endpoint"], "keys": sub["keys"]},
+                data=json.dumps(payload),
+                vapid_private_key=v["private_pem"],
+                vapid_claims={"sub": v.get("subject", "mailto:admin@ciltarasa.local")},
+                ttl=60 * 60 * 24,
+            )
+            sent += 1
+        except WebPushException as e:
+            code = getattr(e.response, "status_code", None) if hasattr(e, "response") and e.response else None
+            if code in (404, 410):
+                stale.append(sub["endpoint"])
+            failed += 1
+            logger.warning(f"Push fail {sub.get('label')} (code={code}): {e}")
+        except Exception as e:
+            failed += 1
+            logger.warning(f"Push error: {e}")
+    if stale:
+        await db.push_subscriptions.delete_many({"endpoint": {"$in": stale}})
+        logger.info(f"Removed {len(stale)} stale push subscriptions")
+    return {"sent": sent, "failed": failed, "stale_cleaned": len(stale), "total": len(subs)}
+
 
 # ─── FASE 4: Dashboard Analytics (4 tabs) ────────────────────────────────
 def _parse_period(period: str, start: Optional[str] = None, end: Optional[str] = None):
