@@ -59,6 +59,22 @@ Ibu-ibu milenial & Gen Z (kelahiran 1980-2000) yang anaknya SD. Modern, kekinian
 - **SmartImage useEffect**: dokumentasi komentar bahwa setters/normalizer stable & sengaja tidak masuk deps.
 - **Tidak dikerjakan (alasan tetap)**: httpOnly cookies (P2 — butuh backend session refactor + CSRF), refactor complexity `seed_database`/`insights_dashboard`/`analytics_stats`/`get_sales_report` (P2 — di backlog), refactor komponen `Catalog`/`Checkout`/`OnboardingModal` (P2), index-as-key di test files (tidak runtime-impact), `is` vs `==` di server.py 752/1173 (false-positive — `is not None` adalah convention Python yang benar).
 
+### Phase 18 ✅ FASE 6 — Maintenance Mode + AI Insights + Modular Routes (Feb 2026)
+- **Maintenance / Store Closed Mode**: Seller toggle on/off via UI besar. Wording configurable (judul, pesan dengan placeholder `{return_date}` & `{return_time}`, tanggal+jam buka kembali, teks tombol WA). Background image uploadable (PC/HP/Google Drive). Buyer otomatis lihat MaintenanceScreen full-screen menggantikan katalog saat enabled. Polling 60s + WebSocket broadcast untuk near-realtime update.
+- **AI-Powered Insights** (Claude Sonnet 4-6 via Emergent LLM Key):
+  - `GET /api/ai/insights` → restock_suggestions (urgency, qty, days_until_stockout), demand_forecast (next 7d orders/revenue, trend, top 3 predicted sellers), key_insights, action_items
+  - Cache 1 jam di `db.ai_insights_cache`. `?force=true` untuk regenerate. `DELETE /api/ai/insights/cache` clear.
+  - Prompt highly-structured (Indonesia santai, target UMKM). JSON-only output dengan defensive markdown stripping.
+  - UI: card di Dashboard General tab dengan 4 sub-section (forecast, restock, insights, actions). Refresh button. Widget visibility toggleable.
+- **Modular Routes Refactor (partial)**: `/app/backend/routes/{__init__.py, maintenance.py, ai_insights.py}`. setup() pattern injects deps (api_router, db, require_seller, manager) — avoid circular imports. Clean decoupling, ready untuk continued refactor.
+- **Frontend baru**:
+  - `MaintenanceScreen.js` (buyer) — full-screen lock dengan background image + gradient overlay + WA button
+  - `MaintenanceConfig` (seller AdminPages) — toggle card + 5 wording fields + bg upload + preview
+  - `AiInsightsCard` (Dashboard) — 4 sub-section dengan urgency colors + trend icons
+- **Widget config**: `show_ai_insights` flag baru di `dashboard_config.general`. Default true.
+- **Test report**: `/app/test_reports/iteration_13.json` — Backend 12/12 (100%), Frontend 100%. AI Insights live-verified dengan Claude content real.
+- **Tech debt**: server.py masih 2443 lines. P1 lanjutkan extract push/orders/dashboard ke `/routes/`.
+
 ### Phase 17 ✅ FASE 5 — PWA Seller App + Web Push (Feb 2026)
 - **Seller Manifest**: `/seller-manifest.json` baru. `start_url=/#/seller`, `theme=#7C2D12`, 3 shortcuts (Pesanan Masuk, Dashboard, Produk). Auto-swap saat masuk seller route, restore saat keluar.
 - **Web Push (VAPID standar, bukan FCM)**: backend `pywebpush + py-vapid`. Keys auto-generated saat startup pertama (stored di `db.auth_config._id=vapid`). Persist across restart.
@@ -173,8 +189,12 @@ Ibu-ibu milenial & Gen Z (kelahiran 1980-2000) yang anaknya SD. Modern, kekinian
   - Web Push (VAPID) with device subscription management
   - Install banner & 3 shortcuts terpisah dari buyer PWA
   - Auto-push on new order + stale cleanup
-- [ ] **Backend Refactor (P1, next)**
-  - Split server.py (2434 lines) → /app/backend/routes/{auth,orders,products,push,dashboard,store_config}.py
+- [x] **FASE 6 — Maintenance Mode + AI Insights + Partial Refactor (P1)** ✅ done
+  - Store Closed: toggle, configurable wording (judul+pesan+tanggal+jam), bg image, halaman buyer locked
+  - AI Insights (Claude Sonnet 4-6): restock + forecast + insights + action items, cached 1h
+  - Modular routes: /app/backend/routes/{maintenance.py, ai_insights.py}
+- [ ] **Tech Debt — Continue Refactor (P1, next)**
+  - Split server.py (2443 lines) → routes/{push,orders,products,dashboard,store_config,auth}.py
   - Models → /app/backend/models/
   - Helpers → /app/backend/lib/
   - Auto-chat config per stage order (toggle + edit wording)
