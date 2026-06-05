@@ -10,7 +10,7 @@ import FinancialReport from './FinancialReport';
 import { StoreProfile, StoreCerita, CategoriesConfig, DeliveryConfig, PaymentsConfig, HomepageTextsConfig, HeroSlideshowConfig, FunFactsConfig, OnboardingTextsConfig } from './StoreConfigPages';
 import DiscountManagement from './DiscountManagement';
 import PurchaseManagement from './PurchaseManagement';
-import { FonnteConfig, HowToOrderConfig, ResetCustomersConfig, ChangePinConfig, TrafficStats } from './AdminPages';
+import { FonnteConfig, HowToOrderConfig, ResetCustomersConfig, ChangePinConfig, TrafficStats, AutoChatConfig, InvoiceConfig } from './AdminPages';
 import { Smartphone } from 'lucide-react';
 import { detectEnv } from '../pwa/detectEnv';
 
@@ -97,6 +97,8 @@ export default function SellerApp() {
     categories: <CategoriesConfig />,
     delivery: <DeliveryConfig />,
     payments: <PaymentsConfig />,
+    'auto-chat': <AutoChatConfig />,
+    invoice: <InvoiceConfig />,
     discounts: <DiscountManagement />,
     whatsapp: <FonnteConfig />,
     'change-pin': <ChangePinConfig onPinChanged={() => handleLogout()} />,

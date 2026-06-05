@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Search, MessageCircle, RefreshCw, ArrowLeft, CheckCircle2, AlertTriangle, Star } from 'lucide-react';
+import { Search, MessageCircle, RefreshCw, ArrowLeft, CheckCircle2, AlertTriangle, Star, FileDown } from 'lucide-react';
 import axios from 'axios';
 import { useApp } from '../../context/AppContext';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import ReviewModal from './ReviewModal';
+import { generateInvoicePdf } from '../../lib/invoiceGenerator';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -107,9 +108,22 @@ function ConfirmReceivedBanner({ order, onRefresh }) {
 }
 
 function OrderCard({ order, settings, onRefresh }) {
+  const { storeConfig } = useApp();
   const isCancelled = order.status === 'dibatalkan';
   const currentIdx = isCancelled ? -1 : STATUS_PIPELINE.indexOf(order.status);
   const isDone = order.status === 'selesai';
+  // Invoice tersedia setelah order diterima (received=true) atau status selesai
+  const canDownloadInvoice = order.received || isDone;
+
+  const handleDownloadInvoice = () => {
+    try {
+      generateInvoicePdf(order, storeConfig);
+      toast.success('Invoice didownload!');
+    } catch (e) {
+      console.error(e);
+      toast.error('Gagal generate invoice');
+    }
+  };
 
   // For display, append "diterima" only if order.received
   const displaySteps = order.received ? STATUS_STEPS : STATUS_STEPS.slice(0, 4);
@@ -190,16 +204,27 @@ function OrderCard({ order, settings, onRefresh }) {
         </div>
       </div>
 
-      {/* Contact seller */}
-      {settings?.seller_whatsapp && (
-        <button
-          data-testid="contact-seller-btn"
-          onClick={() => window.open(`https://wa.me/${settings.seller_whatsapp}?text=${encodeURIComponent(`Halo, saya ingin menanyakan pesanan ${order.order_number}`)}`, '_blank')}
-          className="mt-4 w-full flex items-center justify-center gap-2 bg-green-500 text-white font-bold py-3 rounded-full hover:bg-green-600 transition-all"
-        >
-          <MessageCircle size={16} /> Hubungi Seller via WhatsApp
-        </button>
-      )}
+      {/* Contact seller + Download Invoice */}
+      <div className="mt-4 flex flex-col sm:flex-row gap-2">
+        {settings?.seller_whatsapp && (
+          <button
+            data-testid="contact-seller-btn"
+            onClick={() => window.open(`https://wa.me/${settings.seller_whatsapp}?text=${encodeURIComponent(`Halo, saya ingin menanyakan pesanan ${order.order_number}`)}`, '_blank')}
+            className="flex-1 flex items-center justify-center gap-2 bg-green-500 text-white font-bold py-3 rounded-full hover:bg-green-600 transition-all"
+          >
+            <MessageCircle size={16} /> Hubungi Seller
+          </button>
+        )}
+        {canDownloadInvoice && (
+          <button
+            data-testid="download-invoice-btn"
+            onClick={handleDownloadInvoice}
+            className="flex-1 flex items-center justify-center gap-2 bg-gradient-to-r from-[#D97706] to-[#B45309] text-white font-bold py-3 rounded-full hover:shadow-lg transition-all"
+          >
+            <FileDown size={16} /> Download Invoice
+          </button>
+        )}
+      </div>
     </div>
   );
 }

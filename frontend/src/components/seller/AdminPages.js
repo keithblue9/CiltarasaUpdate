@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Save, Send, AlertTriangle, MessageCircle, ListOrdered, Trash2, Plus, RotateCcw, ShieldAlert, KeyRound, Eye, EyeOff, Lock, TrendingUp, Users, Smartphone, Globe, Monitor, RefreshCw, Target } from 'lucide-react';
+import { Save, Send, AlertTriangle, MessageCircle, ListOrdered, Trash2, Plus, RotateCcw, ShieldAlert, KeyRound, Eye, EyeOff, Lock, TrendingUp, Users, Smartphone, Globe, Monitor, RefreshCw, Target, MessagesSquare, FileText, ChevronDown, ChevronUp, Copy, Check, Type } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import axios from 'axios';
 import { useApp } from '../../context/AppContext';
@@ -671,6 +671,298 @@ export function TrafficStats() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+
+// ─── AUTO-CHAT CONFIG (FASE 3) ────────────────────────────────────
+const STAGE_META = [
+  { key: 'menunggu', label: 'Pesanan Diterima (Menunggu)', icon: '📋', desc: 'Saat order baru dibuat buyer. Notif untuk seller (default ON) & opsional buyer.' },
+  { key: 'diproses', label: 'Diproses', icon: '👨‍🍳', desc: 'Saat seller mengubah status ke "Diproses".' },
+  { key: 'siap', label: 'Siap Diambil/Dikirim', icon: '📦', desc: 'Saat pesanan siap diambil atau dikirim.' },
+  { key: 'selesai', label: 'Selesai', icon: '🎉', desc: 'Saat pesanan sudah sampai/selesai.' },
+  { key: 'dibatalkan', label: 'Dibatalkan', icon: '❌', desc: 'Saat pesanan dibatalkan.' },
+];
+
+const PLACEHOLDERS = [
+  { tag: '{order_id}', desc: 'Nomor pesanan' },
+  { tag: '{customer_name}', desc: 'Nama pelanggan' },
+  { tag: '{customer_phone}', desc: 'No HP pelanggan' },
+  { tag: '{customer_address}', desc: 'Alamat pelanggan' },
+  { tag: '{delivery}', desc: 'Metode pengiriman' },
+  { tag: '{items_detail}', desc: 'List detail item' },
+  { tag: '{total}', desc: 'Total bayar' },
+  { tag: '{subtotal}', desc: 'Subtotal' },
+  { tag: '{notes}', desc: 'Catatan pelanggan' },
+  { tag: '{status}', desc: 'Label status' },
+  { tag: '{status_desc}', desc: 'Deskripsi status' },
+  { tag: '{status_emoji}', desc: 'Emoji status' },
+  { tag: '{store_name}', desc: 'Nama toko' },
+  { tag: '{timestamp}', desc: 'Waktu order' },
+  { tag: '{track_link}', desc: 'Link tracking buyer' },
+];
+
+function PlaceholderHelper({ onInsert }) {
+  return (
+    <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4">
+      <p className="text-xs font-bold text-amber-900 mb-2">💡 Placeholder tersedia (klik untuk salin):</p>
+      <div className="flex flex-wrap gap-1.5">
+        {PLACEHOLDERS.map(p => (
+          <button
+            key={p.tag}
+            type="button"
+            onClick={() => {
+              navigator.clipboard.writeText(p.tag);
+              toast.success(`${p.tag} disalin!`);
+              if (onInsert) onInsert(p.tag);
+            }}
+            title={p.desc}
+            className="text-[10px] font-mono px-2 py-1 rounded-md bg-white border border-amber-300 text-amber-800 hover:bg-amber-200 transition-all"
+          >
+            {p.tag}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function StageCard({ stage, cfg, onUpdate }) {
+  const [open, setOpen] = useState(false);
+  const update = (k, v) => onUpdate(stage.key, { ...cfg, [k]: v });
+  return (
+    <div className="bg-white rounded-2xl border border-[#FED7AA] overflow-hidden">
+      <button
+        type="button"
+        data-testid={`stage-toggle-${stage.key}`}
+        onClick={() => setOpen(!open)}
+        className="w-full px-4 py-3.5 flex items-center justify-between hover:bg-amber-50 transition-all"
+      >
+        <div className="flex items-center gap-3 text-left">
+          <div className="text-2xl">{stage.icon}</div>
+          <div>
+            <p className="font-heading font-bold text-[#7C2D12] text-sm">{stage.label}</p>
+            <p className="text-[10px] text-[#9A3412]">{stage.desc}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {cfg.seller_enabled && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">SELLER ✓</span>}
+          {cfg.buyer_enabled && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-green-100 text-green-700">BUYER ✓</span>}
+          {open ? <ChevronUp size={16} className="text-[#9A3412]" /> : <ChevronDown size={16} className="text-[#9A3412]" />}
+        </div>
+      </button>
+      {open && (
+        <div className="p-4 border-t border-amber-200 space-y-4 bg-[#FFFBF5]">
+          {/* Seller */}
+          <div className="rounded-xl bg-white border border-blue-200 p-3">
+            <label className="flex items-center justify-between mb-2">
+              <span className="text-xs font-bold text-blue-900 flex items-center gap-1.5">📤 Kirim ke Seller</span>
+              <input
+                type="checkbox"
+                data-testid={`stage-${stage.key}-seller-toggle`}
+                checked={cfg.seller_enabled || false}
+                onChange={e => update('seller_enabled', e.target.checked)}
+                className="w-4 h-4 accent-blue-600"
+              />
+            </label>
+            {cfg.seller_enabled && (
+              <textarea
+                data-testid={`stage-${stage.key}-seller-template`}
+                rows={6}
+                value={cfg.seller_template || ''}
+                onChange={e => update('seller_template', e.target.value)}
+                placeholder="Template pesan untuk seller..."
+                className="w-full px-3 py-2 rounded-lg border border-blue-200 text-xs font-mono resize-y text-[#451A03]"
+              />
+            )}
+          </div>
+          {/* Buyer */}
+          <div className="rounded-xl bg-white border border-green-200 p-3">
+            <label className="flex items-center justify-between mb-2">
+              <span className="text-xs font-bold text-green-900 flex items-center gap-1.5">📥 Kirim ke Buyer</span>
+              <input
+                type="checkbox"
+                data-testid={`stage-${stage.key}-buyer-toggle`}
+                checked={cfg.buyer_enabled || false}
+                onChange={e => update('buyer_enabled', e.target.checked)}
+                className="w-4 h-4 accent-green-600"
+              />
+            </label>
+            {cfg.buyer_enabled && (
+              <textarea
+                data-testid={`stage-${stage.key}-buyer-template`}
+                rows={6}
+                value={cfg.buyer_template || ''}
+                onChange={e => update('buyer_template', e.target.value)}
+                placeholder="Template pesan untuk buyer..."
+                className="w-full px-3 py-2 rounded-lg border border-green-200 text-xs font-mono resize-y text-[#451A03]"
+              />
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function AutoChatConfig() {
+  const { storeConfig, refreshStoreConfig } = useApp();
+  const [config, setConfig] = useState({});
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setConfig(storeConfig?.auto_chat_config || {});
+  }, [storeConfig]);
+
+  const updateStage = (key, val) => setConfig(c => ({ ...c, [key]: val }));
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await axios.put(`${API}/api/store-config`, { auto_chat_config: config });
+      await refreshStoreConfig();
+      toast.success('Auto-chat tersimpan! 💬');
+    } catch { toast.error('Gagal simpan'); } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="font-heading text-2xl font-bold text-[#7C2D12]">Auto-Chat WhatsApp</h1>
+          <p className="text-xs text-[#9A3412] mt-0.5">Toggle on/off & edit wording WA otomatis per stage pesanan — untuk seller & buyer terpisah.</p>
+        </div>
+        <button data-testid="save-auto-chat-btn" onClick={handleSave} disabled={saving} className="flex items-center gap-2 bg-gradient-to-r from-[#F97316] to-[#EA580C] text-white font-bold px-5 py-2.5 rounded-full shadow">
+          <Save size={16} /> {saving ? 'Menyimpan...' : 'Simpan Semua'}
+        </button>
+      </div>
+
+      <PlaceholderHelper />
+
+      <div className="space-y-3">
+        {STAGE_META.map(stage => (
+          <StageCard
+            key={stage.key}
+            stage={stage}
+            cfg={config[stage.key] || {}}
+            onUpdate={updateStage}
+          />
+        ))}
+      </div>
+
+      <div className="rounded-xl bg-blue-50 border border-blue-200 p-4 text-xs text-blue-900">
+        <p className="font-bold mb-1">ℹ️ Catatan:</p>
+        <ul className="list-disc list-inside space-y-1 text-[11px]">
+          <li>WA akan terkirim aktual via Fonnte token yang diset di tab "WhatsApp (Fonnte)". Pastikan device aktif.</li>
+          <li>Pesan ke <strong>seller</strong> dikirim ke nomor di <code>seller_notify_phone</code>.</li>
+          <li>Pesan ke <strong>buyer</strong> dikirim ke nomor HP yang buyer isi saat checkout.</li>
+          <li>Template pakai placeholder seperti <code className="bg-white px-1 rounded">{'{order_id}'}</code> — klik tag di atas untuk salin.</li>
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+// ─── INVOICE WORDING CONFIG (FASE 3) ──────────────────────────────
+const INVOICE_TEXT_FIELDS = [
+  { key: 'title', label: 'Judul Invoice', placeholder: 'INVOICE / STRUK PEMBELIAN' },
+  { key: 'subtitle', label: 'Subjudul Invoice', placeholder: 'Terima kasih telah berbelanja...' },
+  { key: 'order_number_label', label: 'Label No. Pesanan', placeholder: 'No. Pesanan' },
+  { key: 'order_date_label', label: 'Label Tanggal', placeholder: 'Tanggal' },
+  { key: 'payment_method_label', label: 'Label Metode Bayar', placeholder: 'Metode Bayar' },
+  { key: 'delivery_method_label', label: 'Label Pengiriman', placeholder: 'Pengiriman' },
+  { key: 'buyer_section_label', label: 'Heading Section Buyer', placeholder: 'DITAGIH KEPADA' },
+  { key: 'items_section_label', label: 'Heading Section Items', placeholder: 'RINCIAN PESANAN' },
+  { key: 'subtotal_label', label: 'Label Subtotal', placeholder: 'Subtotal' },
+  { key: 'delivery_fee_label', label: 'Label Ongkir', placeholder: 'Ongkir' },
+  { key: 'total_label', label: 'Label Total', placeholder: 'TOTAL' },
+  { key: 'notes_label', label: 'Label Catatan', placeholder: 'Catatan' },
+  { key: 'footer_thanks', label: 'Footer - Ucapan Terima Kasih', placeholder: 'Terima kasih telah mempercayai kami' },
+  { key: 'footer_contact', label: 'Footer - Info Kontak', placeholder: 'Hubungi kami via WhatsApp jika ada keluhan' },
+  { key: 'footer_disclaimer', label: 'Footer - Disclaimer', placeholder: 'Struk ini adalah bukti pembayaran sah.' },
+];
+
+export function InvoiceConfig() {
+  const { storeConfig, refreshStoreConfig } = useApp();
+  const [texts, setTexts] = useState({});
+  const [saving, setSaving] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+
+  useEffect(() => {
+    setTexts(storeConfig?.invoice_texts || {});
+  }, [storeConfig]);
+
+  const setText = (k, v) => setTexts(t => ({ ...t, [k]: v }));
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await axios.put(`${API}/api/store-config`, { invoice_texts: texts });
+      await refreshStoreConfig();
+      toast.success('Wording invoice tersimpan! 🧾');
+    } catch { toast.error('Gagal simpan'); } finally { setSaving(false); }
+  };
+
+  const handlePreview = async () => {
+    setPreviewing(true);
+    try {
+      const mod = await import('../../lib/invoiceGenerator');
+      const sampleOrder = {
+        order_number: 'TST-001', customer_name: 'Bunda Demo', customer_phone: '6281234567890',
+        customer_address: 'Jl. Contoh No. 1, Malang', delivery_method: 'delivery',
+        payment_method: 'transfer', subtotal: 75000, delivery_fee: 10000, total: 85000,
+        notes: 'Sample notes', status: 'selesai', received: true,
+        created_at: new Date().toISOString(),
+        items: [
+          { product_name: 'Risoles Frozen (isi 10)', quantity: 2, price: 35000, subtotal: 70000 },
+          { product_name: 'Lumpia Mini', quantity: 1, price: 5000, subtotal: 5000 },
+        ],
+      };
+      // Gunakan wording yang sedang di-edit (state) sehingga preview real-time
+      const tempConfig = { ...storeConfig, invoice_texts: texts };
+      mod.generateInvoicePdf(sampleOrder, tempConfig);
+      toast.success('Preview Invoice didownload!');
+    } catch (e) {
+      console.error(e);
+      toast.error('Gagal preview');
+    } finally { setPreviewing(false); }
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="font-heading text-2xl font-bold text-[#7C2D12]">Wording Invoice / Struk</h1>
+          <p className="text-xs text-[#9A3412] mt-0.5">Edit semua teks yang muncul di PDF Invoice yang buyer download.</p>
+        </div>
+        <div className="flex gap-2">
+          <button data-testid="preview-invoice-btn" onClick={handlePreview} disabled={previewing} className="flex items-center gap-2 bg-white border border-[#FED7AA] text-[#7C2D12] font-bold px-4 py-2 rounded-full hover:bg-amber-50 text-sm">
+            <FileText size={14} /> {previewing ? 'Generating...' : 'Preview PDF'}
+          </button>
+          <button data-testid="save-invoice-btn" onClick={handleSave} disabled={saving} className="flex items-center gap-2 bg-gradient-to-r from-[#F97316] to-[#EA580C] text-white font-bold px-5 py-2.5 rounded-full shadow">
+            <Save size={16} /> {saving ? 'Menyimpan...' : 'Simpan'}
+          </button>
+        </div>
+      </div>
+
+      <Section title="Teks Invoice" icon={FileText}>
+        <p className="text-xs text-[#9A3412] mb-4">Klik "Preview PDF" untuk lihat hasil sebelum simpan. Invoice akan auto-pakai nama toko, tagline, alamat & WhatsApp dari Profil Toko.</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {INVOICE_TEXT_FIELDS.map(f => (
+            <div key={f.key}>
+              <label className="block text-xs font-semibold text-[#7C2D12] mb-1">{f.label}</label>
+              <input
+                data-testid={`invoice-text-${f.key}`}
+                value={texts[f.key] || ''}
+                placeholder={f.placeholder}
+                onChange={e => setText(f.key, e.target.value)}
+                className={inputCls + ' text-sm'}
+              />
+            </div>
+          ))}
+        </div>
+      </Section>
     </div>
   );
 }

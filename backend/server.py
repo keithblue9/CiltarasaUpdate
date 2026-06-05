@@ -170,6 +170,44 @@ STATUS_DESC = {
     "selesai": "Pesanan sudah sampai! Jangan lupa kasih review ya ⭐",
     "dibatalkan": "Maaf, pesanan dibatalkan. Hubungi kami untuk info lebih lanjut 🙏",
 }
+STATUS_KEYS = ["menunggu", "diproses", "siap", "selesai", "dibatalkan"]
+
+def render_chat_template(tpl: str, order: dict, store_name: str = "Ciltarasa", app_url: str = "") -> str:
+    """Render auto-chat template dengan placeholder dari order. Mendukung: {order_id}, {customer_name}, {customer_phone}, {customer_address}, {delivery}, {items_detail}, {total}, {subtotal}, {notes}, {status}, {status_desc}, {status_emoji}, {store_name}, {timestamp}, {app_url}, {track_link}."""
+    if not tpl:
+        return ""
+    items_lines = []
+    for it in order.get("items", []):
+        items_lines.append(f"• {it.get('product_name', '-')} × {it.get('quantity', 0)} = {fmt_rp_id(it.get('subtotal', 0))}")
+    items_text = "\n".join(items_lines) if items_lines else "-"
+    delivery = order.get("delivery_method", "-")
+    if order.get("delivery_option_id"):
+        delivery = f"{delivery} ({order['delivery_option_id']})"
+    ts = datetime.now(timezone(timedelta(hours=7))).strftime("%d %b %Y, %H:%M WIB")
+    status = order.get("status", "menunggu")
+    order_num = order.get("order_number", order.get("id", ""))
+    repl = {
+        "{order_id}": str(order_num),
+        "{customer_name}": order.get("customer_name", "-"),
+        "{customer_phone}": "+" + str(order.get("customer_phone", "-")),
+        "{customer_address}": order.get("customer_address", "-") or "Ambil Sendiri",
+        "{delivery}": delivery,
+        "{items_detail}": items_text,
+        "{total}": fmt_rp_id(order.get("total", 0)),
+        "{subtotal}": fmt_rp_id(order.get("subtotal", 0)),
+        "{notes}": order.get("notes", "") or "-",
+        "{status}": STATUS_LABEL.get(status, status),
+        "{status_desc}": STATUS_DESC.get(status, ""),
+        "{status_emoji}": STATUS_EMOJI.get(status, "📦"),
+        "{store_name}": store_name,
+        "{timestamp}": ts,
+        "{app_url}": app_url or "",
+        "{track_link}": f"{app_url}/#/buyer/track?order={order_num}" if app_url else f"/buyer/track?order={order_num}",
+    }
+    out = tpl
+    for k, v in repl.items():
+        out = out.replace(k, str(v))
+    return out
 
 def build_buyer_status_message(order: dict, app_url: str = "") -> str:
     status = order.get("status", "menunggu")
@@ -314,6 +352,8 @@ class StoreConfigUpdate(BaseModel):
     restock_safety_days: Optional[int] = None
     qris_image_url: Optional[str] = None
     payment_texts: Optional[Dict[str, str]] = None
+    auto_chat_config: Optional[Dict[str, Any]] = None
+    invoice_texts: Optional[Dict[str, str]] = None
 
 class PurchaseItem(BaseModel):
     product_id: str
@@ -486,6 +526,57 @@ DEFAULT_STORE_CONFIG = {
         "qris_upload_label": "Upload Bukti Pembayaran QRIS",
         "no_qris_image_warning": "Seller belum upload QR. Hubungi seller via WhatsApp untuk minta QR.",
     },
+    "auto_chat_config": {
+        # Stage 'menunggu' = saat order baru dibuat (POST /api/orders)
+        "menunggu": {
+            "seller_enabled": True,
+            "seller_template": "🛒 *PESANAN BARU - {store_name}*\n\nOrder ID: #{order_id}\n👤 Pelanggan: {customer_name}\n📱 No. HP: {customer_phone}\n📍 Alamat: {customer_address}\n🚚 Pengiriman: {delivery}\n\n📦 Detail:\n{items_detail}\n\n💰 Total: {total}\n📝 Catatan: {notes}\n⏰ {timestamp}\n\nSilakan konfirmasi di dashboard ✅",
+            "buyer_enabled": False,
+            "buyer_template": "Halo {customer_name}! 👋\n\nTerima kasih sudah pesan di {store_name}!\nOrder #{order_id} kamu sedang menunggu konfirmasi dari seller.\n\n💰 Total: {total}\n\nKami akan kabari segera. 🧡",
+        },
+        "diproses": {
+            "seller_enabled": False,
+            "seller_template": "📬 Order #{order_id} ({customer_name}) - status: Diproses",
+            "buyer_enabled": True,
+            "buyer_template": "📦 *Update Pesanan {store_name}*\n\nHalo {customer_name}! 👋\nOrder #{order_id} kamu:\n\nStatus: {status_emoji} {status}\n\n{status_desc}\n\n_Lacak: {track_link}_\n\nTerima kasih! 🧡",
+        },
+        "siap": {
+            "seller_enabled": False,
+            "seller_template": "📦 Order #{order_id} - status: Siap",
+            "buyer_enabled": True,
+            "buyer_template": "📦 *Update Pesanan {store_name}*\n\nHalo {customer_name}! 👋\nOrder #{order_id} kamu:\n\nStatus: {status_emoji} {status}\n\n{status_desc}\n\n_Lacak: {track_link}_\n\nTerima kasih! 🧡",
+        },
+        "selesai": {
+            "seller_enabled": False,
+            "seller_template": "🎉 Order #{order_id} ({customer_name}) - SELESAI. Total: {total}",
+            "buyer_enabled": True,
+            "buyer_template": "🎉 *Pesanan Selesai - {store_name}*\n\nHalo {customer_name}!\nOrder #{order_id} kamu sudah selesai 🎊\n\n{status_desc}\n\n_Lacak/Review: {track_link}_\n\nTerima kasih sudah belanja! 🧡",
+        },
+        "dibatalkan": {
+            "seller_enabled": False,
+            "seller_template": "❌ Order #{order_id} dibatalkan",
+            "buyer_enabled": True,
+            "buyer_template": "❌ *Pesanan Dibatalkan*\n\nHalo {customer_name},\nMaaf, order #{order_id} kamu dibatalkan.\n\n{status_desc}\n\nHubungi kami via WhatsApp untuk info lebih lanjut. 🙏",
+        },
+    },
+    "invoice_texts": {
+        "title": "INVOICE / STRUK PEMBELIAN",
+        "subtitle": "Terima kasih telah berbelanja di Ciltarasa",
+        "buyer_section_label": "DITAGIH KEPADA",
+        "items_section_label": "RINCIAN PESANAN",
+        "summary_label": "RINGKASAN",
+        "subtotal_label": "Subtotal",
+        "delivery_fee_label": "Ongkir",
+        "total_label": "TOTAL",
+        "notes_label": "Catatan",
+        "footer_thanks": "Terima kasih telah mempercayai kami 🧡",
+        "footer_contact": "Hubungi kami via WhatsApp jika ada keluhan",
+        "footer_disclaimer": "Struk ini adalah bukti pembayaran sah. Simpan untuk klaim garansi.",
+        "order_number_label": "No. Pesanan",
+        "order_date_label": "Tanggal",
+        "payment_method_label": "Metode Bayar",
+        "delivery_method_label": "Pengiriman",
+    },
 }
 
 DEFAULT_DISCOUNTS = [
@@ -533,6 +624,19 @@ async def seed_database():
             for k, v in DEFAULT_STORE_CONFIG.get("payment_texts", {}).items():
                 if k not in existing["payment_texts"]:
                     backfill[f"payment_texts.{k}"] = v
+        # FASE 3 backfill
+        if "auto_chat_config" not in existing or not existing.get("auto_chat_config"):
+            backfill["auto_chat_config"] = DEFAULT_STORE_CONFIG.get("auto_chat_config", {})
+        else:
+            for sk, sv in DEFAULT_STORE_CONFIG.get("auto_chat_config", {}).items():
+                if sk not in existing["auto_chat_config"]:
+                    backfill[f"auto_chat_config.{sk}"] = sv
+        if "invoice_texts" not in existing or not existing.get("invoice_texts"):
+            backfill["invoice_texts"] = DEFAULT_STORE_CONFIG.get("invoice_texts", {})
+        else:
+            for k, v in DEFAULT_STORE_CONFIG.get("invoice_texts", {}).items():
+                if k not in existing["invoice_texts"]:
+                    backfill[f"invoice_texts.{k}"] = v
         if backfill:
             await db.store_config.update_one({"_id": "main"}, {"$set": backfill})
             logger.info(f"Backfilled store_config: {list(backfill.keys())}")
@@ -853,23 +957,46 @@ async def create_order(order: OrderCreate):
                 {"$inc": {"stock": -item.quantity, "sold_count": item.quantity}}
             )
     await manager.broadcast({"type": "order_created", "data": doc})
-    # WA notif to seller
-    _, seller_phone, enabled = await get_fonnte_config()
-    wa_sent = False
-    wa_reason = None
-    if enabled and seller_phone:
-        res = await fonnte_send(seller_phone, build_seller_order_message(doc))
-        wa_sent = res.get("ok", False)
-        wa_reason = res.get("reason") or res.get("error") or (res.get("response") or {}).get("reason")
-        if not wa_sent:
-            logger.warning(f"WA seller notif failed for order {doc.get('order_number')}: {res}")
-    elif not enabled:
-        wa_reason = "WA notif disabled in config"
-    elif not seller_phone:
-        wa_reason = "seller_notify_phone empty in store_config"
-    doc["_wa_seller_sent"] = wa_sent
-    if wa_reason:
-        doc["_wa_seller_reason"] = wa_reason
+    # ─── FASE 3: Auto-Chat with configurable templates per stage ───
+    cfg = await db.store_config.find_one({"_id": "main"}) or {}
+    auto_chat = (cfg.get("auto_chat_config") or {}).get("menunggu", {})
+    store_name = cfg.get("name") or "Ciltarasa"
+    token, seller_phone, enabled = await get_fonnte_config()
+    wa_seller_sent = False
+    wa_seller_reason = None
+    wa_buyer_sent = False
+    wa_buyer_reason = None
+    if enabled:
+        # Seller notif
+        if auto_chat.get("seller_enabled", True) and seller_phone:
+            tpl = auto_chat.get("seller_template") or ""
+            msg = render_chat_template(tpl, doc, store_name, APP_URL) if tpl else build_seller_order_message(doc)
+            res = await fonnte_send(seller_phone, msg)
+            wa_seller_sent = res.get("ok", False)
+            wa_seller_reason = res.get("reason") or res.get("error") or (res.get("response") or {}).get("reason")
+            if not wa_seller_sent:
+                logger.warning(f"WA seller notif failed for order {doc.get('order_number')}: {res}")
+        elif not auto_chat.get("seller_enabled", True):
+            wa_seller_reason = "Auto-chat seller disabled for 'menunggu'"
+        elif not seller_phone:
+            wa_seller_reason = "seller_notify_phone empty in store_config"
+        # Buyer notif on order created (opsional)
+        if auto_chat.get("buyer_enabled", False) and doc.get("customer_phone"):
+            tpl_b = auto_chat.get("buyer_template") or ""
+            if tpl_b:
+                msg_b = render_chat_template(tpl_b, doc, store_name, APP_URL)
+                res_b = await fonnte_send(doc["customer_phone"], msg_b)
+                wa_buyer_sent = res_b.get("ok", False)
+                wa_buyer_reason = res_b.get("reason") or res_b.get("error") or (res_b.get("response") or {}).get("reason")
+    else:
+        wa_seller_reason = "WA notif disabled in config"
+        wa_buyer_reason = "WA notif disabled in config"
+    doc["_wa_seller_sent"] = wa_seller_sent
+    if wa_seller_reason:
+        doc["_wa_seller_reason"] = wa_seller_reason
+    doc["_wa_buyer_sent"] = wa_buyer_sent
+    if wa_buyer_reason:
+        doc["_wa_buyer_reason"] = wa_buyer_reason
     return doc
 
 @api_router.put("/orders/{oid}/status")
@@ -899,18 +1026,42 @@ async def update_order_status(oid: str, update: OrderStatusUpdate, _auth: bool =
     await db.orders.update_one({"id": oid}, {"$set": update_fields})
     doc = await db.orders.find_one({"id": oid}, {"_id": 0})
     await manager.broadcast({"type": "order_updated", "data": doc})
-    # WA notif to buyer
-    wa_sent = False
-    wa_reason = None
-    if new_status in STATUS_DESC and doc.get("customer_phone"):
-        _, _, enabled = await get_fonnte_config()
-        if enabled:
-            res = await fonnte_send(doc["customer_phone"], build_buyer_status_message(doc, APP_URL))
-            wa_sent = res.get("ok", False)
-            wa_reason = res.get("reason") or res.get("error") or (res.get("response") or {}).get("reason")
-    doc["_wa_buyer_sent"] = wa_sent
-    if wa_reason:
-        doc["_wa_buyer_reason"] = wa_reason
+    # ─── FASE 3: Auto-Chat per stage (seller + buyer configurable) ───
+    cfg = await db.store_config.find_one({"_id": "main"}) or {}
+    auto_chat = (cfg.get("auto_chat_config") or {}).get(new_status, {})
+    store_name = cfg.get("name") or "Ciltarasa"
+    token, seller_phone, enabled = await get_fonnte_config()
+    wa_buyer_sent = False
+    wa_buyer_reason = None
+    wa_seller_sent = False
+    wa_seller_reason = None
+    if enabled:
+        # Buyer notif
+        if auto_chat.get("buyer_enabled", True) and doc.get("customer_phone"):
+            tpl = auto_chat.get("buyer_template") or ""
+            msg = render_chat_template(tpl, doc, store_name, APP_URL) if tpl else build_buyer_status_message(doc, APP_URL)
+            res = await fonnte_send(doc["customer_phone"], msg)
+            wa_buyer_sent = res.get("ok", False)
+            wa_buyer_reason = res.get("reason") or res.get("error") or (res.get("response") or {}).get("reason")
+        elif not auto_chat.get("buyer_enabled", True):
+            wa_buyer_reason = f"Auto-chat buyer disabled for '{new_status}'"
+        # Seller notif
+        if auto_chat.get("seller_enabled", False) and seller_phone:
+            tpl_s = auto_chat.get("seller_template") or ""
+            if tpl_s:
+                msg_s = render_chat_template(tpl_s, doc, store_name, APP_URL)
+                res_s = await fonnte_send(seller_phone, msg_s)
+                wa_seller_sent = res_s.get("ok", False)
+                wa_seller_reason = res_s.get("reason") or res_s.get("error") or (res_s.get("response") or {}).get("reason")
+    else:
+        wa_buyer_reason = "WA notif disabled in config"
+        wa_seller_reason = "WA notif disabled in config"
+    doc["_wa_buyer_sent"] = wa_buyer_sent
+    if wa_buyer_reason:
+        doc["_wa_buyer_reason"] = wa_buyer_reason
+    doc["_wa_seller_sent"] = wa_seller_sent
+    if wa_seller_reason:
+        doc["_wa_seller_reason"] = wa_seller_reason
     return doc
 
 @api_router.put("/orders/{oid}/received")
