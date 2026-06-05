@@ -3,6 +3,7 @@ import axios from 'axios';
 import SellerLogin from './SellerLogin';
 import SellerSidebar from './SellerSidebar';
 import DashboardOverview from './DashboardOverview';
+import Dashboard from './Dashboard';
 import ProductManagement from './ProductManagement';
 import IncomingOrders from './IncomingOrders';
 import SalesReport from './SalesReport';
@@ -10,7 +11,7 @@ import FinancialReport from './FinancialReport';
 import { StoreProfile, StoreCerita, CategoriesConfig, DeliveryConfig, PaymentsConfig, HomepageTextsConfig, HeroSlideshowConfig, FunFactsConfig, OnboardingTextsConfig } from './StoreConfigPages';
 import DiscountManagement from './DiscountManagement';
 import PurchaseManagement from './PurchaseManagement';
-import { FonnteConfig, HowToOrderConfig, ResetCustomersConfig, ChangePinConfig, TrafficStats, AutoChatConfig, InvoiceConfig } from './AdminPages';
+import { FonnteConfig, HowToOrderConfig, ResetCustomersConfig, ChangePinConfig, TrafficStats, AutoChatConfig, InvoiceConfig, DashboardWidgetsConfig } from './AdminPages';
 import { Smartphone } from 'lucide-react';
 import { detectEnv } from '../pwa/detectEnv';
 
@@ -28,7 +29,7 @@ function attachSellerInterceptor(getPin) {
       cfg.headers['X-Seller-PIN'] = getPin();
     }
     // Analytics GET (PIN-guarded)
-    if (method === 'get' && url.includes('/api/analytics/stats')) {
+    if (method === 'get' && (url.includes('/api/analytics/stats') || url.includes('/api/dashboard/') || url.includes('/api/admin/fonnte-status'))) {
       cfg.headers = cfg.headers || {};
       cfg.headers['X-Seller-PIN'] = getPin();
     }
@@ -80,7 +81,8 @@ export default function SellerApp() {
   }
 
   const tabContent = {
-    dashboard: <DashboardOverview onTabChange={setActiveTab} />,
+    dashboard: <Dashboard />,
+    'dashboard-legacy': <DashboardOverview onTabChange={setActiveTab} />,
     products: <ProductManagement />,
     purchases: <PurchaseManagement />,
     orders: <IncomingOrders />,
@@ -99,6 +101,7 @@ export default function SellerApp() {
     payments: <PaymentsConfig />,
     'auto-chat': <AutoChatConfig />,
     invoice: <InvoiceConfig />,
+    'dashboard-widgets': <DashboardWidgetsConfig />,
     discounts: <DiscountManagement />,
     whatsapp: <FonnteConfig />,
     'change-pin': <ChangePinConfig onPinChanged={() => handleLogout()} />,

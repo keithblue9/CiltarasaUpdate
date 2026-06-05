@@ -354,6 +354,7 @@ class StoreConfigUpdate(BaseModel):
     payment_texts: Optional[Dict[str, str]] = None
     auto_chat_config: Optional[Dict[str, Any]] = None
     invoice_texts: Optional[Dict[str, str]] = None
+    dashboard_config: Optional[Dict[str, Any]] = None
 
 class PurchaseItem(BaseModel):
     product_id: str
@@ -576,6 +577,45 @@ DEFAULT_STORE_CONFIG = {
         "payment_method_label": "Metode Bayar",
         "delivery_method_label": "Pengiriman",
     },
+    "dashboard_config": {
+        "default_period": "30d",  # 7d | 30d | 90d
+        "general": {
+            "show_revenue_kpi": True,
+            "show_orders_kpi": True,
+            "show_aov_kpi": True,
+            "show_customers_kpi": True,
+            "show_revenue_chart": True,
+            "show_top_products": True,
+            "show_recent_orders": True,
+            "show_status_breakdown": True,
+        },
+        "inventory": {
+            "show_total_products_kpi": True,
+            "show_low_stock_kpi": True,
+            "show_out_of_stock_kpi": True,
+            "show_stock_value_kpi": True,
+            "show_low_stock_table": True,
+            "show_top_movers": True,
+            "show_slow_movers": True,
+            "show_category_breakdown": True,
+        },
+        "sales": {
+            "show_revenue_trend": True,
+            "show_payment_pie": True,
+            "show_category_bar": True,
+            "show_best_sellers_table": True,
+            "show_status_funnel": True,
+            "show_hour_heatmap": True,
+        },
+        "customer": {
+            "show_total_customers_kpi": True,
+            "show_new_customers_kpi": True,
+            "show_returning_kpi": True,
+            "show_avg_orders_kpi": True,
+            "show_top_customers": True,
+            "show_acquisition_chart": True,
+        },
+    },
 }
 
 DEFAULT_DISCOUNTS = [
@@ -636,6 +676,13 @@ async def seed_database():
             for k, v in DEFAULT_STORE_CONFIG.get("invoice_texts", {}).items():
                 if k not in existing["invoice_texts"]:
                     backfill[f"invoice_texts.{k}"] = v
+        # FASE 4 backfill
+        if "dashboard_config" not in existing or not existing.get("dashboard_config"):
+            backfill["dashboard_config"] = DEFAULT_STORE_CONFIG.get("dashboard_config", {})
+        else:
+            for sk, sv in DEFAULT_STORE_CONFIG.get("dashboard_config", {}).items():
+                if sk not in existing["dashboard_config"]:
+                    backfill[f"dashboard_config.{sk}"] = sv
         if backfill:
             await db.store_config.update_one({"_id": "main"}, {"$set": backfill})
             logger.info(f"Backfilled store_config: {list(backfill.keys())}")
@@ -1634,6 +1681,341 @@ async def delete_discount(did: str, _auth: bool = Depends(require_seller)):
     await db.discounts.delete_one({"id": did})
     await manager.broadcast({"type": "discount_deleted", "data": {"id": did}})
     return {"success": True}
+
+# ─── FASE 4: Dashboard Analytics (4 tabs) ────────────────────────────────
+def _parse_period(period: str, start: Optional[str] = None, end: Optional[str] = None):
+    """Return (start_dt, end_dt) UTC. Period: 7d|30d|90d|custom"""
+    now = datetime.now(timezone.utc)
+    if period == "custom" and start and end:
+        try:
+            s = datetime.fromisoformat(start).replace(tzinfo=timezone.utc) if "T" not in start else datetime.fromisoformat(start.replace("Z", "+00:00"))
+            e = datetime.fromisoformat(end).replace(tzinfo=timezone.utc) if "T" not in end else datetime.fromisoformat(end.replace("Z", "+00:00"))
+            return s, e
+        except Exception:
+            pass
+    days = {"7d": 7, "30d": 30, "90d": 90, "365d": 365}.get(period, 30)
+    return now - timedelta(days=days), now
+
+
+def _in_range(ts_str: str, start: datetime, end: datetime) -> bool:
+    if not ts_str:
+        return False
+    try:
+        ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+        return start <= ts <= end
+    except Exception:
+        return False
+
+
+@api_router.get("/dashboard/general")
+async def dashboard_general(period: str = "30d", start: Optional[str] = None, end: Optional[str] = None, _auth: bool = Depends(require_seller)):
+    """KPI ringkasan: revenue, orders, AOV, customers + trend chart + top products + recent activity."""
+    s, e = _parse_period(period, start, end)
+    orders = await db.orders.find({}, {"_id": 0}).to_list(5000)
+    products = await db.products.find({}, {"_id": 0}).to_list(1000)
+    pmap = {p["id"]: p for p in products}
+
+    in_range = [o for o in orders if _in_range(o.get("created_at", ""), s, e) and o.get("status") != "dibatalkan"]
+    revenue = sum(o.get("total", 0) for o in in_range)
+    order_count = len(in_range)
+    aov = revenue / order_count if order_count > 0 else 0
+    unique_customers = len({(o.get("customer_phone") or "").strip() for o in in_range if o.get("customer_phone")})
+
+    # Daily revenue trend
+    daily = {}
+    cursor_dt = s
+    while cursor_dt <= e:
+        daily[cursor_dt.strftime("%Y-%m-%d")] = {"date": cursor_dt.strftime("%Y-%m-%d"), "revenue": 0, "orders": 0}
+        cursor_dt += timedelta(days=1)
+    for o in in_range:
+        try:
+            d = datetime.fromisoformat(o["created_at"].replace("Z", "+00:00")).strftime("%Y-%m-%d")
+            if d in daily:
+                daily[d]["revenue"] += o.get("total", 0)
+                daily[d]["orders"] += 1
+        except Exception:
+            continue
+    trend = sorted(daily.values(), key=lambda x: x["date"])
+
+    # Top products (by quantity sold in range)
+    prod_sold = {}
+    for o in in_range:
+        for item in o.get("items", []):
+            pid = item.get("product_id")
+            prod_sold.setdefault(pid, {"product_id": pid, "name": item.get("product_name", "-"), "image_url": item.get("image_url", ""), "qty": 0, "revenue": 0})
+            prod_sold[pid]["qty"] += item.get("quantity", 0)
+            prod_sold[pid]["revenue"] += item.get("subtotal", 0)
+    top_products = sorted(prod_sold.values(), key=lambda x: -x["revenue"])[:5]
+    for tp in top_products:
+        p = pmap.get(tp["product_id"])
+        if p and not tp.get("image_url"):
+            tp["image_url"] = p.get("image_url", "")
+
+    # Recent orders (last 10)
+    recent = sorted([o for o in orders], key=lambda o: o.get("created_at", ""), reverse=True)[:10]
+    recent_summary = [{
+        "id": o.get("id"), "order_number": o.get("order_number"),
+        "customer_name": o.get("customer_name"), "total": o.get("total", 0),
+        "status": o.get("status"), "created_at": o.get("created_at"),
+    } for o in recent]
+
+    # Status breakdown
+    status_break = {}
+    for o in in_range:
+        st = o.get("status", "unknown")
+        status_break[st] = status_break.get(st, 0) + 1
+
+    return {
+        "period": {"start": s.isoformat(), "end": e.isoformat(), "key": period},
+        "kpi": {
+            "revenue": revenue, "orders": order_count, "aov": aov,
+            "unique_customers": unique_customers,
+        },
+        "trend": trend,
+        "top_products": top_products,
+        "recent_orders": recent_summary,
+        "status_breakdown": [{"status": k, "count": v} for k, v in status_break.items()],
+    }
+
+
+@api_router.get("/dashboard/inventory")
+async def dashboard_inventory(_auth: bool = Depends(require_seller)):
+    """Inventory health: total products, low stock, OOS, stock value, movers, category breakdown."""
+    products = await db.products.find({}, {"_id": 0}).to_list(1000)
+    orders = await db.orders.find({"status": {"$nin": ["dibatalkan"]}}, {"_id": 0}).to_list(5000)
+    cfg = await db.store_config.find_one({"_id": "main"}) or {}
+    low_stock_threshold = int(cfg.get("low_stock_threshold") or 10)
+
+    now = datetime.now(timezone.utc)
+    cutoff_30 = now - timedelta(days=30)
+    velocity = {}
+    for o in orders:
+        try:
+            ts = datetime.fromisoformat(o.get("created_at", "").replace("Z", "+00:00"))
+        except Exception:
+            continue
+        if ts < cutoff_30:
+            continue
+        for it in o.get("items", []):
+            velocity[it["product_id"]] = velocity.get(it["product_id"], 0) + it.get("quantity", 0)
+
+    total = len(products)
+    low_stock = [p for p in products if 0 < p.get("stock", 0) <= low_stock_threshold]
+    out_of_stock = [p for p in products if p.get("stock", 0) <= 0]
+    stock_value = sum((p.get("cost_price") or p.get("price", 0)) * p.get("stock", 0) for p in products)
+
+    top_movers = sorted(products, key=lambda p: -velocity.get(p["id"], 0))[:5]
+    slow_movers = [p for p in products if velocity.get(p["id"], 0) == 0 and p.get("stock", 0) > 0]
+    slow_movers = sorted(slow_movers, key=lambda p: -p.get("stock", 0))[:5]
+
+    cat_break = {}
+    for p in products:
+        cat = p.get("category") or "Lainnya"
+        cat_break.setdefault(cat, {"category": cat, "count": 0, "stock": 0, "value": 0})
+        cat_break[cat]["count"] += 1
+        cat_break[cat]["stock"] += p.get("stock", 0)
+        cat_break[cat]["value"] += (p.get("cost_price") or p.get("price", 0)) * p.get("stock", 0)
+
+    def _strip(p):
+        return {
+            "id": p["id"], "name": p["name"], "image_url": p.get("image_url", ""),
+            "stock": p.get("stock", 0), "price": p.get("price", 0),
+            "cost_price": p.get("cost_price", 0), "sold_count": p.get("sold_count", 0),
+            "category": p.get("category"), "velocity_30d": round(velocity.get(p["id"], 0) / 30.0, 2),
+        }
+
+    return {
+        "kpi": {
+            "total_products": total,
+            "low_stock_count": len(low_stock),
+            "out_of_stock_count": len(out_of_stock),
+            "stock_value": stock_value,
+            "low_stock_threshold": low_stock_threshold,
+        },
+        "low_stock_items": [_strip(p) for p in sorted(low_stock, key=lambda p: p.get("stock", 0))],
+        "out_of_stock_items": [_strip(p) for p in out_of_stock],
+        "top_movers": [_strip(p) for p in top_movers],
+        "slow_movers": [_strip(p) for p in slow_movers],
+        "category_breakdown": sorted(cat_break.values(), key=lambda x: -x["value"]),
+    }
+
+
+@api_router.get("/dashboard/sales")
+async def dashboard_sales(period: str = "30d", start: Optional[str] = None, end: Optional[str] = None, _auth: bool = Depends(require_seller)):
+    """Sales analytics: revenue trend, payment breakdown, category sales, best sellers, status funnel, hour heatmap."""
+    s, e = _parse_period(period, start, end)
+    orders = await db.orders.find({}, {"_id": 0}).to_list(5000)
+    products = await db.products.find({}, {"_id": 0}).to_list(1000)
+    pmap = {p["id"]: p for p in products}
+
+    valid = [o for o in orders if _in_range(o.get("created_at", ""), s, e) and o.get("status") != "dibatalkan"]
+
+    # Daily trend
+    daily = {}
+    cursor_dt = s
+    while cursor_dt <= e:
+        daily[cursor_dt.strftime("%Y-%m-%d")] = {"date": cursor_dt.strftime("%Y-%m-%d"), "revenue": 0, "orders": 0}
+        cursor_dt += timedelta(days=1)
+    for o in valid:
+        try:
+            d = datetime.fromisoformat(o["created_at"].replace("Z", "+00:00")).strftime("%Y-%m-%d")
+            if d in daily:
+                daily[d]["revenue"] += o.get("total", 0)
+                daily[d]["orders"] += 1
+        except Exception:
+            continue
+    trend = sorted(daily.values(), key=lambda x: x["date"])
+
+    # Payment breakdown
+    pay = {}
+    for o in valid:
+        m = o.get("payment_method", "unknown")
+        pay.setdefault(m, {"method": m, "count": 0, "revenue": 0})
+        pay[m]["count"] += 1
+        pay[m]["revenue"] += o.get("total", 0)
+    payment_breakdown = sorted(pay.values(), key=lambda x: -x["revenue"])
+
+    # Category sales
+    cat_sales = {}
+    for o in valid:
+        for it in o.get("items", []):
+            p = pmap.get(it.get("product_id"))
+            cat = (p.get("category") if p else None) or "Lainnya"
+            cat_sales.setdefault(cat, {"category": cat, "qty": 0, "revenue": 0})
+            cat_sales[cat]["qty"] += it.get("quantity", 0)
+            cat_sales[cat]["revenue"] += it.get("subtotal", 0)
+    category_sales = sorted(cat_sales.values(), key=lambda x: -x["revenue"])
+
+    # Best sellers
+    prod_sales = {}
+    for o in valid:
+        for it in o.get("items", []):
+            pid = it.get("product_id")
+            prod_sales.setdefault(pid, {"product_id": pid, "name": it.get("product_name", "-"), "image_url": it.get("image_url", ""), "qty": 0, "revenue": 0})
+            prod_sales[pid]["qty"] += it.get("quantity", 0)
+            prod_sales[pid]["revenue"] += it.get("subtotal", 0)
+    best_sellers = sorted(prod_sales.values(), key=lambda x: -x["revenue"])[:10]
+    for bs in best_sellers:
+        p = pmap.get(bs["product_id"])
+        if p and not bs.get("image_url"):
+            bs["image_url"] = p.get("image_url", "")
+
+    # Status funnel (all orders in range, incl dibatalkan)
+    in_range_all = [o for o in orders if _in_range(o.get("created_at", ""), s, e)]
+    funnel = {}
+    for o in in_range_all:
+        st = o.get("status", "unknown")
+        funnel[st] = funnel.get(st, 0) + 1
+    funnel_arr = [{"status": k, "count": v} for k, v in funnel.items()]
+
+    # Hour heatmap (0..23) — only valid orders
+    hours = [{"hour": h, "orders": 0, "revenue": 0} for h in range(24)]
+    for o in valid:
+        try:
+            ts = datetime.fromisoformat(o["created_at"].replace("Z", "+00:00"))
+            # Convert to WIB
+            wib = ts + timedelta(hours=7)
+            h = wib.hour
+            hours[h]["orders"] += 1
+            hours[h]["revenue"] += o.get("total", 0)
+        except Exception:
+            continue
+
+    return {
+        "period": {"start": s.isoformat(), "end": e.isoformat(), "key": period},
+        "trend": trend,
+        "payment_breakdown": payment_breakdown,
+        "category_sales": category_sales,
+        "best_sellers": best_sellers,
+        "status_funnel": funnel_arr,
+        "hour_heatmap": hours,
+    }
+
+
+@api_router.get("/dashboard/customer")
+async def dashboard_customer(period: str = "30d", start: Optional[str] = None, end: Optional[str] = None, _auth: bool = Depends(require_seller)):
+    """Customer insights: unique/new/returning, top customers, acquisition trend."""
+    s, e = _parse_period(period, start, end)
+    orders = await db.orders.find({}, {"_id": 0}).to_list(5000)
+
+    # Map phone → list of orders (sorted by created_at)
+    by_phone = {}
+    for o in orders:
+        ph = (o.get("customer_phone") or "").strip()
+        if not ph:
+            continue
+        by_phone.setdefault(ph, []).append(o)
+    for ph in by_phone:
+        by_phone[ph].sort(key=lambda x: x.get("created_at", ""))
+
+    # KPI dalam range
+    in_range_orders = [o for o in orders if _in_range(o.get("created_at", ""), s, e) and o.get("status") != "dibatalkan"]
+    in_range_phones = {(o.get("customer_phone") or "").strip() for o in in_range_orders if o.get("customer_phone")}
+    total_customers_in_range = len(in_range_phones)
+
+    # New customers: pertama beli dalam range
+    new_phones = set()
+    for ph in in_range_phones:
+        first = by_phone.get(ph, [])
+        if first and _in_range(first[0].get("created_at", ""), s, e):
+            new_phones.add(ph)
+
+    returning_phones = in_range_phones - new_phones
+    avg_orders = sum(len(by_phone.get(ph, [])) for ph in in_range_phones) / total_customers_in_range if total_customers_in_range > 0 else 0
+
+    # Top customers (lifetime by spend, top 10)
+    top_customers = []
+    for ph, ords in by_phone.items():
+        valid_ords = [o for o in ords if o.get("status") != "dibatalkan"]
+        if not valid_ords:
+            continue
+        total_spent = sum(o.get("total", 0) for o in valid_ords)
+        last_order = max(o.get("created_at", "") for o in valid_ords)
+        top_customers.append({
+            "phone": ph,
+            "name": valid_ords[-1].get("customer_name", "-"),
+            "orders_count": len(valid_ords),
+            "total_spent": total_spent,
+            "last_order_at": last_order,
+        })
+    top_customers = sorted(top_customers, key=lambda x: -x["total_spent"])[:10]
+
+    # Daily new customer acquisition
+    daily = {}
+    cursor_dt = s
+    while cursor_dt <= e:
+        daily[cursor_dt.strftime("%Y-%m-%d")] = {"date": cursor_dt.strftime("%Y-%m-%d"), "new": 0, "returning": 0}
+        cursor_dt += timedelta(days=1)
+    for o in in_range_orders:
+        ph = (o.get("customer_phone") or "").strip()
+        if not ph:
+            continue
+        try:
+            d = datetime.fromisoformat(o["created_at"].replace("Z", "+00:00")).strftime("%Y-%m-%d")
+        except Exception:
+            continue
+        if d not in daily:
+            continue
+        first_dt = by_phone[ph][0].get("created_at", "")
+        if first_dt == o.get("created_at"):
+            daily[d]["new"] += 1
+        else:
+            daily[d]["returning"] += 1
+    acquisition = sorted(daily.values(), key=lambda x: x["date"])
+
+    return {
+        "period": {"start": s.isoformat(), "end": e.isoformat(), "key": period},
+        "kpi": {
+            "total_customers": total_customers_in_range,
+            "new_customers": len(new_phones),
+            "returning_customers": len(returning_phones),
+            "avg_orders_per_customer": round(avg_orders, 2),
+            "retention_rate": round((len(returning_phones) / total_customers_in_range * 100), 1) if total_customers_in_range > 0 else 0,
+        },
+        "top_customers": top_customers,
+        "acquisition_trend": acquisition,
+    }
+
 
 # ─── Reviews ─────────────────────────────────────────────────────────────────
 @api_router.get("/reviews")

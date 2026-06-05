@@ -966,3 +966,156 @@ export function InvoiceConfig() {
     </div>
   );
 }
+
+
+// ─── DASHBOARD WIDGET VISIBILITY CONFIG (FASE 4) ──────────────────
+const WIDGET_GROUPS = [
+  {
+    tab: 'general', label: 'Tab Umum', icon: '📊',
+    widgets: [
+      { key: 'show_revenue_kpi', label: 'KPI Pendapatan' },
+      { key: 'show_orders_kpi', label: 'KPI Total Pesanan' },
+      { key: 'show_aov_kpi', label: 'KPI Rata-rata Order' },
+      { key: 'show_customers_kpi', label: 'KPI Total Pelanggan' },
+      { key: 'show_revenue_chart', label: 'Chart Tren Pendapatan' },
+      { key: 'show_top_products', label: 'Top Produk' },
+      { key: 'show_status_breakdown', label: 'Pie Chart Status' },
+      { key: 'show_recent_orders', label: 'Tabel Pesanan Terbaru' },
+    ],
+  },
+  {
+    tab: 'inventory', label: 'Tab Inventori', icon: '📦',
+    widgets: [
+      { key: 'show_total_products_kpi', label: 'KPI Total Produk' },
+      { key: 'show_low_stock_kpi', label: 'KPI Stok Menipis' },
+      { key: 'show_out_of_stock_kpi', label: 'KPI Habis Stok' },
+      { key: 'show_stock_value_kpi', label: 'KPI Nilai Stok' },
+      { key: 'show_low_stock_table', label: 'Tabel Stok Menipis' },
+      { key: 'show_top_movers', label: 'Top Movers' },
+      { key: 'show_slow_movers', label: 'Slow Movers' },
+      { key: 'show_category_breakdown', label: 'Distribusi per Kategori' },
+    ],
+  },
+  {
+    tab: 'sales', label: 'Tab Penjualan', icon: '💰',
+    widgets: [
+      { key: 'show_revenue_trend', label: 'Chart Tren Penjualan' },
+      { key: 'show_payment_pie', label: 'Pie Metode Pembayaran' },
+      { key: 'show_category_bar', label: 'Bar Penjualan per Kategori' },
+      { key: 'show_status_funnel', label: 'Funnel Status' },
+      { key: 'show_hour_heatmap', label: 'Heatmap Jam Pesanan' },
+      { key: 'show_best_sellers_table', label: 'Best Sellers' },
+    ],
+  },
+  {
+    tab: 'customer', label: 'Tab Pelanggan', icon: '👥',
+    widgets: [
+      { key: 'show_total_customers_kpi', label: 'KPI Total Pelanggan' },
+      { key: 'show_new_customers_kpi', label: 'KPI Pelanggan Baru' },
+      { key: 'show_returning_kpi', label: 'KPI Returning' },
+      { key: 'show_avg_orders_kpi', label: 'KPI Avg Order/Pelanggan' },
+      { key: 'show_acquisition_chart', label: 'Chart Akuisisi Harian' },
+      { key: 'show_top_customers', label: 'Tabel Top Pelanggan' },
+    ],
+  },
+];
+
+export function DashboardWidgetsConfig() {
+  const { storeConfig, refreshStoreConfig } = useApp();
+  const [config, setConfig] = useState({});
+  const [defaultPeriod, setDefaultPeriod] = useState('30d');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setConfig(storeConfig?.dashboard_config || {});
+    setDefaultPeriod(storeConfig?.dashboard_config?.default_period || '30d');
+  }, [storeConfig]);
+
+  const toggle = (tab, key, val) => {
+    setConfig(c => ({ ...c, [tab]: { ...(c[tab] || {}), [key]: val } }));
+  };
+
+  const toggleAll = (tab, val) => {
+    const group = WIDGET_GROUPS.find(g => g.tab === tab);
+    if (!group) return;
+    const updated = { ...(config[tab] || {}) };
+    group.widgets.forEach(w => { updated[w.key] = val; });
+    setConfig(c => ({ ...c, [tab]: updated }));
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await axios.put(`${API}/api/store-config`, {
+        dashboard_config: { ...config, default_period: defaultPeriod },
+      });
+      await refreshStoreConfig();
+      toast.success('Konfigurasi widget tersimpan! 📊');
+    } catch { toast.error('Gagal simpan'); } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="font-heading text-2xl font-bold text-[#7C2D12]">Widget Dashboard</h1>
+          <p className="text-xs text-[#9A3412] mt-0.5">Tampilkan/sembunyikan komponen dashboard per tab. Cocok untuk fokus ke metrik yang penting saja.</p>
+        </div>
+        <button data-testid="save-dashboard-widgets-btn" onClick={handleSave} disabled={saving} className="flex items-center gap-2 bg-gradient-to-r from-[#F97316] to-[#EA580C] text-white font-bold px-5 py-2.5 rounded-full shadow">
+          <Save size={16} /> {saving ? 'Menyimpan...' : 'Simpan'}
+        </button>
+      </div>
+
+      <div className="rounded-2xl bg-white border border-[#FED7AA] p-4">
+        <label className="block text-xs font-bold text-[#7C2D12] mb-2">Periode Default</label>
+        <div className="flex gap-2 flex-wrap">
+          {[{ k: '7d', l: '7 Hari' }, { k: '30d', l: '30 Hari' }, { k: '90d', l: '90 Hari' }].map(p => (
+            <button key={p.k} type="button" data-testid={`default-period-${p.k}`} onClick={() => setDefaultPeriod(p.k)}
+              className={`px-4 py-2 rounded-full text-xs font-bold transition-all ${defaultPeriod === p.k ? 'bg-[#D97706] text-white' : 'bg-[#FFFBF5] border border-[#FED7AA] text-[#7C2D12] hover:bg-amber-50'}`}>
+              {p.l}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {WIDGET_GROUPS.map(group => {
+          const tabCfg = config[group.tab] || {};
+          const allOn = group.widgets.every(w => tabCfg[w.key] !== false);
+          return (
+            <div key={group.tab} data-testid={`widget-group-${group.tab}`} className="bg-white rounded-2xl border border-[#FED7AA] p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-heading font-bold text-[#7C2D12] flex items-center gap-2">{group.icon} {group.label}</h3>
+                <button
+                  type="button"
+                  data-testid={`widget-toggle-all-${group.tab}`}
+                  onClick={() => toggleAll(group.tab, !allOn)}
+                  className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 hover:bg-amber-200"
+                >
+                  {allOn ? 'Sembunyikan Semua' : 'Tampilkan Semua'}
+                </button>
+              </div>
+              <div className="space-y-2">
+                {group.widgets.map(w => {
+                  const active = tabCfg[w.key] !== false;
+                  return (
+                    <label key={w.key} className="flex items-center justify-between p-2 rounded-xl hover:bg-amber-50 cursor-pointer">
+                      <span className="text-sm text-[#451A03]">{w.label}</span>
+                      <input
+                        type="checkbox"
+                        data-testid={`widget-toggle-${group.tab}-${w.key}`}
+                        checked={active}
+                        onChange={e => toggle(group.tab, w.key, e.target.checked)}
+                        className="w-4 h-4 accent-[#EA580C]"
+                      />
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
