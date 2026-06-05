@@ -88,7 +88,7 @@ function ChartCard({ title, children, action, testId }) {
 }
 
 // ─── GENERAL TAB ─────────────────────────────────────────────────
-function GeneralTab({ data, widgets }) {
+function GeneralTab({ data, widgets, period, customStart, customEnd }) {
   if (!data) return <SkeletonGrid />;
   const { kpi, trend, top_products, recent_orders, status_breakdown } = data;
 
@@ -102,8 +102,8 @@ function GeneralTab({ data, widgets }) {
         {widgets.show_customers_kpi !== false && <KpiCard title="Pelanggan" value={fmtNum(kpi.unique_customers)} sub="unik (HP)" icon={Users} color="purple" />}
       </div>
 
-      {/* AI Insights */}
-      {widgets.show_ai_insights !== false && <AiInsightsCard />}
+      {/* AI Insights — pass period for live sync */}
+      {widgets.show_ai_insights !== false && <AiInsightsCard period={period} customStart={customStart} customEnd={customEnd} />}
 
       {/* Revenue Trend Chart */}
       {widgets.show_revenue_chart !== false && (
@@ -524,8 +524,8 @@ function SkeletonGrid() {
   );
 }
 
-// ─── AI INSIGHTS (FASE 6) ────────────────────────────────────────
-function AiInsightsCard() {
+// ─── AI INSIGHTS (FASE 6 + FASE 8 period sync) ────────────────────
+function AiInsightsCard({ period, customStart, customEnd }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
@@ -533,16 +533,27 @@ function AiInsightsCard() {
   const fetch = useCallback(async (force = false) => {
     setLoading(true);
     try {
-      const r = await axios.get(`${API}/api/ai/insights${force ? '?force=true' : ''}`);
+      const params = new URLSearchParams();
+      params.set('period', period || '90d');
+      if (period === 'custom' && customStart && customEnd) {
+        params.set('start', customStart);
+        params.set('end', customEnd);
+      }
+      if (force) params.set('force', 'true');
+      const r = await axios.get(`${API}/api/ai/insights?${params.toString()}`);
       setData(r.data);
       if (force) toast.success('🤖 AI Insights di-refresh!');
     } catch (e) {
       const msg = e?.response?.data?.detail || 'Gagal load AI insights';
       toast.error(msg);
     } finally { setLoading(false); }
-  }, []);
+  }, [period, customStart, customEnd]);
 
-  useEffect(() => { fetch(false); }, [fetch]);
+  useEffect(() => {
+    // Skip jika custom tanpa range
+    if (period === 'custom' && (!customStart || !customEnd)) return;
+    fetch(false);
+  }, [fetch, period, customStart, customEnd]);
 
   const urgencyColor = { tinggi: 'bg-red-100 text-red-700', sedang: 'bg-amber-100 text-amber-700', rendah: 'bg-blue-100 text-blue-700' };
   const trendColor = { naik: 'text-green-600', stabil: 'text-blue-600', turun: 'text-red-500' };
@@ -563,8 +574,8 @@ function AiInsightsCard() {
             </h3>
             <p className="text-[10px] text-[#7C2D12]">
               {loading ? 'AI sedang berpikir...' :
-                data?._cached ? `Cache (${data._cache_age_minutes} menit lalu) · ${data._products_analyzed || data._orders_analyzed ? '' : ''}` :
-                data ? `Baru di-generate` :
+                data?._cached ? `Cache (${data._cache_age_minutes} menit lalu) · ${data._period_label || data._period || ''}` :
+                data ? `Baru di-generate · ${data._period_label || data._period || ''}` :
                 'Klik refresh untuk generate insights'}
             </p>
           </div>
@@ -805,7 +816,7 @@ export default function Dashboard() {
 
       {/* Tab Content */}
       <div>
-        {activeTab === 'general' && <GeneralTab data={data.general} widgets={widgets} />}
+        {activeTab === 'general' && <GeneralTab data={data.general} widgets={widgets} period={period} customStart={customStart} customEnd={customEnd} />}
         {activeTab === 'inventory' && <InventoryTab data={data.inventory} widgets={widgets} />}
         {activeTab === 'sales' && <SalesTab data={data.sales} widgets={widgets} />}
         {activeTab === 'customer' && <CustomerTab data={data.customer} widgets={widgets} />}

@@ -1,0 +1,48 @@
+{
+  "summary": "FASE 8 — (1) Dashboard period filter↔AI Insights sync (2) IncomingOrders bukti-bayar badge + modal — ALL VERIFIED WORKING via live Playwright on production preview URL. Backend AI endpoint correctly accepts period={today,7d,14d,30d,1y,custom} + start/end. Frontend re-fetches /api/ai/insights on each period change and only after both custom dates are filled. Badge appears on 3/3 orders with payment_proof_url; modal opens with order#, customer, total, image, fullsize link, Tutup btn — all functional.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "/api/ai/insights (cached response path)",
+        "issue": "When response is served from cache (routes/ai_insights.py lines 137-143), the returned payload OMITS `_period_label`. Only freshly-generated responses include it (line 225). Frontend Dashboard.js line 577-578 has a fallback `data._period_label || data._period` which displays raw code ('today','7d','14d','1y','custom') in AI card subtitle instead of Indonesian labels ('hari ini','7 hari','14 hari','1 tahun', '<start> s/d <end>'). Fix: add `\"_period_label\": cached.get(\"data\", {}).get(\"_period_label\") or _compute_label(period, start, end)` to the cached return block, OR persist period_label inside cache_doc before storing."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Dashboard → AI Insights subtitle",
+        "issues": ["Subtitle shows raw period code (e.g. 'Cache (3 menit lalu) · today') instead of polished Indonesian label ('hari ini') when response is cached. Caused by backend not returning _period_label on cache hit — see backend minor issue above. Trivial 1-line fix."]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/test_reports/dashboard_custom.png",
+    "/app/test_reports/proof_modal.png"
+  ],
+  "action_items": [
+    "Main agent: Add `_period_label` to the cached return block in /app/backend/routes/ai_insights.py (lines 137-143) so cached AI responses also return the Indonesian label. Suggested: persist `period_label` into cache_doc when first generating (line 209-218), then echo it back on cache hit."
+  ],
+  "critical_code_review_comments": [
+    "Dashboard.js line 552-556 correctly guards custom-period fetch behind `if (period === 'custom' && (!customStart || !customEnd)) return;` — verified live: filling only start date triggers 0 calls, both → 1 call.",
+    "IncomingOrders.js line 250-266 conditional render `{order.payment_proof_url && ...}` + dual-state styling (green animate-pulse for `payment_proof_submitted=true`, amber for legacy URL-only) — verified live with 1 submitted + 2 legacy orders.",
+    "IncomingOrders.js line 255 prefix-resolution `src.startsWith('/api/') ? \\`${API_URL}${url}\\` : url` is correct — handles both relative (`/api/media/x`) and absolute proof URLs.",
+    "IncomingOrders.js WS handler line 157-163 listens for `payment_proof_submitted` event and updates order in-place — code path correct; not exercised live (would need POSTing to /api/orders/{id}/payment-proof to fire WS).",
+    "ai_insights.py: persisting period_label inside cache_doc is the cleanest fix for the cached-label bug — adds resilience without breaking cache invariants.",
+    "Dashboard.js fetchTab useCallback at line 741 has empty dep array — its closure captures `API` from module scope so OK, but ESLint may warn; consider including [API] for hygiene."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "AI insights endpoint functional 100% (5/5 periods + custom verified via curl + live network capture). Minor cosmetic label-on-cache miss noted.",
+    "frontend": "100% — period filter sync, custom date guard, badge render, modal open, Tutup close all verified live"
+  },
+  "test_credentials": "Seller PIN: ciltarasa (used via X-Seller-PIN header + login form).",
+  "seed_data_creation": "No new seed data needed. Existing DB already had 3 orders with payment_proof_url: ORD-0023 (proof_submitted=true → green pulsing badge), ORD-0011 & ORD-0009 (proof_submitted=null → amber 'Bukti @ Checkout' badge). 23 orders total, 12 products, 17 hr cache spread across periods.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "FASE 8 verified working end-to-end. Network capture confirmed: clicking each period button (today/7d/14d/30d/1y) triggered exactly 1 GET /api/ai/insights?period=<code> call. Custom flow: clicking 'Custom' opens date pickers but does NOT fire AI call; filling start only → 0 calls; filling both → 1 call with start+end params. Badge data-testids `badge-proof-<orderId>` worked. Modal data-testid `proof-preview-modal` opened correctly with all 4 sub-elements (img src, order#, customer name, total, fullsize anchor `proof-open-fullsize`, Tutup button). Modal clicks-outside-to-close NOT tested but verified Tutup button closes modal properly. The /api/media/test-proof.jpg image returns 404 because seed proof URLs are placeholders — for real uploads via POST /api/media/upload-proof, the GET /api/media/{mid} endpoint (server.py:2517) serves the bytes. One small cosmetic backend bug: cached AI responses miss `_period_label` field — frontend falls back to showing raw period code in subtitle. Trivial fix detailed in action_items.",
+  "rca of the issue": "AI Insights cached-response label bug RCA: In /app/backend/routes/ai_insights.py, the cache write at lines 209-218 stores `data` (raw LLM JSON) but does NOT persist `period_label`. On cache hit (lines 137-143), the spread `**cached.get('data', {})` only includes the LLM-generated keys + `_cached/_period/_generated_at/_cache_age_minutes` — `_period_label` is missing. Frontend shows raw `_period` value ('today','7d','custom') instead of Indonesian label. Mitigation: either (A) add `period_label` to cache_doc payload before upsert, then echo it on cache hit, OR (B) recompute period_label inside the cache-hit branch using the same days_map+label_map logic. Option A is preferred (single source of truth, handles custom date range with original start/end stored). Reproduction: GET /api/ai/insights?period=today twice → first response has _period_label='hari ini', second cached response is missing the field."
+}

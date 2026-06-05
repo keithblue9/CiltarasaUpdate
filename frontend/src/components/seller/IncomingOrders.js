@@ -135,7 +135,9 @@ export default function IncomingOrders() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [searchQ, setSearchQ] = useState('');
   const [selectedOrder, setSelectedOrder] = useState(null);
-  const [ongkirModal, setOngkirModal] = useState(null); // { orderId, order }
+  const [ongkirModal, setOngkirModal] = useState(null);
+  const [proofModal, setProofModal] = useState(null); // { proof_url, order }
+  const API_URL = process.env.REACT_APP_BACKEND_URL;
 
   const load = async () => {
     setLoading(true);
@@ -244,6 +246,24 @@ export default function IncomingOrders() {
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-bold text-[#78350F]">{order.order_number}</span>
                       <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${st?.color}`}>{st?.label}</span>
+                      {/* FASE 8: Badge bukti bayar masuk */}
+                      {order.payment_proof_url && (
+                        <button
+                          data-testid={`badge-proof-${order.id}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const src = order.payment_proof_url.startsWith('/api/') ? `${API_URL}${order.payment_proof_url}` : order.payment_proof_url;
+                            setProofModal({ src, order });
+                          }}
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full transition-all flex items-center gap-1 ${
+                            order.payment_proof_submitted
+                              ? 'bg-green-100 text-green-700 hover:bg-green-200 ring-2 ring-green-300 animate-pulse'
+                              : 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                          }`}
+                        >
+                          💰 {order.payment_proof_submitted ? 'Bukti Bayar Masuk' : 'Bukti @ Checkout'}
+                        </button>
+                      )}
                     </div>
                     <p className="text-sm text-[#451A03] mt-1 font-semibold">{order.customer_name}</p>
                     <p className="text-xs text-[#92400E] mt-0.5">{order.customer_phone} · {order.delivery_method === 'delivery' ? 'Pengiriman' : 'Ambil Sendiri'}</p>
@@ -285,6 +305,30 @@ export default function IncomingOrders() {
           onClose={() => setOngkirModal(null)}
           onConfirm={(fee) => handleStatusChange(ongkirModal.orderId, 'siap', fee)}
         />
+      )}
+      {proofModal && (
+        <div data-testid="proof-preview-modal" className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" onClick={() => setProofModal(null)}>
+          <div className="bg-white rounded-2xl max-w-lg w-full p-5" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h3 className="font-heading font-bold text-[#7C2D12]">💰 Bukti Pembayaran</h3>
+                <p className="text-xs text-[#92400E]">{proofModal.order.order_number} · {proofModal.order.customer_name}</p>
+                <p className="text-xs text-[#92400E]">Total: {formatRp(proofModal.order.total)}</p>
+              </div>
+              <button onClick={() => setProofModal(null)} className="text-2xl text-gray-400 hover:text-gray-600">&times;</button>
+            </div>
+            <img src={proofModal.src} alt="Bukti bayar" className="w-full rounded-xl border border-[#FED7AA]" />
+            <div className="mt-3 flex gap-2">
+              <a href={proofModal.src} target="_blank" rel="noopener noreferrer" data-testid="proof-open-fullsize"
+                className="flex-1 py-2 rounded-full bg-[#FED7AA] text-[#7C2D12] font-bold text-sm text-center hover:bg-[#D97706] hover:text-white transition-all">
+                Buka Ukuran Penuh
+              </a>
+              <button onClick={() => setProofModal(null)} className="flex-1 py-2 rounded-full bg-gradient-to-r from-amber-500 to-orange-600 text-white font-bold text-sm">
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

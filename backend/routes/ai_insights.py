@@ -117,12 +117,19 @@ def setup(api_router, db, require_seller):
     """Register AI insights endpoints."""
 
     @api_router.get("/ai/insights")
-    async def get_ai_insights(force: bool = Query(False), _auth: bool = Depends(require_seller)):
-        """Get AI insights — restock suggestions + demand forecast.
-        Cached 1 jam. Pass ?force=true untuk regenerate."""
+    async def get_ai_insights(
+        force: bool = Query(False),
+        period: str = Query("90d"),
+        start: Optional[str] = Query(None),
+        end: Optional[str] = Query(None),
+        _auth: bool = Depends(require_seller),
+    ):
+        """Get AI insights — restock + demand forecast. Period: today|7d|14d|30d|90d|1y|custom.
+        Cached 1 jam per (period, start, end). ?force=true regenerate."""
+        cache_key = f"main:{period}:{start or ''}:{end or ''}"
         # Cek cache
         if not force:
-            cached = await db.ai_insights_cache.find_one({"_id": "main"})
+            cached = await db.ai_insights_cache.find_one({"_id": cache_key})
             if cached:
                 try:
                     ts = datetime.fromisoformat(cached.get("created_at", "").replace("Z", "+00:00"))
@@ -130,20 +137,36 @@ def setup(api_router, db, require_seller):
                         return {
                             **cached.get("data", {}),
                             "_cached": True,
+                            "_period": period,
                             "_generated_at": cached.get("created_at"),
                             "_cache_age_minutes": int((datetime.now(timezone.utc) - ts).total_seconds() / 60),
                         }
                 except Exception:
                     pass
 
-        # Cek emergent llm key
         api_key = os.environ.get("EMERGENT_LLM_KEY")
         if not api_key:
-            raise HTTPException(503, "EMERGENT_LLM_KEY tidak diset. Hubungi admin server.")
+            raise HTTPException(503, "EMERGENT_LLM_KEY tidak diset.")
 
-        # Load data
+        # Parse period range
+        now = datetime.now(timezone.utc)
+        if period == "custom" and start and end:
+            try:
+                s_dt = datetime.fromisoformat(start.replace("Z", "+00:00")) if "T" in start else datetime.fromisoformat(start).replace(tzinfo=timezone.utc)
+                # end_dt parsed for validation only; AI prompt uses cutoff-to-now window
+                _ = datetime.fromisoformat(end.replace("Z", "+00:00")) if "T" in end else datetime.fromisoformat(end).replace(tzinfo=timezone.utc)
+                cutoff = s_dt
+                period_label = f"{start} s/d {end}"
+            except Exception:
+                cutoff = now - timedelta(days=90)
+                period_label = "90 hari"
+        else:
+            days_map = {"today": 1, "7d": 7, "14d": 14, "30d": 30, "90d": 90, "365d": 365, "1y": 365}
+            days = days_map.get(period, 90)
+            cutoff = now - timedelta(days=days)
+            period_label = {"today": "hari ini", "7d": "7 hari", "14d": "14 hari", "30d": "30 hari", "90d": "90 hari", "1y": "1 tahun", "365d": "1 tahun"}.get(period, "90 hari")
+
         products = await db.products.find({}, {"_id": 0}).to_list(200)
-        cutoff = datetime.now(timezone.utc) - timedelta(days=90)
         orders = await db.orders.find(
             {"created_at": {"$gte": cutoff.isoformat()}},
             {"_id": 0},
@@ -154,13 +177,15 @@ def setup(api_router, db, require_seller):
         if not products:
             raise HTTPException(400, "Belum ada produk. Tambahkan produk dulu untuk dapat insights.")
 
-        # Build prompt & call LLM
         prompt = _build_insight_prompt(products, orders, low_stock_threshold)
+        # Inject period context ke prompt
+        prompt = prompt.replace("# Konteks Data (90 hari terakhir)", f"# Konteks Data ({period_label} terakhir)")
+
         try:
             from emergentintegrations.llm.chat import LlmChat, UserMessage
             chat = LlmChat(
                 api_key=api_key,
-                session_id=f"ciltarasa-insights-{datetime.now(timezone.utc).strftime('%Y%m%d')}",
+                session_id=f"ciltarasa-insights-{period}-{datetime.now(timezone.utc).strftime('%Y%m%d')}",
                 system_message="Kamu adalah konsultan bisnis F&B yang membantu UMKM Indonesia. Selalu output JSON valid sesuai schema yang diminta, tanpa text tambahan.",
             ).with_model("anthropic", "claude-sonnet-4-6")
             response = await chat.send_message(UserMessage(text=prompt))
@@ -168,9 +193,7 @@ def setup(api_router, db, require_seller):
             logger.error(f"AI insights LLM call failed: {e}")
             raise HTTPException(502, f"AI service error: {str(e)[:200]}")
 
-        # Parse JSON response
         raw_text = response.strip() if isinstance(response, str) else str(response).strip()
-        # Cleanup any markdown wrapper
         if raw_text.startswith("```"):
             raw_text = raw_text.split("\n", 1)[1] if "\n" in raw_text else raw_text
             if raw_text.endswith("```"):
@@ -183,19 +206,23 @@ def setup(api_router, db, require_seller):
             logger.error(f"AI returned non-JSON: {raw_text[:500]}")
             raise HTTPException(502, f"AI response format error: {str(e)}")
 
-        # Cache
         cache_doc = {
-            "_id": "main",
+            "_id": cache_key,
+            "period": period,
+            "start": start,
+            "end": end,
             "data": data,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "products_analyzed": len(products),
             "orders_analyzed": len(orders),
         }
-        await db.ai_insights_cache.replace_one({"_id": "main"}, cache_doc, upsert=True)
+        await db.ai_insights_cache.replace_one({"_id": cache_key}, cache_doc, upsert=True)
 
         return {
             **data,
             "_cached": False,
+            "_period": period,
+            "_period_label": period_label,
             "_generated_at": cache_doc["created_at"],
             "_cache_age_minutes": 0,
             "_products_analyzed": len(products),

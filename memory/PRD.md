@@ -59,6 +59,29 @@ Ibu-ibu milenial & Gen Z (kelahiran 1980-2000) yang anaknya SD. Modern, kekinian
 - **SmartImage useEffect**: dokumentasi komentar bahwa setters/normalizer stable & sengaja tidak masuk deps.
 - **Tidak dikerjakan (alasan tetap)**: httpOnly cookies (P2 — butuh backend session refactor + CSRF), refactor complexity `seed_database`/`insights_dashboard`/`analytics_stats`/`get_sales_report` (P2 — di backlog), refactor komponen `Catalog`/`Checkout`/`OnboardingModal` (P2), index-as-key di test files (tidak runtime-impact), `is` vs `==` di server.py 752/1173 (false-positive — `is not None` adalah convention Python yang benar).
 
+### Phase 20 ✅ FASE 8 — AI Insights Period Sync + Bukti Bayar Badge (Feb 2026)
+
+**1. AI Insights Period Filter Integration**:
+- `GET /api/ai/insights?period={today|7d|14d|30d|90d|1y|custom}&start=&end=`
+- Cache key per `(period, start, end)` — switch period regenerate insights yang relevan, tidak konflik
+- `period_label` ditampilkan di UI ("7 hari", "30 hari", "2025-12-01 s/d 2026-02-01")
+- Prompt LLM dinamis: "Konteks Data ({period_label} terakhir)" instead of hardcoded "90 hari"
+- Frontend `AiInsightsCard` accept `period`, `customStart`, `customEnd` props dari GeneralTab → re-fetch saat user ganti periode (debounced via useEffect deps)
+- Skip fetch jika period=custom tanpa range
+
+**2. Badge "💰 Bukti Bayar Masuk"** di Pesanan Masuk list:
+- Badge muncul saat `order.payment_proof_url` ada
+- 2 variant warna:
+  - **Hijau pulsing "Bukti Bayar Masuk"**: `payment_proof_submitted=true` (buyer submit setelah siap kirim — urgent untuk dicek)
+  - **Amber "Bukti @ Checkout"**: bukti masuk dari Pay Now di checkout (sudah pre-paid sejak awal, lower urgency)
+- Klik badge → modal `proof-preview-modal` dengan foto bukti + meta order + tombol "Buka Ukuran Penuh" (link new tab)
+- Real-time: WS event `payment_proof_submitted` push toast "💰 Bukti bayar masuk dari {nama}!" + auto-update order list di seller
+
+**Catatan implementasi user**:
+- User bilang badge "untuk yg langsung bayar dan bukan opsi pengiriman" — interpretasi: badge berlaku untuk SEMUA bukti masuk, dengan label berbeda biar seller paham konteksnya (langsung bayar vs post-ongkir). Lebih informatif daripada hide salah satu.
+
+**Smoke test**: AI insights period=7d generate 11s (orders=23 dalam range), cache 0 menit. Badge muncul di ORD-0023 (order test ongkir dari Fase 7). Lint clean (backend 0 blocking, frontend 0 advisory).
+
 ### Phase 19 ✅ FASE 7 — Delivery+Ongkir Flow Rework + Receipt + Category Sync + Period Expand (Feb 2026)
 
 **Task 1 — Buyer Checkout Pengiriman Flow**:
