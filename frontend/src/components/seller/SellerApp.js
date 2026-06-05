@@ -11,7 +11,7 @@ import FinancialReport from './FinancialReport';
 import { StoreProfile, StoreCerita, CategoriesConfig, DeliveryConfig, PaymentsConfig, HomepageTextsConfig, HeroSlideshowConfig, FunFactsConfig, OnboardingTextsConfig } from './StoreConfigPages';
 import DiscountManagement from './DiscountManagement';
 import PurchaseManagement from './PurchaseManagement';
-import { FonnteConfig, HowToOrderConfig, ResetCustomersConfig, ChangePinConfig, TrafficStats, AutoChatConfig, InvoiceConfig, DashboardWidgetsConfig } from './AdminPages';
+import { FonnteConfig, HowToOrderConfig, ResetCustomersConfig, ChangePinConfig, TrafficStats, AutoChatConfig, InvoiceConfig, DashboardWidgetsConfig, MaintenanceConfig } from './AdminPages';
 import SellerPushSettings from './SellerPushSettings';
 import SellerPwaInstallBanner from './SellerPwaInstallBanner';
 import { setSellerManifest, restoreBuyerManifest } from '../pwa/sellerPush';
@@ -27,12 +27,12 @@ function attachSellerInterceptor(getPin) {
   _sellerInterceptorId = axios.interceptors.request.use(cfg => {
     const url = cfg.url || '';
     const method = (cfg.method || 'get').toLowerCase();
-    if (method !== 'get' && (url.includes('/api/products') || url.includes('/api/purchases') || url.includes('/api/discounts') || url.includes('/api/settings') || url.includes('/api/store-config') || url.includes('/api/financial-entries') || url.includes('/api/admin/test-wa') || url.includes('/api/admin/reset-customers') || url.includes('/api/admin/change-pin') || url.includes('/api/media/upload') || url.includes('/api/push/') || /\/api\/orders\/[^/]+\/status/.test(url))) {
+    if (method !== 'get' && (url.includes('/api/products') || url.includes('/api/purchases') || url.includes('/api/discounts') || url.includes('/api/settings') || url.includes('/api/store-config') || url.includes('/api/financial-entries') || url.includes('/api/admin/test-wa') || url.includes('/api/admin/reset-customers') || url.includes('/api/admin/change-pin') || url.includes('/api/media/upload') || url.includes('/api/push/') || url.includes('/api/maintenance') || url.includes('/api/ai/') || /\/api\/orders\/[^/]+\/status/.test(url))) {
       cfg.headers = cfg.headers || {};
       cfg.headers['X-Seller-PIN'] = getPin();
     }
     // Analytics GET (PIN-guarded)
-    if (method === 'get' && (url.includes('/api/analytics/stats') || url.includes('/api/dashboard/') || url.includes('/api/admin/fonnte-status') || url.includes('/api/push/subscriptions'))) {
+    if (method === 'get' && (url.includes('/api/analytics/stats') || url.includes('/api/dashboard/') || url.includes('/api/admin/fonnte-status') || url.includes('/api/push/subscriptions') || url.includes('/api/ai/'))) {
       cfg.headers = cfg.headers || {};
       cfg.headers['X-Seller-PIN'] = getPin();
     }
@@ -112,6 +112,7 @@ export default function SellerApp() {
     invoice: <InvoiceConfig />,
     'dashboard-widgets': <DashboardWidgetsConfig />,
     'push-notif': <SellerPushSettings />,
+    maintenance: <MaintenanceConfig />,
     discounts: <DiscountManagement />,
     whatsapp: <FonnteConfig />,
     'change-pin': <ChangePinConfig onPinChanged={() => handleLogout()} />,

@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Package, ShoppingBag, BarChart2, DollarSign, MessageCircle, LogOut, X, Wifi, WifiOff, Store, BookOpen, FolderTree, Truck, CreditCard, Tag, Settings, Type, ImagePlus, Sparkles, ShoppingCart, ListOrdered, ShieldAlert, LogIn, KeyRound, TrendingUp, MessagesSquare, FileText, BarChart3, Bell } from 'lucide-react';
+import { LayoutDashboard, Package, ShoppingBag, BarChart2, DollarSign, MessageCircle, LogOut, X, Wifi, WifiOff, Store, BookOpen, FolderTree, Truck, CreditCard, Tag, Settings, Type, ImagePlus, Sparkles, ShoppingCart, ListOrdered, ShieldAlert, LogIn, KeyRound, TrendingUp, MessagesSquare, FileText, BarChart3, Bell, Power } from 'lucide-react';
 import { LogoWithText } from '../shared/Logo';
 import { useApp } from '../../context/AppContext';
 
@@ -26,6 +26,7 @@ const configTabs = [
   { id: 'payments', label: 'Metode Pembayaran', icon: CreditCard },
   { id: 'auto-chat', label: 'Auto-Chat WhatsApp', icon: MessagesSquare },
   { id: 'push-notif', label: 'Push Notification', icon: Bell },
+  { id: 'maintenance', label: 'Mode Libur / Tutup', icon: Power },
   { id: 'invoice', label: 'Wording Invoice', icon: FileText },
   { id: 'dashboard-widgets', label: 'Widget Dashboard', icon: BarChart3 },
   { id: 'discounts', label: 'Diskon Produk', icon: Tag },

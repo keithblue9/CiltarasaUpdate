@@ -364,6 +364,7 @@ class StoreConfigUpdate(BaseModel):
     auto_chat_config: Optional[Dict[str, Any]] = None
     invoice_texts: Optional[Dict[str, str]] = None
     dashboard_config: Optional[Dict[str, Any]] = None
+    maintenance_mode: Optional[Dict[str, Any]] = None
 
 class PurchaseItem(BaseModel):
     product_id: str
@@ -593,6 +594,7 @@ DEFAULT_STORE_CONFIG = {
             "show_orders_kpi": True,
             "show_aov_kpi": True,
             "show_customers_kpi": True,
+            "show_ai_insights": True,
             "show_revenue_chart": True,
             "show_top_products": True,
             "show_recent_orders": True,
@@ -624,6 +626,16 @@ DEFAULT_STORE_CONFIG = {
             "show_top_customers": True,
             "show_acquisition_chart": True,
         },
+    },
+    "maintenance_mode": {
+        "enabled": False,
+        "title": "Maaf, Ciltarasa libur dulu ya 🧡",
+        "message": "Kami sedang libur sebentar untuk recharge & siapkan menu fresh untuk kamu. Kami akan kembali pada {return_date} pukul {return_time}. Terima kasih atas pengertiannya!",
+        "return_date": "",
+        "return_time": "08:00",
+        "background_image_url": "",
+        "show_contact_wa": True,
+        "return_button_text": "Hubungi Seller via WhatsApp",
     },
 }
 
@@ -692,6 +704,13 @@ async def seed_database():
             for sk, sv in DEFAULT_STORE_CONFIG.get("dashboard_config", {}).items():
                 if sk not in existing["dashboard_config"]:
                     backfill[f"dashboard_config.{sk}"] = sv
+        # FASE 6 backfill: maintenance_mode
+        if "maintenance_mode" not in existing or not existing.get("maintenance_mode"):
+            backfill["maintenance_mode"] = DEFAULT_STORE_CONFIG.get("maintenance_mode", {})
+        else:
+            for k, v in DEFAULT_STORE_CONFIG.get("maintenance_mode", {}).items():
+                if k not in existing["maintenance_mode"]:
+                    backfill[f"maintenance_mode.{k}"] = v
         if backfill:
             await db.store_config.update_one({"_id": "main"}, {"$set": backfill})
             logger.info(f"Backfilled store_config: {list(backfill.keys())}")
@@ -2415,6 +2434,12 @@ async def websocket_endpoint(websocket: WebSocket):
         manager.disconnect(websocket)
 
 # ─── App Setup ───────────────────────────────────────────────────────────────
+# ─── Modular routes (FASE 6) — register endpoints sebelum app.include_router ───
+from routes import maintenance as maintenance_route
+from routes import ai_insights as ai_insights_route
+maintenance_route.setup(api_router, db, require_seller, manager)
+ai_insights_route.setup(api_router, db, require_seller)
+
 app.include_router(api_router)
 app.add_middleware(
     CORSMiddleware,

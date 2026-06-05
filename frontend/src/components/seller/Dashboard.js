@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   TrendingUp, ShoppingBag, Users, Package, AlertTriangle, RefreshCw,
   DollarSign, ShoppingCart, BarChart3, Activity, UserPlus, UserCheck,
-  Boxes, AlertOctagon, Trophy, Calendar, ChevronDown,
+  Boxes, AlertOctagon, Trophy, Calendar, ChevronDown, Sparkles, Brain, Zap,
 } from 'lucide-react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -98,6 +98,9 @@ function GeneralTab({ data, widgets }) {
         {widgets.show_aov_kpi !== false && <KpiCard title="Rata-rata Order" value={fmtRpShort(kpi.aov)} sub="per pesanan" icon={Activity} color="blue" />}
         {widgets.show_customers_kpi !== false && <KpiCard title="Pelanggan" value={fmtNum(kpi.unique_customers)} sub="unik (HP)" icon={Users} color="purple" />}
       </div>
+
+      {/* AI Insights */}
+      {widgets.show_ai_insights !== false && <AiInsightsCard />}
 
       {/* Revenue Trend Chart */}
       {widgets.show_revenue_chart !== false && (
@@ -514,6 +517,156 @@ function SkeletonGrid() {
         {[1, 2, 3, 4].map(i => <div key={i} className="bg-white rounded-2xl border border-[#FED7AA] p-5 h-24 animate-pulse" />)}
       </div>
       <div className="bg-white rounded-2xl border border-[#FED7AA] p-5 h-72 animate-pulse" />
+    </div>
+  );
+}
+
+// ─── AI INSIGHTS (FASE 6) ────────────────────────────────────────
+function AiInsightsCard() {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState(false);
+
+  const fetch = useCallback(async (force = false) => {
+    setLoading(true);
+    try {
+      const r = await axios.get(`${API}/api/ai/insights${force ? '?force=true' : ''}`);
+      setData(r.data);
+      if (force) toast.success('🤖 AI Insights di-refresh!');
+    } catch (e) {
+      const msg = e?.response?.data?.detail || 'Gagal load AI insights';
+      toast.error(msg);
+    } finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { fetch(false); }, [fetch]);
+
+  const urgencyColor = { tinggi: 'bg-red-100 text-red-700', sedang: 'bg-amber-100 text-amber-700', rendah: 'bg-blue-100 text-blue-700' };
+  const trendColor = { naik: 'text-green-600', stabil: 'text-blue-600', turun: 'text-red-500' };
+  const trendIcon = { naik: '📈', stabil: '➡️', turun: '📉' };
+
+  return (
+    <div data-testid="ai-insights-card" className="bg-gradient-to-br from-purple-50 via-white to-orange-50 rounded-2xl border-2 border-purple-200 p-5 relative overflow-hidden">
+      <div className="absolute -top-4 -right-4 opacity-10 text-9xl">🤖</div>
+
+      <div className="relative flex items-center justify-between mb-4 flex-wrap gap-2">
+        <div className="flex items-center gap-3">
+          <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white shadow-lg">
+            <Brain size={22} />
+          </div>
+          <div>
+            <h3 className="font-heading font-bold text-[#451A03] text-lg flex items-center gap-1.5">
+              AI Insights <Sparkles size={14} className="text-purple-500" />
+            </h3>
+            <p className="text-[10px] text-[#7C2D12]">
+              {loading ? 'AI sedang berpikir...' :
+                data?._cached ? `Cache (${data._cache_age_minutes} menit lalu) · ${data._products_analyzed || data._orders_analyzed ? '' : ''}` :
+                data ? `Baru di-generate` :
+                'Klik refresh untuk generate insights'}
+            </p>
+          </div>
+        </div>
+        <button
+          data-testid="ai-insights-refresh-btn"
+          onClick={() => fetch(true)}
+          disabled={loading}
+          className="flex items-center gap-1.5 bg-purple-500 hover:bg-purple-600 text-white text-xs font-bold px-3 py-1.5 rounded-full shadow disabled:opacity-50 transition-all"
+        >
+          <RefreshCw size={12} className={loading ? 'animate-spin' : ''} /> {loading ? 'Generating...' : 'Refresh'}
+        </button>
+      </div>
+
+      {loading && !data ? (
+        <div className="space-y-3">
+          {[1, 2, 3].map(i => <div key={i} className="h-12 bg-white/50 rounded-xl animate-pulse" />)}
+        </div>
+      ) : !data ? (
+        <p className="text-sm text-[#7C2D12]">Belum ada insights. Klik refresh.</p>
+      ) : (
+        <div className="space-y-4 relative">
+          {/* Forecast */}
+          {data.demand_forecast && (
+            <div data-testid="ai-forecast" className="bg-white/80 backdrop-blur-sm rounded-xl p-4 border border-purple-100">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-purple-600 mb-2">📊 Prediksi 7 Hari Ke Depan</p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div>
+                  <p className="text-[10px] text-[#7C2D12]">Estimasi Order</p>
+                  <p className="text-xl font-bold text-[#451A03]">{data.demand_forecast.next_7d_estimated_orders ?? '-'}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-[#7C2D12]">Est. Revenue</p>
+                  <p className="text-xl font-bold text-[#451A03]">{fmtRpShort(data.demand_forecast.next_7d_estimated_revenue || 0)}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-[#7C2D12]">Tren</p>
+                  <p className={`text-lg font-bold ${trendColor[data.demand_forecast.trend] || ''}`}>
+                    {trendIcon[data.demand_forecast.trend] || '➡️'} {data.demand_forecast.trend || '-'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-[#7C2D12]">Confidence</p>
+                  <p className="text-lg font-bold text-[#451A03] capitalize">{data.demand_forecast.confidence || '-'}</p>
+                </div>
+              </div>
+              {data.demand_forecast.top_3_predicted_sellers?.length > 0 && (
+                <p className="text-xs text-[#7C2D12] mt-2">🏆 Best predicted sellers: <strong>{data.demand_forecast.top_3_predicted_sellers.join(' · ')}</strong></p>
+              )}
+            </div>
+          )}
+
+          {/* Restock Suggestions */}
+          {data.restock_suggestions?.length > 0 && (
+            <div data-testid="ai-restock" className="bg-white/80 backdrop-blur-sm rounded-xl p-4 border border-purple-100">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-purple-600 mb-2">🔄 Saran Restock</p>
+              <div className="space-y-2">
+                {data.restock_suggestions.slice(0, open ? 99 : 3).map((s, i) => (
+                  <div key={i} className="flex items-start gap-2 p-2 rounded-lg hover:bg-purple-50">
+                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold flex-shrink-0 ${urgencyColor[s.urgency] || 'bg-gray-100'}`}>
+                      {(s.urgency || '').toUpperCase()}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold text-[#451A03]">{s.product_name}</p>
+                      <p className="text-xs text-[#7C2D12]">{s.reason}</p>
+                      <p className="text-[10px] text-purple-700 mt-0.5">
+                        💡 Restock <strong>{s.suggested_qty}</strong> unit · Stok cukup <strong>{s.days_until_stockout}</strong> hari lagi
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {data.restock_suggestions.length > 3 && (
+                <button onClick={() => setOpen(!open)} className="text-xs text-purple-600 font-bold mt-2 hover:underline">
+                  {open ? '↑ Tutup' : `↓ Lihat ${data.restock_suggestions.length - 3} saran lainnya`}
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Key Insights & Action Items */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {data.key_insights?.length > 0 && (
+              <div data-testid="ai-key-insights" className="bg-white/80 backdrop-blur-sm rounded-xl p-4 border border-purple-100">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-purple-600 mb-2">💎 Insights Bisnis</p>
+                <ul className="space-y-1.5">
+                  {data.key_insights.map((insight, i) => (
+                    <li key={i} className="text-xs text-[#451A03] flex gap-2"><span className="text-purple-500 flex-shrink-0">•</span>{insight}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {data.action_items?.length > 0 && (
+              <div data-testid="ai-actions" className="bg-gradient-to-br from-orange-50 to-amber-50 rounded-xl p-4 border border-orange-200">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-orange-600 mb-2 flex items-center gap-1"><Zap size={10} /> Action Items</p>
+                <ul className="space-y-1.5">
+                  {data.action_items.map((a, i) => (
+                    <li key={i} className="text-xs text-[#451A03] flex gap-2"><span className="text-orange-500 flex-shrink-0">→</span>{a}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

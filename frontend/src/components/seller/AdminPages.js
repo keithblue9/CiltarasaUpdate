@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Save, Send, AlertTriangle, MessageCircle, ListOrdered, Trash2, Plus, RotateCcw, ShieldAlert, KeyRound, Eye, EyeOff, Lock, TrendingUp, Users, Smartphone, Globe, Monitor, RefreshCw, Target, MessagesSquare, FileText, ChevronDown, ChevronUp, Copy, Check, Type } from 'lucide-react';
+import { Save, Send, AlertTriangle, MessageCircle, ListOrdered, Trash2, Plus, RotateCcw, ShieldAlert, KeyRound, Eye, EyeOff, Lock, TrendingUp, Users, Smartphone, Globe, Monitor, RefreshCw, Target, MessagesSquare, FileText, ChevronDown, ChevronUp, Copy, Check, Type, ImagePlus } from 'lucide-react';
+import SmartImage from '../shared/SmartImage';
+import ImageUrlInput from '../shared/ImageUrlInput';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import axios from 'axios';
 import { useApp } from '../../context/AppContext';
@@ -977,6 +979,7 @@ const WIDGET_GROUPS = [
       { key: 'show_orders_kpi', label: 'KPI Total Pesanan' },
       { key: 'show_aov_kpi', label: 'KPI Rata-rata Order' },
       { key: 'show_customers_kpi', label: 'KPI Total Pelanggan' },
+      { key: 'show_ai_insights', label: '🤖 AI Insights (Restock + Forecast)' },
       { key: 'show_revenue_chart', label: 'Chart Tren Pendapatan' },
       { key: 'show_top_products', label: 'Top Produk' },
       { key: 'show_status_breakdown', label: 'Pie Chart Status' },
@@ -1115,6 +1118,195 @@ export function DashboardWidgetsConfig() {
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+
+// ─── MAINTENANCE / STORE CLOSED MODE (FASE 6) ────────────────────
+function Field({ label, children }) {
+  return (
+    <div>
+      <label className="block text-xs font-semibold text-[#7C2D12] mb-1">{label}</label>
+      {children}
+    </div>
+  );
+}
+
+export function MaintenanceConfig() {
+  const [config, setConfig] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  const load = async () => {
+    try {
+      const r = await axios.get(`${API}/api/maintenance`);
+      setConfig(r.data);
+    } catch { toast.error('Gagal load config'); }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const set = (k, v) => setConfig(c => ({ ...c, [k]: v }));
+
+  const handleSave = async () => {
+    if (!config) return;
+    setSaving(true);
+    try {
+      await axios.put(`${API}/api/maintenance`, config);
+      toast.success(config.enabled ? '🔒 Toko sedang LIBUR — buyer akan lihat halaman tutup' : '✅ Toko BUKA — buyer bisa akses normal');
+      await load();
+    } catch { toast.error('Gagal simpan'); } finally { setSaving(false); }
+  };
+
+  const toggleEnabled = async () => {
+    if (!config) return;
+    const newEnabled = !config.enabled;
+    setConfig(c => ({ ...c, enabled: newEnabled }));
+    setSaving(true);
+    try {
+      await axios.put(`${API}/api/maintenance`, { ...config, enabled: newEnabled });
+      toast.success(newEnabled ? '🔒 Toko sekarang LIBUR' : '✅ Toko BUKA kembali');
+      await load();
+    } catch { toast.error('Gagal toggle'); setConfig(c => ({ ...c, enabled: !newEnabled })); } finally { setSaving(false); }
+  };
+
+  if (!config) return <div className="p-6">Loading...</div>;
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="font-heading text-2xl font-bold text-[#7C2D12]">Mode Libur / Tutup Toko</h1>
+          <p className="text-xs text-[#9A3412] mt-0.5">Aktifkan untuk menutup akses buyer ke katalog. Mereka akan lihat halaman "Kami sedang libur" + kapan buka lagi.</p>
+        </div>
+        <button data-testid="save-maintenance-btn" onClick={handleSave} disabled={saving} className="flex items-center gap-2 bg-gradient-to-r from-[#F97316] to-[#EA580C] text-white font-bold px-5 py-2.5 rounded-full shadow">
+          <Save size={16} /> {saving ? 'Menyimpan...' : 'Simpan'}
+        </button>
+      </div>
+
+      {/* Big Toggle Card */}
+      <div data-testid="maintenance-toggle-card" className={`rounded-2xl border-2 p-5 ${config.enabled ? 'border-red-300 bg-red-50' : 'border-green-300 bg-green-50'}`}>
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-4">
+            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-2xl ${config.enabled ? 'bg-red-200' : 'bg-green-200'}`}>
+              {config.enabled ? '🔒' : '🟢'}
+            </div>
+            <div>
+              <p className="font-heading font-bold text-lg" style={{ color: config.enabled ? '#991B1B' : '#166534' }}>
+                {config.enabled ? 'Toko sedang LIBUR' : 'Toko sedang BUKA'}
+              </p>
+              <p className="text-xs" style={{ color: config.enabled ? '#7F1D1D' : '#14532D' }}>
+                {config.enabled ? 'Buyer tidak bisa pesan — mereka lihat halaman libur.' : 'Buyer bisa pesan normal.'}
+              </p>
+            </div>
+          </div>
+          <button
+            data-testid="maintenance-toggle-btn"
+            onClick={toggleEnabled}
+            disabled={saving}
+            className={`px-6 py-2.5 rounded-full font-bold text-sm transition-all ${
+              config.enabled
+                ? 'bg-green-500 text-white hover:bg-green-600'
+                : 'bg-red-500 text-white hover:bg-red-600'
+            }`}
+          >
+            {config.enabled ? '🟢 Buka Kembali' : '🔒 Tutup Sekarang'}
+          </button>
+        </div>
+      </div>
+
+      <Section title="Wording Halaman Libur" icon={Type}>
+        <div className="space-y-4">
+          <Field label="Judul">
+            <input
+              data-testid="maintenance-title-input"
+              value={config.title || ''}
+              onChange={e => set('title', e.target.value)}
+              placeholder="Maaf, Ciltarasa libur dulu ya..."
+              className={inputCls}
+            />
+          </Field>
+          <Field label="Pesan (boleh pakai placeholder {return_date} dan {return_time})">
+            <textarea
+              data-testid="maintenance-message-input"
+              rows={4}
+              value={config.message || ''}
+              onChange={e => set('message', e.target.value)}
+              placeholder="Kami akan kembali pada {return_date} pukul {return_time}..."
+              className={inputCls + ' resize-y'}
+            />
+          </Field>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Field label="Tanggal Buka Kembali">
+              <input
+                type="date"
+                data-testid="maintenance-return-date-input"
+                value={config.return_date || ''}
+                onChange={e => set('return_date', e.target.value)}
+                className={inputCls}
+              />
+            </Field>
+            <Field label="Jam Buka Kembali">
+              <input
+                type="time"
+                data-testid="maintenance-return-time-input"
+                value={config.return_time || ''}
+                onChange={e => set('return_time', e.target.value)}
+                className={inputCls}
+              />
+            </Field>
+          </div>
+          <Field label="Teks Tombol WhatsApp">
+            <input
+              value={config.return_button_text || ''}
+              onChange={e => set('return_button_text', e.target.value)}
+              placeholder="Hubungi Seller via WhatsApp"
+              className={inputCls}
+            />
+          </Field>
+          <label className="flex items-center gap-2 p-3 rounded-xl bg-[#FFFBF5] border border-[#FED7AA] cursor-pointer">
+            <input
+              type="checkbox"
+              data-testid="maintenance-show-wa-checkbox"
+              checked={config.show_contact_wa !== false}
+              onChange={e => set('show_contact_wa', e.target.checked)}
+              className="w-4 h-4 accent-[#EA580C]"
+            />
+            <span className="text-sm text-[#451A03]">Tampilkan tombol "Hubungi WhatsApp" di halaman libur</span>
+          </label>
+        </div>
+      </Section>
+
+      <Section title="Background Halaman Libur" icon={ImagePlus}>
+        <p className="text-xs text-[#9A3412] mb-3">Upload gambar background (dari komputer/HP/Google Drive). Akan muncul di belakang teks libur dengan overlay gradient otomatis.</p>
+        <ImageUrlInput
+          value={config.background_image_url || ''}
+          onChange={(v) => set('background_image_url', v)}
+        />
+        {config.background_image_url && (
+          <div className="mt-3 rounded-xl overflow-hidden border-2 border-[#FED7AA] relative aspect-video bg-[#FFFBF5]">
+            <SmartImage
+              src={config.background_image_url.startsWith('/api/') ? `${API}${config.background_image_url}` : config.background_image_url}
+              alt="Background preview"
+              className="absolute inset-0 w-full h-full object-cover"
+            />
+            <div className="absolute inset-0 bg-gradient-to-br from-[#451A03]/70 via-[#7C2D12]/60 to-[#451A03]/80" />
+            <div className="absolute inset-0 flex items-center justify-center">
+              <p className="text-white font-heading text-2xl font-bold drop-shadow-lg">Preview: {config.title?.slice(0, 30)}...</p>
+            </div>
+          </div>
+        )}
+      </Section>
+
+      <div className="rounded-xl bg-blue-50 border border-blue-200 p-4 text-xs text-blue-900">
+        <p className="font-bold mb-1">ℹ️ Catatan:</p>
+        <ul className="list-disc list-inside space-y-1 text-[11px]">
+          <li>Buyer yang sudah buka katalog akan auto-refresh tiap 60 detik — perubahan langsung terlihat.</li>
+          <li>Dashboard seller TETAP bisa diakses meski mode libur aktif.</li>
+          <li>Buyer yang sedang checkout SAAT mode libur diaktifkan masih bisa selesaikan order — efek hanya saat masuk fresh.</li>
+          <li>Gunakan emoji di judul untuk kesan ramah (mis: 🧡 ☕ 🍱 🏖️).</li>
+        </ul>
       </div>
     </div>
   );

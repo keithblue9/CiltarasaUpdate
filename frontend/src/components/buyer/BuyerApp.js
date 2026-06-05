@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Routes, Route, useNavigate } from 'react-router-dom';
 import { ShoppingCart, MapPin, Phone, Clock, Instagram, Menu, X, User, LogOut, Package, ChevronDown } from 'lucide-react';
+import axios from 'axios';
 import { useApp } from '../../context/AppContext';
 import { LogoWithText } from '../shared/Logo';
 import Hero from './Hero';
@@ -15,6 +16,7 @@ import RecommendationsStrip from './RecommendationsStrip';
 import OrderHistory from './OrderHistory';
 import PwaInstallHub from '../pwa/PwaInstallHub';
 import useTrackVisit from './useTrackVisit';
+import MaintenanceScreen from './MaintenanceScreen';
 
 function ProfileMenu() {
   const { authUser, logout, setAuthMode } = useApp();
@@ -196,9 +198,33 @@ function BuyerHome() {
   );
 }
 
+const API = process.env.REACT_APP_BACKEND_URL;
+
 export default function BuyerApp() {
   const [cartOpen, setCartOpen] = useState(false);
+  const { storeConfig, settings } = useApp();
+  const [maintenance, setMaintenance] = useState(null);
   useTrackVisit();
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetchMaintenance = async () => {
+      try {
+        const r = await axios.get(`${API}/api/maintenance`);
+        if (!cancelled) setMaintenance(r.data);
+      } catch { /* keep null - assume open */ }
+    };
+    fetchMaintenance();
+    // Refresh setiap 60 detik utk pickup perubahan dari seller (ringan, public endpoint)
+    const id = setInterval(fetchMaintenance, 60000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
+
+  // Saat enabled → tampilkan MaintenanceScreen menggantikan seluruh buyer UI
+  if (maintenance?.enabled) {
+    return <MaintenanceScreen config={maintenance} storeConfig={storeConfig} settings={settings} />;
+  }
+
   return (
     <div className="min-h-screen bg-[#FDF8F0] font-body">
       <OnboardingModal />
