@@ -564,7 +564,6 @@ DEFAULT_STORE_CONFIG = {
         "subtitle": "Terima kasih telah berbelanja di Ciltarasa",
         "buyer_section_label": "DITAGIH KEPADA",
         "items_section_label": "RINCIAN PESANAN",
-        "summary_label": "RINGKASAN",
         "subtotal_label": "Subtotal",
         "delivery_fee_label": "Ongkir",
         "total_label": "TOTAL",

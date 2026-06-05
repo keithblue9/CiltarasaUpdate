@@ -59,6 +59,23 @@ Ibu-ibu milenial & Gen Z (kelahiran 1980-2000) yang anaknya SD. Modern, kekinian
 - **SmartImage useEffect**: dokumentasi komentar bahwa setters/normalizer stable & sengaja tidak masuk deps.
 - **Tidak dikerjakan (alasan tetap)**: httpOnly cookies (P2 — butuh backend session refactor + CSRF), refactor complexity `seed_database`/`insights_dashboard`/`analytics_stats`/`get_sales_report` (P2 — di backlog), refactor komponen `Catalog`/`Checkout`/`OnboardingModal` (P2), index-as-key di test files (tidak runtime-impact), `is` vs `==` di server.py 752/1173 (false-positive — `is not None` adalah convention Python yang benar).
 
+### Phase 15 ✅ FASE 3 — Auto-Chat WhatsApp + PDF Invoice (Feb 2026)
+- **Auto-Chat Config (per stage, seller + buyer)**: 5 stage `menunggu/diproses/siap/selesai/dibatalkan` masing-masing punya `seller_enabled`, `seller_template`, `buyer_enabled`, `buyer_template`. Template support 15 placeholder: `{order_id}, {customer_name}, {customer_phone}, {customer_address}, {delivery}, {items_detail}, {total}, {subtotal}, {notes}, {status}, {status_desc}, {status_emoji}, {store_name}, {timestamp}, {track_link}`.
+- **Backend logic**:
+  - `POST /api/orders` → fire WA pakai `auto_chat_config["menunggu"]` (default seller_enabled=True, buyer_enabled=False)
+  - `PUT /api/orders/{id}/status` → fire WA pakai `auto_chat_config[new_status]`
+  - Response always include `_wa_seller_sent`, `_wa_buyer_sent`, `_wa_seller_reason`, `_wa_buyer_reason` (debugging)
+  - `render_chat_template()` helper di server.py
+- **AutoChatConfig seller page** `/seller#auto-chat`: 5 collapsible StageCard, masing-masing 2 toggles + 2 textarea editable. PlaceholderHelper bar dengan 15 tag clickable (copy to clipboard).
+- **Invoice PDF (jsPDF client-side)**: 
+  - Lib `/app/frontend/src/lib/invoiceGenerator.js` pakai `jspdf` + `jspdf-autotable`
+  - Wording fully configurable via `storeConfig.invoice_texts` (15 keys: title, subtitle, labels, footers)
+  - InvoiceConfig seller page `/seller#invoice` dengan 15 input fields + Preview PDF button (download sample dengan data demo, real-time pakai wording yang sedang di-edit)
+  - Buyer page `/buyer/track`: tombol `[data-testid='download-invoice-btn']` muncul saat `order.received || order.status==='selesai'`
+- **Sidebar additions**: "Auto-Chat WhatsApp" + "Wording Invoice" tabs di seller sidebar.
+- **Backfill**: auto_chat_config & invoice_texts auto-merge missing keys saat startup (preserve user edits).
+- **Test report**: `/app/test_reports/iteration_10.json` — Backend 100% (10/10), Frontend 95% (PDF download visual-verified, Playwright blob download flaky tapi click flow OK).
+
 ### Phase 14 ✅ FASE 2 — Payment Flow Revamp (Feb 2026)
 - **Bank Transfer Flow**: Buyer → pilih bank dari `storeConfig.bank_accounts` → pilih cara bayar (Pay Now / Pay Later) → upload bukti .jpg jika Pay Now (proof uploader). Submit button disabled sampai flow lengkap. Tombol "Salin nomor rekening" otomatis copy ke clipboard.
 - **QRIS Flow**: Buyer → klik QRIS → lihat QR image dari `storeConfig.qris_image_url` → klik "Telah Bayar" / "Batalkan" → upload bukti .jpg → submit. Atau klik "Batalkan" → "Coba Bayar Lagi" untuk reset stage.
@@ -111,7 +128,11 @@ Ibu-ibu milenial & Gen Z (kelahiran 1980-2000) yang anaknya SD. Modern, kekinian
   - QRIS: seller upload QR via config → buyer scan → "Telah Bayar" → upload bukti .jpg
   - Wording payment proof configurable di seller admin (14 fields)
   - Public proof upload endpoint `/api/media/upload-proof` (no auth, image-only)
-- [ ] **FASE 3 — Auto-Chat & Invoice (P1, next)**
+- [x] **FASE 3 — Auto-Chat & Invoice (P1)** ✅ done
+  - Auto-chat config 5 stages × {seller, buyer} = 10 templates configurable
+  - PDF Invoice jsPDF client-side + 15 configurable text fields
+  - Backfill safe (preserve user edits)
+- [ ] **FASE 4 — Seller Dashboard Revamp (P2, next)**
   - Auto-chat config per stage order (toggle + edit wording)
   - PDF Invoice/Receipt (jsPDF client-side) — wording configurable
 - [ ] **FASE 4 — Seller Dashboard Revamp (P2)**
