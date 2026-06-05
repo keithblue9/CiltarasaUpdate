@@ -73,7 +73,7 @@ export default function WhatsAppSettings() {
               type="text"
               value={form.seller_whatsapp}
               onChange={e => setForm(f => ({...f, seller_whatsapp: e.target.value}))}
-              placeholder="6285249682337"
+              placeholder="6285190884129"
               className="flex-1 px-4 py-3 rounded-xl border border-[#FED7AA] focus:outline-none focus:ring-2 focus:ring-[#D97706] font-body text-[#451A03]"
             />
             <button
@@ -84,7 +84,7 @@ export default function WhatsAppSettings() {
               <TestTube size={16} /> Test
             </button>
           </div>
-          <p className="text-xs text-[#92400E] mt-1">Contoh: 6285249682337 (tanpa +, dengan kode negara)</p>
+          <p className="text-xs text-[#92400E] mt-1">Contoh: 6285190884129 (tanpa +, dengan kode negara)</p>
         </div>
       </div>
 
