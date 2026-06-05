@@ -51,7 +51,7 @@ function ProofUploader({ value, onChange, label, hint, testId = 'proof-uploader'
     try {
       const fd = new FormData();
       fd.append('file', f);
-      const r = await axios.post(`${API}/api/media/upload`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      const r = await axios.post(`${API}/api/media/upload-proof`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       onChange(r.data.url);
       toast.success('Bukti bayar terupload!');
     } catch {
@@ -368,12 +368,12 @@ export default function Checkout() {
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-semibold text-[#78350F] mb-1">Nama Lengkap *</label>
-              <input data-testid="input-name" type="text" required value={form.customer_name} onChange={e => set('customer_name', e.target.value)}
+              <input data-testid="checkout-name-input" type="text" required value={form.customer_name} onChange={e => set('customer_name', e.target.value)}
                 placeholder="Masukkan nama lengkap" className="w-full px-4 py-3 rounded-xl border border-[#FED7AA] focus:outline-none focus:ring-2 focus:ring-[#D97706] font-body text-[#451A03]" />
             </div>
             <div>
               <label className="block text-sm font-semibold text-[#78350F] mb-1">Nomor HP (WhatsApp) *</label>
-              <input data-testid="input-phone" type="tel" required value={form.customer_phone} onChange={e => set('customer_phone', e.target.value)}
+              <input data-testid="checkout-phone-input" type="tel" required value={form.customer_phone} onChange={e => set('customer_phone', e.target.value)}
                 placeholder="Contoh: 081234567890" className="w-full px-4 py-3 rounded-xl border border-[#FED7AA] focus:outline-none focus:ring-2 focus:ring-[#D97706] font-body text-[#451A03]" />
             </div>
           </div>
@@ -394,7 +394,7 @@ export default function Checkout() {
           {form.delivery_method === 'delivery' && (
             <div>
               <label className="block text-sm font-semibold text-[#78350F] mb-1">Alamat Lengkap *</label>
-              <textarea data-testid="input-address" required value={form.customer_address} onChange={e => set('customer_address', e.target.value)}
+              <textarea data-testid="checkout-address-input" required value={form.customer_address} onChange={e => set('customer_address', e.target.value)}
                 placeholder="Jl. Nama Jalan No. RT/RW, Kecamatan, Kota" rows={3}
                 className="w-full px-4 py-3 rounded-xl border border-[#FED7AA] focus:outline-none focus:ring-2 focus:ring-[#D97706] font-body text-[#451A03] resize-none" />
             </div>

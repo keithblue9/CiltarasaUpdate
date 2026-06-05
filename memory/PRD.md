@@ -59,6 +59,16 @@ Ibu-ibu milenial & Gen Z (kelahiran 1980-2000) yang anaknya SD. Modern, kekinian
 - **SmartImage useEffect**: dokumentasi komentar bahwa setters/normalizer stable & sengaja tidak masuk deps.
 - **Tidak dikerjakan (alasan tetap)**: httpOnly cookies (P2 — butuh backend session refactor + CSRF), refactor complexity `seed_database`/`insights_dashboard`/`analytics_stats`/`get_sales_report` (P2 — di backlog), refactor komponen `Catalog`/`Checkout`/`OnboardingModal` (P2), index-as-key di test files (tidak runtime-impact), `is` vs `==` di server.py 752/1173 (false-positive — `is not None` adalah convention Python yang benar).
 
+### Phase 14 ✅ FASE 2 — Payment Flow Revamp (Feb 2026)
+- **Bank Transfer Flow**: Buyer → pilih bank dari `storeConfig.bank_accounts` → pilih cara bayar (Pay Now / Pay Later) → upload bukti .jpg jika Pay Now (proof uploader). Submit button disabled sampai flow lengkap. Tombol "Salin nomor rekening" otomatis copy ke clipboard.
+- **QRIS Flow**: Buyer → klik QRIS → lihat QR image dari `storeConfig.qris_image_url` → klik "Telah Bayar" / "Batalkan" → upload bukti .jpg → submit. Atau klik "Batalkan" → "Coba Bayar Lagi" untuk reset stage.
+- **COD Flow**: Info banner hijau, langsung submittable.
+- **NEW: Public Proof Upload** `POST /api/media/upload-proof` (no PIN, image-only, max 5MB, tagged `kind=proof`). Sebelumnya `/api/media/upload` butuh PIN seller — sekarang buyer punya endpoint sendiri.
+- **OrderCreate**: tambah `payment_bank_id`, `payment_type` ('now'|'later'), `payment_proof_url`.
+- **StoreConfig**: tambah `qris_image_url` (string) + `payment_texts` (dict, 14 keys configurable). Backfill on startup tanpa wipe data.
+- **PaymentsConfig seller page**: tambah 2 section baru — "QRIS Upload Gambar QR" (pakai existing `ImageUrlInput` — support computer/HP/Google Drive) + "Wording / Teks Halaman Pembayaran" (14 input fields utk customize semua teks buyer-facing).
+- **Test report**: `/app/test_reports/iteration_9.json` — Backend 90%, Frontend 100% FASE 2.
+
 ### Phase 13 ✅ FASE 1 — P0 Bug Fixes (Feb 2026)
 - **Bug #11 (Stock Restoration on Cancel)**: `PUT /api/orders/{oid}/status` sekarang restore stock + decrement sold_count saat status = `dibatalkan`. Idempotent: flag `stock_restored` di order doc mencegah double-restore. Hanya restore jika `prev_status != dibatalkan` AND `stock_restored != true`. Verified via testing agent.
 - **Bug #4 (Filter Inactive Payment Methods)**: `Checkout.js` sekarang baca dari `storeConfig.payment_methods.filter(p => p.active !== false)` instead of hardcoded `[transfer, cod, qris]`. Auto-pilih method aktif pertama jika current selection tidak tersedia. Fallback ke DEFAULT_PAYMENTS jika store_config kosong.
@@ -96,11 +106,12 @@ Ibu-ibu milenial & Gen Z (kelahiran 1980-2000) yang anaknya SD. Modern, kekinian
 - [x] Bug #4: Filter inactive payment methods (Phase 13)
 - [x] Bug #11: Stock restoration on cancel (Phase 13)
 - [x] Fix #2: Remove popup → direct WA redirect (Phase 13)
-- [ ] **FASE 2 — Payment Flow Revamp (P1, next)**
+- [x] **FASE 2 — Payment Flow Revamp (P1)** ✅ done
   - Bank Transfer: pilih bank → Pay Now vs Pay Later → upload bukti .jpg jika Pay Now
   - QRIS: seller upload QR via config → buyer scan → "Telah Bayar" → upload bukti .jpg
-  - Wording payment proof configurable di seller admin
-- [ ] **FASE 3 — Auto-Chat & Invoice (P1)**
+  - Wording payment proof configurable di seller admin (14 fields)
+  - Public proof upload endpoint `/api/media/upload-proof` (no auth, image-only)
+- [ ] **FASE 3 — Auto-Chat & Invoice (P1, next)**
   - Auto-chat config per stage order (toggle + edit wording)
   - PDF Invoice/Receipt (jsPDF client-side) — wording configurable
 - [ ] **FASE 4 — Seller Dashboard Revamp (P2)**

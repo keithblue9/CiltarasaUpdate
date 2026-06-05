@@ -1650,6 +1650,27 @@ async def media_upload(file: UploadFile = File(...), _auth: bool = Depends(requi
     # Build public URL
     return {"id": mid, "url": f"/api/media/{mid}", "size": len(data), "content_type": file.content_type}
 
+@api_router.post("/media/upload-proof")
+async def media_upload_proof(file: UploadFile = File(...)):
+    """Public endpoint untuk buyer upload bukti bayar (.jpg/.png/.webp). Tidak butuh auth — image-only, size-limited, tagged sebagai 'proof' untuk audit."""
+    if file.content_type not in ALLOWED_MIME:
+        raise HTTPException(400, "Format tidak didukung. Gunakan JPG/PNG/WEBP.")
+    data = await file.read()
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(400, f"Ukuran maksimal 5 MB. File kamu {round(len(data)/1024/1024,1)} MB.")
+    import base64
+    mid = str(uuid.uuid4())
+    await db.media.insert_one({
+        "id": mid,
+        "filename": file.filename or "proof",
+        "content_type": file.content_type,
+        "size": len(data),
+        "data_b64": base64.b64encode(data).decode("ascii"),
+        "kind": "proof",
+        "created_at": now_iso(),
+    })
+    return {"id": mid, "url": f"/api/media/{mid}", "size": len(data), "content_type": file.content_type}
+
 @api_router.get("/media/{mid}")
 async def media_get(mid: str):
     doc = await db.media.find_one({"id": mid})
