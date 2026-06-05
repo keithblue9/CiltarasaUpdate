@@ -255,6 +255,9 @@ class OrderCreate(BaseModel):
     notes: str = ""
     payment_method: str
     payment_method_id: Optional[str] = None
+    payment_bank_id: Optional[str] = None
+    payment_type: Optional[str] = None  # 'now' | 'later'
+    payment_proof_url: Optional[str] = None
     user_id: Optional[str] = None
 
 class OrderStatusUpdate(BaseModel):
@@ -309,6 +312,8 @@ class StoreConfigUpdate(BaseModel):
     wa_notif_enabled: Optional[bool] = None
     low_stock_threshold: Optional[int] = None
     restock_safety_days: Optional[int] = None
+    qris_image_url: Optional[str] = None
+    payment_texts: Optional[Dict[str, str]] = None
 
 class PurchaseItem(BaseModel):
     product_id: str
@@ -464,6 +469,23 @@ DEFAULT_STORE_CONFIG = {
     "wa_notif_enabled": True,
     "low_stock_threshold": 10,
     "restock_safety_days": 2,
+    "qris_image_url": "",
+    "payment_texts": {
+        "bank_transfer_title": "Transfer Bank",
+        "bank_transfer_instructions": "Silakan transfer ke salah satu rekening berikut, lalu pilih cara bayar:",
+        "pay_now_label": "Bayar Sekarang",
+        "pay_now_desc": "Transfer sekarang & upload bukti bayar",
+        "pay_later_label": "Bayar Nanti (COD)",
+        "pay_later_desc": "Bayar saat pesanan sampai/diambil",
+        "upload_proof_label": "Upload Bukti Transfer",
+        "upload_proof_hint": "Format JPG/PNG, max 5MB. Pastikan foto jelas terbaca.",
+        "qris_title": "Scan QRIS",
+        "qris_instructions": "Scan QR di bawah pakai e-wallet kamu (GoPay/OVO/Dana/ShopeePay). Klik 'Telah Bayar' setelah transfer berhasil.",
+        "qris_paid_label": "Telah Bayar",
+        "qris_cancel_label": "Batalkan",
+        "qris_upload_label": "Upload Bukti Pembayaran QRIS",
+        "no_qris_image_warning": "Seller belum upload QR. Hubungi seller via WhatsApp untuk minta QR.",
+    },
 }
 
 DEFAULT_DISCOUNTS = [
@@ -498,6 +520,22 @@ async def seed_database():
     if await db.store_config.count_documents({}) == 0:
         await db.store_config.insert_one(DEFAULT_STORE_CONFIG)
         logger.info("Seeded store config")
+    else:
+        # Backfill new fields (FASE 2 - payment_texts & qris_image_url) without wiping existing config
+        existing = await db.store_config.find_one({"_id": "main"}) or {}
+        backfill = {}
+        if "qris_image_url" not in existing:
+            backfill["qris_image_url"] = DEFAULT_STORE_CONFIG.get("qris_image_url", "")
+        if "payment_texts" not in existing or not existing.get("payment_texts"):
+            backfill["payment_texts"] = DEFAULT_STORE_CONFIG.get("payment_texts", {})
+        else:
+            # Merge missing keys in payment_texts
+            for k, v in DEFAULT_STORE_CONFIG.get("payment_texts", {}).items():
+                if k not in existing["payment_texts"]:
+                    backfill[f"payment_texts.{k}"] = v
+        if backfill:
+            await db.store_config.update_one({"_id": "main"}, {"$set": backfill})
+            logger.info(f"Backfilled store_config: {list(backfill.keys())}")
 
     # Discounts
     if await db.discounts.count_documents({}) == 0:

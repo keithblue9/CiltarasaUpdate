@@ -252,21 +252,56 @@ export function DeliveryConfig() {
 }
 
 // ─── METODE PEMBAYARAN ──────────────────────────────────────────
+const PAYMENT_TEXT_FIELDS = [
+  { key: 'bank_transfer_title', label: 'Judul Section Transfer', placeholder: 'Transfer Bank' },
+  { key: 'bank_transfer_instructions', label: 'Instruksi Transfer', placeholder: 'Silakan transfer...', multiline: true },
+  { key: 'pay_now_label', label: 'Label "Bayar Sekarang"', placeholder: 'Bayar Sekarang' },
+  { key: 'pay_now_desc', label: 'Deskripsi "Bayar Sekarang"', placeholder: 'Transfer & upload bukti' },
+  { key: 'pay_later_label', label: 'Label "Bayar Nanti"', placeholder: 'Bayar Nanti (COD)' },
+  { key: 'pay_later_desc', label: 'Deskripsi "Bayar Nanti"', placeholder: 'Bayar saat pesanan sampai' },
+  { key: 'upload_proof_label', label: 'Label Upload Bukti', placeholder: 'Upload Bukti Transfer' },
+  { key: 'upload_proof_hint', label: 'Hint Upload Bukti', placeholder: 'Format JPG/PNG, max 5MB', multiline: true },
+  { key: 'qris_title', label: 'Judul Section QRIS', placeholder: 'Scan QRIS' },
+  { key: 'qris_instructions', label: 'Instruksi QRIS', placeholder: 'Scan QR di bawah...', multiline: true },
+  { key: 'qris_paid_label', label: 'Tombol "Telah Bayar"', placeholder: 'Telah Bayar' },
+  { key: 'qris_cancel_label', label: 'Tombol "Batalkan"', placeholder: 'Batalkan' },
+  { key: 'qris_upload_label', label: 'Label Upload Bukti QRIS', placeholder: 'Upload Bukti Pembayaran QRIS' },
+  { key: 'no_qris_image_warning', label: 'Warning jika QR belum diupload', placeholder: 'Seller belum upload QR...', multiline: true },
+];
+
 export function PaymentsConfig() {
   const { storeConfig, refreshStoreConfig } = useApp();
   const [items, setItems] = useState([]);
+  const [qrisImageUrl, setQrisImageUrl] = useState('');
+  const [paymentTexts, setPaymentTexts] = useState({});
   const [saving, setSaving] = useState(false);
-  useEffect(() => { setItems(storeConfig?.payment_methods || []); }, [storeConfig]);
+  useEffect(() => {
+    setItems(storeConfig?.payment_methods || []);
+    setQrisImageUrl(storeConfig?.qris_image_url || '');
+    setPaymentTexts(storeConfig?.payment_texts || {});
+  }, [storeConfig]);
   const add = () => setItems([...items, { id: 'pay-' + Date.now(), name: '', type: 'transfer', details: '', active: true }]);
   const update = (idx, k, v) => { const u = [...items]; u[idx] = { ...u[idx], [k]: v }; setItems(u); };
   const remove = (idx) => setItems(items.filter((_, i) => i !== idx));
-  const handleSave = async () => { setSaving(true); try { await axios.put(`${API}/api/store-config`, { payment_methods: items }); await refreshStoreConfig(); toast.success('Tersimpan!'); } catch { toast.error('Gagal'); } finally { setSaving(false); } };
+  const setText = (k, v) => setPaymentTexts(t => ({ ...t, [k]: v }));
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await axios.put(`${API}/api/store-config`, {
+        payment_methods: items,
+        qris_image_url: qrisImageUrl,
+        payment_texts: paymentTexts,
+      });
+      await refreshStoreConfig();
+      toast.success('Tersimpan!');
+    } catch { toast.error('Gagal'); } finally { setSaving(false); }
+  };
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="font-heading text-2xl font-bold text-[#7C2D12]">Metode Pembayaran</h1>
-        <button onClick={handleSave} disabled={saving} className="flex items-center gap-2 bg-gradient-to-r from-[#F97316] to-[#EA580C] text-white font-bold px-5 py-2.5 rounded-full shadow"><Save size={16} /> {saving ? 'Menyimpan...' : 'Simpan'}</button>
+        <button data-testid="save-payments-btn" onClick={handleSave} disabled={saving} className="flex items-center gap-2 bg-gradient-to-r from-[#F97316] to-[#EA580C] text-white font-bold px-5 py-2.5 rounded-full shadow"><Save size={16} /> {saving ? 'Menyimpan...' : 'Simpan'}</button>
       </div>
       <Section title="Opsi Pembayaran" icon={CreditCard} action={<button data-testid="add-payment-btn" onClick={add} className="flex items-center gap-1 text-xs font-bold text-[#EA580C] hover:underline"><Plus size={14} /> Tambah</button>}>
         <div className="space-y-3">
@@ -285,9 +320,56 @@ export function PaymentsConfig() {
                   </Field>
                 </div>
                 <div className="col-span-5"><Field label="Detail / Petunjuk"><input className={inputCls} value={it.details} onChange={e => update(idx, 'details', e.target.value)} /></Field></div>
-                <div className="col-span-1 pb-2"><input type="checkbox" checked={it.active} onChange={e => update(idx, 'active', e.target.checked)} className="w-4 h-4 accent-[#EA580C]" /></div>
+                <div className="col-span-1 pb-2"><input data-testid={`payment-active-${it.id || idx}`} type="checkbox" checked={it.active} onChange={e => update(idx, 'active', e.target.checked)} className="w-4 h-4 accent-[#EA580C]" /></div>
                 <button onClick={() => remove(idx)} className="col-span-1 p-2.5 rounded-xl bg-red-50 text-red-500"><Trash2 size={16} /></button>
               </div>
+            </div>
+          ))}
+        </div>
+      </Section>
+
+      <Section title="QRIS — Upload Gambar QR" icon={ImageIcon}>
+        <div className="space-y-3">
+          <p className="text-xs text-[#9A3412]">Upload gambar QRIS (dari komputer/HP/Google Drive). Buyer akan scan QR ini saat memilih metode QRIS di checkout.</p>
+          <ImageUrlInput
+            value={qrisImageUrl}
+            onChange={setQrisImageUrl}
+            data-testid="qris-image-input"
+          />
+          {qrisImageUrl && (
+            <div className="mt-2 p-3 bg-[#FFF7ED] rounded-xl border border-[#FED7AA] inline-block">
+              <p className="text-xs font-bold text-[#7C2D12] mb-2">Preview QR yang akan dilihat buyer:</p>
+              <SmartImage src={qrisImageUrl} alt="QRIS Preview" className="w-48 h-48 object-contain bg-white rounded-lg" />
+            </div>
+          )}
+        </div>
+      </Section>
+
+      <Section title="Wording / Teks Halaman Pembayaran" icon={Type}>
+        <p className="text-xs text-[#9A3412] mb-4">Edit semua teks yang dilihat buyer di halaman checkout — instruksi, label tombol, hint upload, dll.</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {PAYMENT_TEXT_FIELDS.map(f => (
+            <div key={f.key} className={f.multiline ? 'md:col-span-2' : ''}>
+              <Field label={f.label}>
+                {f.multiline ? (
+                  <textarea
+                    data-testid={`payment-text-${f.key}`}
+                    rows={2}
+                    className={inputCls + ' resize-y'}
+                    value={paymentTexts[f.key] || ''}
+                    placeholder={f.placeholder}
+                    onChange={e => setText(f.key, e.target.value)}
+                  />
+                ) : (
+                  <input
+                    data-testid={`payment-text-${f.key}`}
+                    className={inputCls}
+                    value={paymentTexts[f.key] || ''}
+                    placeholder={f.placeholder}
+                    onChange={e => setText(f.key, e.target.value)}
+                  />
+                )}
+              </Field>
             </div>
           ))}
         </div>
