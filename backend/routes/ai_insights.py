@@ -138,6 +138,7 @@ def setup(api_router, db, require_seller):
                             **cached.get("data", {}),
                             "_cached": True,
                             "_period": period,
+                            "_period_label": cached.get("period_label"),
                             "_generated_at": cached.get("created_at"),
                             "_cache_age_minutes": int((datetime.now(timezone.utc) - ts).total_seconds() / 60),
                         }
@@ -209,6 +210,7 @@ def setup(api_router, db, require_seller):
         cache_doc = {
             "_id": cache_key,
             "period": period,
+            "period_label": period_label,
             "start": start,
             "end": end,
             "data": data,

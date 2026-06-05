@@ -82,6 +82,8 @@ Ibu-ibu milenial & Gen Z (kelahiran 1980-2000) yang anaknya SD. Modern, kekinian
 
 **Smoke test**: AI insights period=7d generate 11s (orders=23 dalam range), cache 0 menit. Badge muncul di ORD-0023 (order test ongkir dari Fase 7). Lint clean (backend 0 blocking, frontend 0 advisory).
 
+**Patch (iteration_14)**: Cache hit response sekarang ikut return `_period_label` (sebelumnya cuma di fresh response → subtitle UI nge-fallback ke raw code "today"/"7d"). Fix: persist `period_label` di `cache_doc` + echo di cache-hit branch. Verified: 1st call `cached=False label='hari ini'`, 2nd call `cached=True label='hari ini'`. Testing agent (iteration_14): backend 100%, frontend 100%, semua flow verified live (period switch fire 1 AI call, custom date guard works, 3 badges di 3 orders dgn payment_proof, modal open dgn img+meta+fullsize+tutup).
+
 ### Phase 19 ✅ FASE 7 — Delivery+Ongkir Flow Rework + Receipt + Category Sync + Period Expand (Feb 2026)
 
 **Task 1 — Buyer Checkout Pengiriman Flow**:
