@@ -54,7 +54,7 @@ function KpiCard({ title, value, sub, icon: Icon, color = 'orange', trend }) {
     amber: 'bg-amber-100 text-amber-600',
   };
   return (
-    <div data-testid={`kpi-${title.toLowerCase().replace(/\s+/g, '-')}`} className="bg-white rounded-2xl border border-[#FED7AA] p-5 flex items-start gap-4 hover:shadow-md transition-all">
+    <div data-testid={`kpi-${title.toLowerCase().replace(/\s+/g, '-').replace(/\//g, '-')}`} className="bg-white rounded-2xl border border-[#FED7AA] p-5 flex items-start gap-4 hover:shadow-md transition-all">
       <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${colors[color]}`}>
         <Icon size={22} />
       </div>

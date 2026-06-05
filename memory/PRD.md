@@ -59,6 +59,21 @@ Ibu-ibu milenial & Gen Z (kelahiran 1980-2000) yang anaknya SD. Modern, kekinian
 - **SmartImage useEffect**: dokumentasi komentar bahwa setters/normalizer stable & sengaja tidak masuk deps.
 - **Tidak dikerjakan (alasan tetap)**: httpOnly cookies (P2 — butuh backend session refactor + CSRF), refactor complexity `seed_database`/`insights_dashboard`/`analytics_stats`/`get_sales_report` (P2 — di backlog), refactor komponen `Catalog`/`Checkout`/`OnboardingModal` (P2), index-as-key di test files (tidak runtime-impact), `is` vs `==` di server.py 752/1173 (false-positive — `is not None` adalah convention Python yang benar).
 
+### Phase 16 ✅ FASE 4 — Seller Dashboard Revamp (Feb 2026)
+- **4 Dynamic Tabs**: Umum (General), Inventori, Penjualan (Sales), Pelanggan (Customer). Real-time data dari MongoDB, NO dummy.
+- **4 Backend Endpoints** (PIN-guarded):
+  - `GET /api/dashboard/general?period=7d|30d|90d|custom` → KPI {revenue, orders, AOV, unique_customers}, trend chart, top_products, recent_orders, status_breakdown
+  - `GET /api/dashboard/inventory` → KPI {total_products, low_stock, OOS, stock_value}, low_stock_items, top_movers, slow_movers, category_breakdown
+  - `GET /api/dashboard/sales?period=...` → trend (revenue+orders 2-axis), payment_breakdown (pie), category_sales (bar), best_sellers, status_funnel, hour_heatmap (24)
+  - `GET /api/dashboard/customer?period=...` → KPI {total, new, returning, retention%, avg_orders}, top_customers (lifetime), acquisition_trend (stacked bar)
+- **Frontend**: `Dashboard.js` baru dengan recharts (AreaChart, LineChart, BarChart, PieChart). KpiCard + ChartCard helpers. Period switcher 7d/30d/90d (hidden untuk Inventory — always real-time snapshot).
+- **Widget Visibility Config**: `storeConfig.dashboard_config` dengan 4 sub-dicts. Seller page "Widget Dashboard" untuk toggle on/off per widget. `show_* !== false` → render. Bulk "Show All / Hide All" per tab.
+- **Default Period Configurable**: `dashboard_config.default_period` (7d/30d/90d) — saved & loaded on dashboard mount.
+- **Axios interceptor diperluas**: auto-attach X-Seller-PIN untuk `/api/dashboard/*`, `/api/admin/fonnte-status`.
+- **Note**: `stock_value` & category breakdown pakai `cost_price OR price * stock` — semantically lebih akurat utk valuasi inventori (cost basis bukan retail).
+- **Test report**: `/app/test_reports/iteration_11.json` — Backend 22/22 (100%), Frontend 37/37 (100%).
+- **Tech debt naik**: server.py kini 2253 lines — refactor ke `/app/backend/routes/*.py` prioritas P1 di backlog.
+
 ### Phase 15 ✅ FASE 3 — Auto-Chat WhatsApp + PDF Invoice (Feb 2026)
 - **Auto-Chat Config (per stage, seller + buyer)**: 5 stage `menunggu/diproses/siap/selesai/dibatalkan` masing-masing punya `seller_enabled`, `seller_template`, `buyer_enabled`, `buyer_template`. Template support 15 placeholder: `{order_id}, {customer_name}, {customer_phone}, {customer_address}, {delivery}, {items_detail}, {total}, {subtotal}, {notes}, {status}, {status_desc}, {status_emoji}, {store_name}, {timestamp}, {track_link}`.
 - **Backend logic**:
@@ -132,7 +147,10 @@ Ibu-ibu milenial & Gen Z (kelahiran 1980-2000) yang anaknya SD. Modern, kekinian
   - Auto-chat config 5 stages × {seller, buyer} = 10 templates configurable
   - PDF Invoice jsPDF client-side + 15 configurable text fields
   - Backfill safe (preserve user edits)
-- [ ] **FASE 4 — Seller Dashboard Revamp (P2, next)**
+- [x] **FASE 4 — Seller Dashboard Revamp (P2)** ✅ done
+  - 4 tabs General/Inventory/Sales/Customer (recharts, real-time, no dummy)
+  - Period filter 7d/30d/90d + Widget visibility config + Default period saveable
+- [ ] **FASE 5 — PWA Seller App (P2, next)**
   - Auto-chat config per stage order (toggle + edit wording)
   - PDF Invoice/Receipt (jsPDF client-side) — wording configurable
 - [ ] **FASE 4 — Seller Dashboard Revamp (P2)**
