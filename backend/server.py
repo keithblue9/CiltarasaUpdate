@@ -953,8 +953,12 @@ async def fonnte_device_status(_auth: bool = Depends(require_seller)):
             )
             data = r.json() if r.headers.get("content-type", "").startswith("application/json") else {"raw": r.text}
             # Fonnte returns { device: "...", status: "connect"/"disconnect", quota: N, ... }
-            status_val = (data.get("status") or "").lower()
+            status_val = (data.get("status") or "").lower() if isinstance(data.get("status"), str) else ""
             connected = status_val in ("connect", "connected", "active")
+            # Surface error reason to top-level for UI clarity
+            reason = None
+            if not connected:
+                reason = data.get("reason") or data.get("message") or (status_val if status_val else "Device disconnected")
             return {
                 "ok": True,
                 "connected": connected,
@@ -964,6 +968,7 @@ async def fonnte_device_status(_auth: bool = Depends(require_seller)):
                 "messages": data.get("messages"),
                 "enabled": enabled,
                 "seller_phone": seller_phone,
+                "reason": reason,
                 "raw": data,
             }
     except Exception as e:

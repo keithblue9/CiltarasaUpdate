@@ -54,7 +54,7 @@ export function FonnteConfig() {
       const r = await axios.get(`${API}/api/admin/fonnte-status`);
       setDeviceStatus(r.data);
     } catch (e) {
-      setDeviceStatus({ ok: false, connected: false, reason: 'Error koneksi ke server' });
+      setDeviceStatus({ ok: false, connected: false, reason: 'Klik Cek Status untuk update' });
     } finally {
       setCheckingStatus(false);
     }

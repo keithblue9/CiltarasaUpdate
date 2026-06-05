@@ -59,6 +59,14 @@ Ibu-ibu milenial & Gen Z (kelahiran 1980-2000) yang anaknya SD. Modern, kekinian
 - **SmartImage useEffect**: dokumentasi komentar bahwa setters/normalizer stable & sengaja tidak masuk deps.
 - **Tidak dikerjakan (alasan tetap)**: httpOnly cookies (P2 — butuh backend session refactor + CSRF), refactor complexity `seed_database`/`insights_dashboard`/`analytics_stats`/`get_sales_report` (P2 — di backlog), refactor komponen `Catalog`/`Checkout`/`OnboardingModal` (P2), index-as-key di test files (tidak runtime-impact), `is` vs `==` di server.py 752/1173 (false-positive — `is not None` adalah convention Python yang benar).
 
+### Phase 13 ✅ FASE 1 — P0 Bug Fixes (Feb 2026)
+- **Bug #11 (Stock Restoration on Cancel)**: `PUT /api/orders/{oid}/status` sekarang restore stock + decrement sold_count saat status = `dibatalkan`. Idempotent: flag `stock_restored` di order doc mencegah double-restore. Hanya restore jika `prev_status != dibatalkan` AND `stock_restored != true`. Verified via testing agent.
+- **Bug #4 (Filter Inactive Payment Methods)**: `Checkout.js` sekarang baca dari `storeConfig.payment_methods.filter(p => p.active !== false)` instead of hardcoded `[transfer, cod, qris]`. Auto-pilih method aktif pertama jika current selection tidak tersedia. Fallback ke DEFAULT_PAYMENTS jika store_config kosong.
+- **Bug #3 (WA Notif Diagnostics)**: `POST /api/orders` & `PUT /api/orders/{oid}/status` sekarang return `_wa_seller_sent`, `_wa_seller_reason`, `_wa_buyer_sent`, `_wa_buyer_reason` untuk diagnostic. Logger warn jika gagal kirim.
+- **NEW: Live Fonnte Device Status Endpoint** `GET /api/admin/fonnte-status` (PIN-guarded): real-time check device terhubung/terputus via Fonnte `/device` API. Returns `connected`, `status`, `device`, `quota`, `messages`, `reason` (top-level untuk error precision). UI badge live di FonnteConfig dengan warna hijau/merah + tombol "Cek Status" + auto-check on mount.
+- **Fix #2 (Remove Popup → Direct WA Redirect)**: `Checkout.js` `SuccessScreen` modal dihapus. Setelah order dibuat → toast "Pesanan dibuat! Membuka WhatsApp..." → `window.location.href = wa.me/...` langsung → fallback navigate ke `/buyer/track?order={number}`.
+- **Test report**: `/app/test_reports/iteration_8.json` — 100% backend (4/4) + 90% frontend pass.
+
 ## Test Credentials
 - Seller PIN: `ciltarasa` (also `X-Seller-PIN` header)
 - Buyer OTP: real Fonnte OTP via WA, fallback `123456` if Fonnte device disconnected/disabled
@@ -82,6 +90,24 @@ Ibu-ibu milenial & Gen Z (kelahiran 1980-2000) yang anaknya SD. Modern, kekinian
 - Review photo upload (mock unsplash URL only — easy upgrade later via ImageUrlInput)
 
 ## Backlog / Roadmap
+
+### P0 — User Requested (11 items, FASE 1 ✅ done)
+- [x] Bug #3: WA notif diagnostic + live device status (Phase 13)
+- [x] Bug #4: Filter inactive payment methods (Phase 13)
+- [x] Bug #11: Stock restoration on cancel (Phase 13)
+- [x] Fix #2: Remove popup → direct WA redirect (Phase 13)
+- [ ] **FASE 2 — Payment Flow Revamp (P1, next)**
+  - Bank Transfer: pilih bank → Pay Now vs Pay Later → upload bukti .jpg jika Pay Now
+  - QRIS: seller upload QR via config → buyer scan → "Telah Bayar" → upload bukti .jpg
+  - Wording payment proof configurable di seller admin
+- [ ] **FASE 3 — Auto-Chat & Invoice (P1)**
+  - Auto-chat config per stage order (toggle + edit wording)
+  - PDF Invoice/Receipt (jsPDF client-side) — wording configurable
+- [ ] **FASE 4 — Seller Dashboard Revamp (P2)**
+  - 4 tab dinamis: General, Inventory, Sales, Customer (real-time, no dummy)
+  - Widget visibility config (hide/show)
+- [ ] **FASE 5 — PWA Seller App (P2)**
+  - Manifest + SW khusus seller route
 
 ### P1 — Recommended Next
 - [ ] Fonnte device status indicator in seller WA config (UI badge + toast on disconnect)
