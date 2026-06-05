@@ -15,7 +15,7 @@ import uuid
 import pytest
 import requests
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://frozen-snack-hub.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://seller-app-hub.preview.emergentagent.com").rstrip("/")
 API = f"{BASE_URL}/api"
 DEFAULT_PIN = "ciltarasa"
 TEST_NEW_PIN = "tst_pin_9912"
