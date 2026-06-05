@@ -59,6 +59,24 @@ Ibu-ibu milenial & Gen Z (kelahiran 1980-2000) yang anaknya SD. Modern, kekinian
 - **SmartImage useEffect**: dokumentasi komentar bahwa setters/normalizer stable & sengaja tidak masuk deps.
 - **Tidak dikerjakan (alasan tetap)**: httpOnly cookies (P2 — butuh backend session refactor + CSRF), refactor complexity `seed_database`/`insights_dashboard`/`analytics_stats`/`get_sales_report` (P2 — di backlog), refactor komponen `Catalog`/`Checkout`/`OnboardingModal` (P2), index-as-key di test files (tidak runtime-impact), `is` vs `==` di server.py 752/1173 (false-positive — `is not None` adalah convention Python yang benar).
 
+### Phase 17 ✅ FASE 5 — PWA Seller App + Web Push (Feb 2026)
+- **Seller Manifest**: `/seller-manifest.json` baru. `start_url=/#/seller`, `theme=#7C2D12`, 3 shortcuts (Pesanan Masuk, Dashboard, Produk). Auto-swap saat masuk seller route, restore saat keluar.
+- **Web Push (VAPID standar, bukan FCM)**: backend `pywebpush + py-vapid`. Keys auto-generated saat startup pertama (stored di `db.auth_config._id=vapid`). Persist across restart.
+- **5 Push Endpoints**:
+  - `GET /api/push/vapid-key` (public) — public key base64url
+  - `POST /api/push/subscribe` (PIN) — upsert by endpoint (no duplicate on re-subscribe)
+  - `POST /api/push/unsubscribe` (PIN)
+  - `GET /api/push/subscriptions` (PIN) — list all devices
+  - `POST /api/push/test` (PIN) — broadcast test
+- **Auto-broadcast on new order**: `POST /api/orders` panggil `broadcast_push()` ke semua subscribers. Stale subscription (404/410) auto-cleanup. `_push_sent` di response.
+- **Service Worker** `/sw.js` v1.1.0: extended push handler dengan focus-existing-tab logic + 3 actions.
+- **SellerPushSettings**: UI penuh — status card (BellRing/BellOff), label device, list active subscriptions, test push, delete per-device.
+- **SellerPwaInstallBanner**: appear 10s setelah masuk seller, separate dari buyer banner, session-persistent dismiss.
+- **Axios interceptor**: PIN auto-attach untuk `/api/push/*`.
+- **Test report**: `/app/test_reports/iteration_12.json` — Backend 13/13 (100%), Frontend 100% (semua manifest swap, install banner, dismiss persistence, axios PIN injection verified).
+- **Fixed minor 401 race**: Dashboard pertama load — silent retry 800ms jika 401 (PIN interceptor belum ready).
+- **Tech debt**: server.py = 2434 lines. Refactor ke `/app/backend/routes/{push,orders,dashboard}.py` jadi P1 priority.
+
 ### Phase 16 ✅ FASE 4 — Seller Dashboard Revamp (Feb 2026)
 - **4 Dynamic Tabs**: Umum (General), Inventori, Penjualan (Sales), Pelanggan (Customer). Real-time data dari MongoDB, NO dummy.
 - **4 Backend Endpoints** (PIN-guarded):
@@ -150,7 +168,15 @@ Ibu-ibu milenial & Gen Z (kelahiran 1980-2000) yang anaknya SD. Modern, kekinian
 - [x] **FASE 4 — Seller Dashboard Revamp (P2)** ✅ done
   - 4 tabs General/Inventory/Sales/Customer (recharts, real-time, no dummy)
   - Period filter 7d/30d/90d + Widget visibility config + Default period saveable
-- [ ] **FASE 5 — PWA Seller App (P2, next)**
+- [x] **FASE 5 — PWA Seller App + Web Push (P2)** ✅ done
+  - Seller manifest separate + auto-swap on route
+  - Web Push (VAPID) with device subscription management
+  - Install banner & 3 shortcuts terpisah dari buyer PWA
+  - Auto-push on new order + stale cleanup
+- [ ] **Backend Refactor (P1, next)**
+  - Split server.py (2434 lines) → /app/backend/routes/{auth,orders,products,push,dashboard,store_config}.py
+  - Models → /app/backend/models/
+  - Helpers → /app/backend/lib/
   - Auto-chat config per stage order (toggle + edit wording)
   - PDF Invoice/Receipt (jsPDF client-side) — wording configurable
 - [ ] **FASE 4 — Seller Dashboard Revamp (P2)**

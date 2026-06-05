@@ -538,7 +538,18 @@ export default function Dashboard() {
       const r = await axios.get(url);
       setData(d => ({ ...d, [tab]: r.data }));
     } catch (e) {
-      toast.error(`Gagal load tab ${tab}`);
+      // Silent retry once after 800ms (axios PIN interceptor may not be ready on first mount)
+      if (e?.response?.status === 401) {
+        setTimeout(async () => {
+          try {
+            const url = `${API}/api/dashboard/${tab}${tab !== 'inventory' ? `?period=${p}` : ''}`;
+            const r = await axios.get(url);
+            setData(d => ({ ...d, [tab]: r.data }));
+          } catch { toast.error(`Gagal load tab ${tab}`); }
+        }, 800);
+      } else {
+        toast.error(`Gagal load tab ${tab}`);
+      }
     } finally {
       setLoading(false);
     }
