@@ -32,6 +32,8 @@ export function FonnteConfig() {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testTarget, setTestTarget] = useState('');
+  const [deviceStatus, setDeviceStatus] = useState(null);
+  const [checkingStatus, setCheckingStatus] = useState(false);
 
   useEffect(() => {
     if (storeConfig) {
@@ -46,12 +48,26 @@ export function FonnteConfig() {
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
+  const checkDeviceStatus = async () => {
+    setCheckingStatus(true);
+    try {
+      const r = await axios.get(`${API}/api/admin/fonnte-status`);
+      setDeviceStatus(r.data);
+    } catch (e) {
+      setDeviceStatus({ ok: false, connected: false, reason: 'Error koneksi ke server' });
+    } finally {
+      setCheckingStatus(false);
+    }
+  };
+
   const handleSave = async () => {
     setSaving(true);
     try {
       await axios.put(`${API}/api/store-config`, form);
       await refreshStoreConfig();
       toast.success('Konfigurasi WhatsApp tersimpan! 📱');
+      // Auto-check device status setelah simpan token baru
+      setTimeout(() => checkDeviceStatus(), 500);
     } catch { toast.error('Gagal simpan'); } finally { setSaving(false); }
   };
 
@@ -75,6 +91,14 @@ export function FonnteConfig() {
     }
   };
 
+  // Auto-check status saat mount jika token sudah ada
+  useEffect(() => {
+    if (storeConfig?.fonnte_token) {
+      checkDeviceStatus();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeConfig?.fonnte_token]);
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -83,6 +107,41 @@ export function FonnteConfig() {
           <p className="text-xs text-[#9A3412] mt-0.5">Konfigurasi Fonnte API untuk kirim OTP login + notif pesanan otomatis ke seller & buyer.</p>
         </div>
         <button data-testid="save-fonnte-btn" onClick={handleSave} disabled={saving} className="flex items-center gap-2 bg-gradient-to-r from-[#F97316] to-[#EA580C] text-white font-bold px-5 py-2.5 rounded-full shadow"><Save size={16} /> {saving ? 'Menyimpan...' : 'Simpan'}</button>
+      </div>
+
+      {/* Real-time Device Status Badge */}
+      <div data-testid="fonnte-device-status" className={`rounded-2xl border-2 p-4 flex items-center justify-between gap-3 flex-wrap ${
+        deviceStatus?.connected ? 'border-green-300 bg-green-50' :
+        deviceStatus && !deviceStatus.connected ? 'border-red-300 bg-red-50' :
+        'border-[#FED7AA] bg-[#FFF7ED]'
+      }`}>
+        <div className="flex items-center gap-3">
+          <div className={`w-3 h-3 rounded-full ${
+            deviceStatus?.connected ? 'bg-green-500 animate-pulse' :
+            deviceStatus && !deviceStatus.connected ? 'bg-red-500' : 'bg-gray-400'
+          }`} />
+          <div>
+            <p className="font-bold text-[#7C2D12] text-sm">
+              Status Device Fonnte:&nbsp;
+              {checkingStatus ? <span className="text-gray-500">Mengecek...</span> :
+                deviceStatus?.connected ? <span className="text-green-700">Terhubung ✅</span> :
+                deviceStatus ? <span className="text-red-700">Terputus ❌</span> :
+                <span className="text-gray-500">Belum dicek</span>
+              }
+            </p>
+            {deviceStatus && (
+              <p className="text-xs text-[#9A3412] mt-0.5">
+                {deviceStatus.connected ?
+                  <>Device: <strong>{deviceStatus.device}</strong> · Quota: <strong>{deviceStatus.quota ?? '—'}</strong> · Sent: <strong>{deviceStatus.messages ?? '—'}</strong></> :
+                  <>{deviceStatus.reason || 'Device disconnected. Scan ulang QR di fonnte.com'}</>
+                }
+              </p>
+            )}
+          </div>
+        </div>
+        <button data-testid="check-fonnte-status-btn" onClick={checkDeviceStatus} disabled={checkingStatus || !form.fonnte_token} className="flex items-center gap-2 bg-white border border-[#FED7AA] text-[#7C2D12] font-bold px-4 py-2 rounded-xl hover:bg-[#FFF7ED] disabled:opacity-50 text-sm">
+          <RefreshCw size={14} className={checkingStatus ? 'animate-spin' : ''} /> Cek Status
+        </button>
       </div>
 
       <Section title="Kredensial Fonnte" icon={MessageCircle}>

@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, CheckCircle, Copy, MessageCircle } from 'lucide-react';
+import { ArrowLeft, MessageCircle } from 'lucide-react';
 import axios from 'axios';
 import { useApp } from '../../context/AppContext';
 import { toast } from 'sonner';
@@ -8,54 +8,41 @@ import { toast } from 'sonner';
 const formatRp = (n) => `Rp ${Number(n).toLocaleString('id-ID')}`;
 const API = process.env.REACT_APP_BACKEND_URL;
 
-function SuccessScreen({ order, onTrack }) {
-  const copy = () => {
-    navigator.clipboard.writeText(order.order_number);
-    toast.success('Order ID disalin!');
-  };
-  return (
-    <div className="min-h-[70vh] flex items-center justify-center px-4">
-      <div className="max-w-md w-full text-center">
-        <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
-          <CheckCircle size={48} className="text-green-500 check-pop" />
-        </div>
-        <h2 className="font-heading text-3xl font-bold text-[#78350F] mb-2">Pesanan Berhasil!</h2>
-        <p className="text-[#92400E] font-body mb-6">Pesananmu sudah kami terima. Seller akan segera mengkonfirmasi.</p>
-        <div className="bg-[#FDF8F0] border border-[#FED7AA] rounded-2xl p-6 mb-6">
-          <p className="text-sm text-[#92400E] mb-1">Order ID kamu:</p>
-          <div className="flex items-center justify-center gap-2">
-            <span className="font-heading text-2xl font-bold text-[#D97706]">{order.order_number}</span>
-            <button onClick={copy} className="text-[#92400E] hover:text-[#D97706] transition-colors">
-              <Copy size={16} />
-            </button>
-          </div>
-          <p className="text-xs text-[#92400E] mt-2">Simpan Order ID ini untuk melacak pesananmu</p>
-        </div>
-        <div className="flex flex-col sm:flex-row gap-3">
-          <button
-            data-testid="track-order-btn"
-            onClick={onTrack}
-            className="flex-1 bg-[#D97706] text-white font-bold py-3 rounded-full hover:bg-[#B45309] transition-all"
-          >
-            Lacak Pesanan
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+// Default payment methods (fallback jika store_config kosong)
+const DEFAULT_PAYMENTS = [
+  { id: 'transfer', name: 'Transfer Bank', type: 'transfer', emoji: '🏦', active: true },
+  { id: 'cod', name: 'COD (Tunai)', type: 'cod', emoji: '💵', active: true },
+  { id: 'qris', name: 'QRIS', type: 'qris', emoji: '📱', active: true },
+];
+const PAYMENT_EMOJI = { transfer: '🏦', cod: '💵', qris: '📱', ewallet: '👛', card: '💳' };
 
 export default function Checkout() {
-  const { cart, cartTotal, clearCart, settings, authUser, authToken } = useApp();
+  const { cart, cartTotal, clearCart, settings, storeConfig, authUser, authToken } = useApp();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
-  const [order, setOrder] = useState(null);
   const [form, setForm] = useState({
     customer_name: authUser?.name || '',
     customer_phone: authUser?.phone ? authUser.phone.replace(/^62/, '0') : '',
     customer_address: '',
     delivery_method: 'delivery', notes: '', payment_method: 'transfer'
   });
+
+  // ─── BUG FIX #4: filter active payment methods dari store_config ───
+  const activePayments = useMemo(() => {
+    const list = (storeConfig?.payment_methods || []).filter(p => p.active !== false);
+    if (list.length === 0) return DEFAULT_PAYMENTS;
+    return list.map(p => ({
+      ...p,
+      emoji: p.emoji || PAYMENT_EMOJI[p.type] || PAYMENT_EMOJI[p.id] || '💳',
+    }));
+  }, [storeConfig]);
+
+  // Auto-pilih payment method pertama yang aktif jika current tidak tersedia
+  React.useEffect(() => {
+    if (activePayments.length > 0 && !activePayments.find(p => p.id === form.payment_method)) {
+      setForm(f => ({ ...f, payment_method: activePayments[0].id }));
+    }
+  }, [activePayments, form.payment_method]);
 
   React.useEffect(() => {
     if (authUser) {
@@ -89,17 +76,17 @@ export default function Checkout() {
         ...form, items, subtotal: cartTotal, total: cartTotal,
         user_id: authToken || null
       });
-      if (res.data?._wa_seller_sent) {
-        toast.success('✅ Notif WA terkirim ke seller!');
-      }
       const newOrder = res.data;
-      setOrder(newOrder);
       clearCart();
 
-      // WhatsApp notification to seller
-      if (settings?.auto_whatsapp && settings?.seller_whatsapp) {
+      // ─── FIX #2: Langsung ke WhatsApp seller TANPA popup ───
+      const sellerWA = settings?.seller_whatsapp || storeConfig?.seller_notify_phone || storeConfig?.whatsapp;
+      if (sellerWA) {
         const itemsDetail = items.map(i => `- ${i.product_name} x${i.quantity} = ${formatRp(i.subtotal)}`).join('\n');
-        const msg = (settings.message_template || '')
+        const template = settings?.message_template || (
+          `Halo ${storeConfig?.name || 'Ciltarasa'}!\n\nSaya mau pesan:\n{items_detail}\n\nNama: {customer_name}\nHP: {customer_phone}\nAlamat: {customer_address}\nCatatan: {notes}\n\nTotal: Rp {total}\nOrder ID: #{order_id}`
+        );
+        const msg = template
           .replace('{order_id}', newOrder.order_number)
           .replace('{customer_name}', newOrder.customer_name)
           .replace('{customer_phone}', newOrder.customer_phone)
@@ -107,9 +94,14 @@ export default function Checkout() {
           .replace('{items_detail}', itemsDetail)
           .replace('{total}', formatRp(newOrder.total).replace('Rp ', ''))
           .replace('{notes}', newOrder.notes || '-');
-        setTimeout(() => {
-          window.open(`https://wa.me/${settings.seller_whatsapp}?text=${encodeURIComponent(msg)}`, '_blank');
-        }, 500);
+        toast.success('Pesanan dibuat! Membuka WhatsApp...');
+        // Langsung redirect ke WA seller — no extra step
+        window.location.href = `https://wa.me/${sellerWA}?text=${encodeURIComponent(msg)}`;
+        // Setelah klik back, akan masuk ke tracking page
+        setTimeout(() => navigate(`/buyer/track?order=${newOrder.order_number}`), 800);
+      } else {
+        toast.success(`Pesanan ${newOrder.order_number} berhasil dibuat!`);
+        navigate(`/buyer/track?order=${newOrder.order_number}`);
       }
     } catch (err) {
       toast.error('Gagal membuat pesanan. Coba lagi.');
@@ -117,10 +109,6 @@ export default function Checkout() {
       setLoading(false);
     }
   };
-
-  if (order) {
-    return <SuccessScreen order={order} onTrack={() => navigate('/buyer/track')} />;
-  }
 
   if (cart.length === 0) {
     return (
@@ -184,15 +172,19 @@ export default function Checkout() {
         {/* Payment */}
         <div className="bg-white rounded-2xl border border-[#FED7AA] p-6">
           <h3 className="font-heading font-bold text-[#78350F] text-lg mb-4">Metode Pembayaran</h3>
-          <div className="grid grid-cols-3 gap-3">
-            {[{ id: 'transfer', label: 'Transfer Bank', emoji: '🏦' }, { id: 'cod', label: 'COD (Tunai)', emoji: '💵' }, { id: 'qris', label: 'QRIS', emoji: '📱' }].map(p => (
-              <button key={p.id} type="button" data-testid={`payment-${p.id}`} onClick={() => set('payment_method', p.id)}
-                className={`p-3 rounded-xl border-2 font-semibold text-xs transition-all flex flex-col items-center gap-1.5 ${
-                  form.payment_method === p.id ? 'border-[#D97706] bg-[#FEF3C7] text-[#78350F]' : 'border-[#FED7AA] text-[#92400E] hover:border-[#D97706]'}`}>
-                <span className="text-xl">{p.emoji}</span>{p.label}
-              </button>
-            ))}
-          </div>
+          {activePayments.length === 0 ? (
+            <p className="text-sm text-[#92400E]">Tidak ada metode pembayaran aktif. Silakan hubungi seller.</p>
+          ) : (
+            <div className={`grid gap-3 ${activePayments.length === 1 ? 'grid-cols-1' : activePayments.length === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
+              {activePayments.map(p => (
+                <button key={p.id} type="button" data-testid={`payment-${p.id}`} onClick={() => set('payment_method', p.id)}
+                  className={`p-3 rounded-xl border-2 font-semibold text-xs transition-all flex flex-col items-center gap-1.5 ${
+                    form.payment_method === p.id ? 'border-[#D97706] bg-[#FEF3C7] text-[#78350F]' : 'border-[#FED7AA] text-[#92400E] hover:border-[#D97706]'}`}>
+                  <span className="text-xl">{p.emoji}</span>{p.name}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Notes */}

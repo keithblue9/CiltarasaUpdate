@@ -818,10 +818,20 @@ async def create_order(order: OrderCreate):
     # WA notif to seller
     _, seller_phone, enabled = await get_fonnte_config()
     wa_sent = False
+    wa_reason = None
     if enabled and seller_phone:
         res = await fonnte_send(seller_phone, build_seller_order_message(doc))
         wa_sent = res.get("ok", False)
+        wa_reason = res.get("reason") or res.get("error") or (res.get("response") or {}).get("reason")
+        if not wa_sent:
+            logger.warning(f"WA seller notif failed for order {doc.get('order_number')}: {res}")
+    elif not enabled:
+        wa_reason = "WA notif disabled in config"
+    elif not seller_phone:
+        wa_reason = "seller_notify_phone empty in store_config"
     doc["_wa_seller_sent"] = wa_sent
+    if wa_reason:
+        doc["_wa_seller_reason"] = wa_reason
     return doc
 
 @api_router.put("/orders/{oid}/status")
@@ -830,19 +840,39 @@ async def update_order_status(oid: str, update: OrderStatusUpdate, _auth: bool =
     order = await db.orders.find_one({"id": oid}, {"_id": 0})
     if not order:
         raise HTTPException(404, "Order not found")
+    prev_status = order.get("status")
+    new_status = update.status
     status_ts = order.get("status_timestamps", {})
-    status_ts[update.status] = ts
-    await db.orders.update_one({"id": oid}, {"$set": {"status": update.status, "status_timestamps": status_ts, "updated_at": ts}})
+    status_ts[new_status] = ts
+    update_fields = {"status": new_status, "status_timestamps": status_ts, "updated_at": ts}
+
+    # ─── BUG FIX #11: Restore stock saat order dibatalkan ───
+    # Hanya restore jika transisi dari status non-cancelled ke cancelled & belum direstore
+    stock_restored = order.get("stock_restored", False)
+    if new_status == "dibatalkan" and prev_status != "dibatalkan" and not stock_restored:
+        for item in order.get("items", []):
+            if item.get("product_id"):
+                await db.products.update_one(
+                    {"id": item["product_id"]},
+                    {"$inc": {"stock": int(item.get("quantity", 0)), "sold_count": -int(item.get("quantity", 0))}}
+                )
+        update_fields["stock_restored"] = True
+
+    await db.orders.update_one({"id": oid}, {"$set": update_fields})
     doc = await db.orders.find_one({"id": oid}, {"_id": 0})
     await manager.broadcast({"type": "order_updated", "data": doc})
     # WA notif to buyer
     wa_sent = False
-    if update.status in STATUS_DESC and doc.get("customer_phone"):
+    wa_reason = None
+    if new_status in STATUS_DESC and doc.get("customer_phone"):
         _, _, enabled = await get_fonnte_config()
         if enabled:
             res = await fonnte_send(doc["customer_phone"], build_buyer_status_message(doc, APP_URL))
             wa_sent = res.get("ok", False)
+            wa_reason = res.get("reason") or res.get("error") or (res.get("response") or {}).get("reason")
     doc["_wa_buyer_sent"] = wa_sent
+    if wa_reason:
+        doc["_wa_buyer_reason"] = wa_reason
     return doc
 
 @api_router.put("/orders/{oid}/received")
@@ -908,6 +938,37 @@ async def test_wa(req: TestWAReq, _auth: bool = Depends(require_seller)):
     msg = req.message or "🔔 Tes notifikasi dari dashboard Ciltarasa. Jika kamu menerima ini, integrasi Fonnte sukses! ✅"
     res = await fonnte_send(req.target, msg)
     return res
+
+@api_router.get("/admin/fonnte-status")
+async def fonnte_device_status(_auth: bool = Depends(require_seller)):
+    """Real-time check Fonnte device status (connected/disconnected). Push aktual, bukan static."""
+    token, seller_phone, enabled = await get_fonnte_config()
+    if not token:
+        return {"ok": False, "connected": False, "reason": "Token Fonnte belum diisi"}
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.post(
+                "https://api.fonnte.com/device",
+                headers={"Authorization": token},
+            )
+            data = r.json() if r.headers.get("content-type", "").startswith("application/json") else {"raw": r.text}
+            # Fonnte returns { device: "...", status: "connect"/"disconnect", quota: N, ... }
+            status_val = (data.get("status") or "").lower()
+            connected = status_val in ("connect", "connected", "active")
+            return {
+                "ok": True,
+                "connected": connected,
+                "status": status_val or "unknown",
+                "device": data.get("device") or data.get("name") or "-",
+                "quota": data.get("quota"),
+                "messages": data.get("messages"),
+                "enabled": enabled,
+                "seller_phone": seller_phone,
+                "raw": data,
+            }
+    except Exception as e:
+        logger.warning(f"Fonnte device status check failed: {e}")
+        return {"ok": False, "connected": False, "reason": f"Error: {str(e)}"}
 
 class ResetCustomersReq(BaseModel):
     confirm: str  # must equal "RESET"

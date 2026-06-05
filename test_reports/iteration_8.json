@@ -1,0 +1,42 @@
+{
+  "summary": "FASE 1 (P0 bug fixes) testing complete. All 4 backend tests passed. Frontend verifications passed: QRIS filtered, SuccessScreen removed, Fonnte status badge live. One minor UX issue: Fonnte device status endpoint returns 'token invalid' inside raw{} but does not surface to top-level 'reason' field; UI ends up showing generic fallback rather than 'token invalid'.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/admin/fonnte-status", "issue": "When Fonnte returns {status:false, reason:'token invalid'}, server returns top-level reason=undefined. The actual reason is nested in raw.reason. UI cannot easily display the precise cause. Suggested: when status_val falsy/empty and connected=false, lift data.get('reason') to top-level reason."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Checkout submit (direct WA redirect)", "issue": "Could not fully verify wa.me popup opened in Playwright (popup blocker on some headless contexts), but code review confirms window.open(waUrl, '_blank') is called after toast. No SuccessScreen, no track-order-btn, no 'Pesanan Berhasil!' modal — all per spec.", "affected_selectors": ["[data-testid=\"submit-order-btn\"]"]}
+    ],
+    "design_issues": [
+      {"screen": "Seller WhatsApp Settings", "issues": ["Device status reason text shows 'Error koneksi ke server' on initial load instead of actual Fonnte error 'token invalid'. After clicking 'Cek Status' the badge correctly shows red 'Terputus' but the underlying reason should be 'token invalid' from API raw payload."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_fase1.py",
+    "/app/test_reports/pytest/pytest_fase1.xml"
+  ],
+  "action_items": [
+    "(Minor) In /api/admin/fonnte-status, surface raw.reason to top-level 'reason' field when connected=false so UI can display 'token invalid' precisely (e.g. reason: data.get('reason') or default).",
+    "(Optional) Frontend AdminPages.js FonnteConfig: when checkDeviceStatus errors on first auto-call, show 'Klik Cek Status untuk update' instead of 'Error koneksi ke server' to avoid misleading users."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 1300+ lines — consider splitting into routers (orders.py, products.py, admin.py, analytics.py) for maintainability.",
+    "Bug #11 stock_restored idempotency logic is correct: gated by both prev_status check AND stock_restored flag — verified via test.",
+    "WA diagnostic fields (_wa_seller_sent/_wa_buyer_sent/_wa_*_reason) correctly populated on order create and status update.",
+    "Checkout.js direct WA redirect cleanly removes SuccessScreen — verified no track-order-btn or 'Pesanan Berhasil!' modal."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_fase1.py (new)"
+  ],
+  "success_rate": {"backend": "100% (4/4)", "frontend": "90% (popup capture flaky but core flow verified)"},
+  "test_credentials": "Seller PIN: ciltarasa",
+  "seed_data_creation": "Test products with TEST_ prefix auto-cleaned by fixture teardown. QRIS payment method was set to active=false during test and restored.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All FASE 1 fixes (Bug #11 stock restore, /api/admin/fonnte-status, WA diagnostics, QRIS filter, SuccessScreen removal, Fonnte badge) verified. Token 'QyMJ55FmqmLQGUxmwsBw' is intentionally expired ('token invalid' from Fonnte). Re-seed schema is v2.4.1.",
+  "rca of the issue": "N/A — no critical issues found. Minor reason-surfacing improvement noted."
+}
