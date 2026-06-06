@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Ciltarasa Seller</title>
+  <meta name="theme-color" content="#7C2D12" />
+  <link rel="manifest" href="/seller-manifest.json" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Ciltarasa Seller" />
+  <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+  <script>
+    // Redirect ke seller route
+    if (window.location.pathname === '/' || window.location.pathname === '/seller-index.html') {
+      window.location.replace('/#/seller');
+    }
+  </script>
+</head>
+<body style="background:#7C2D12;margin:0;display:flex;align-items:center;justify-content:center;height:100vh;">
+  <img src="/icons/icon-192.png" style="width:80px;border-radius:16px;" />
+</body>
+</html>
