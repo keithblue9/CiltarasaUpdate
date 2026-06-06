@@ -1,3 +1,15 @@
+function App() {
+  // Auto-redirect jika dibuka dari seller subdomain
+  if (window.location.hostname === 'seller.ciltarasa.online' && 
+      !window.location.hash.includes('/seller')) {
+    window.location.replace('/#/seller');
+    return null;
+  }
+
+  return (
+    // ... sisa kode yang sudah ada
+  );
+}
 import React from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'sonner';
