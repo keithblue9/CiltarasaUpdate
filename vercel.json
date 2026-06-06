@@ -1,0 +1,14 @@
+{
+  "rewrites": [
+    {
+      "source": "/",
+      "has": [{ "type": "host", "value": "seller.ciltarasa.online" }],
+      "destination": "/seller-index.html"
+    },
+    {
+      "source": "/(.*)",
+      "has": [{ "type": "host", "value": "seller.ciltarasa.online" }],
+      "destination": "/seller-index.html"
+    }
+  ]
+}
