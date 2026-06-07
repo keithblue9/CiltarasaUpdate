@@ -41,12 +41,8 @@ function ConfirmReceivedBanner({ order, onRefresh }) {
         toast.success('Terima kasih sudah konfirmasi! Yuk kasih review 💝');
         setReviewOpen(true);
       } else {
-        toast('Kami catat. Membuka WhatsApp untuk lapor ke seller... 📞', { icon: '📞' });
-        const sellerWA = storeConfig?.whatsapp || settings?.seller_whatsapp;
-        if (sellerWA) {
-          const msg = `Halo! Saya ingin melaporkan bahwa pesanan saya *BELUM DITERIMA* 😟\n\nOrder ID: #${order.order_number}\nNama: ${order.customer_name}\nTotal: Rp ${Number(order.total).toLocaleString('id-ID')}\n\nMohon segera ditindaklanjuti. Terima kasih 🙏`;
-          setTimeout(() => window.open(`https://wa.me/${sellerWA}?text=${encodeURIComponent(msg)}`, '_blank'), 500);
-        }
+        // No more auto-WA popup. Backend will send WA notif to seller (via Fonnte).
+        toast.success('Kami catat. Seller akan dikabari otomatis via WhatsApp. 📞');
       }
       onRefresh?.();
     } catch {
@@ -162,9 +158,18 @@ function OrderCard({ order, settings, onRefresh }) {
       const fd = new FormData();
       fd.append('file', f);
       const r = await axios.post(`${API}/api/media/upload-proof`, fd);
+      if (!r.data?.url) {
+        throw new Error('No URL in response');
+      }
       setProofUrl(r.data.url);
       toast.success('Bukti terupload!');
-    } catch { toast.error('Gagal upload'); } finally { setUploading(false); if (fileRef.current) fileRef.current.value = ''; }
+    } catch (err) {
+      console.error('[OrderTracking] proof upload failed:', err?.response?.data || err?.message || err);
+      toast.error('Gagal upload: ' + (err?.response?.data?.detail || err?.message || 'unknown'));
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
   };
 
   const handleSubmitProof = async () => {
@@ -376,13 +381,8 @@ export default function OrderTracking() {
     }
   }, [authUser, searched, search]);
 
-  // Auto-refresh every 10s if we have results
-  useEffect(() => {
-    if (!searched || orders.length === 0) return;
-    const interval = setInterval(() => search(query), 10000);
-    return () => clearInterval(interval);
-  }, [searched, orders.length, query, search]);
-
+  // Auto-refresh disabled — refresh via manual button or real-time WebSocket only.
+  // (kept here intentionally empty so buyer keeps stable state while uploading bukti)
   // React to WS order updates
   useEffect(() => {
     if (wsEvent?.type === 'order_updated' && searched) {
@@ -442,11 +442,14 @@ export default function OrderTracking() {
         <div>
           <div className="flex items-center justify-between mb-4">
             <span className="text-sm text-[#92400E] font-body">{orders.length} pesanan ditemukan</span>
-            {lastRefresh && (
-              <span className="text-xs text-[#92400E] flex items-center gap-1">
-                <RefreshCw size={12} /> Auto-refresh aktif
-              </span>
-            )}
+            <button
+              data-testid="manual-refresh-btn"
+              onClick={() => search(query)}
+              disabled={loading}
+              className="text-xs text-[#92400E] flex items-center gap-1 px-3 py-1.5 rounded-full bg-white border border-[#FED7AA] hover:bg-amber-50 font-semibold disabled:opacity-50"
+            >
+              <RefreshCw size={12} className={loading ? 'animate-spin' : ''} /> Refresh
+            </button>
           </div>
           {orders.map(order => (
             <OrderCard key={order.id} order={order} settings={settings} onRefresh={() => search(query)} />
