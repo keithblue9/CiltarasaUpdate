@@ -436,7 +436,7 @@ DEFAULT_STORE_CONFIG = {
     "_id": "main",
     "name": "Ciltarasa",
     "logo_url": "",
-    "tagline": "Frozen Food Premium • Malang",
+    "tagline": "Homemade Premium - Selected Frozen Food • Malang",
     "whatsapp": "6285190884129",
     "address": "Jl. Kawi No. 15, Malang, Jawa Timur",
     "operating_hours": "Setiap Hari • 08.00 - 21.00 WIB",
