@@ -1088,6 +1088,20 @@ async def get_order(oid: str):
 @api_router.post("/orders")
 async def create_order(order: OrderCreate):
     ts = now_iso()
+    # ✅ Validate stock availability BEFORE creating order — prevent negative stock
+    for item in order.items:
+        if not item.product_id:
+            continue
+        p = await db.products.find_one({"id": item.product_id}, {"_id": 0, "stock": 1, "name": 1})
+        if not p:
+            raise HTTPException(400, f"Produk tidak ditemukan: {item.product_name or item.product_id}")
+        cur_stock = int(p.get("stock") or 0)
+        if cur_stock < int(item.quantity):
+            raise HTTPException(
+                400,
+                f"Stok '{p.get('name', item.product_name)}' tidak cukup. Tersisa {cur_stock}, diminta {item.quantity}."
+            )
+
     onum = await next_order_number()
     data = order.model_dump()
     data["customer_phone"] = normalize_phone(data["customer_phone"])
@@ -1095,6 +1109,7 @@ async def create_order(order: OrderCreate):
         "id": str(uuid.uuid4()), "order_number": onum,
         "status": "menunggu", "status_timestamps": {"menunggu": ts},
         "received": False,
+        "stock_restored": False,  # ✅ explicit flag, will flip True if cancelled later
         "created_at": ts, "updated_at": ts,
         **data
     }
@@ -2448,34 +2463,42 @@ async def get_sales_report(period: str = "month"):
         start = now - timedelta(days=365)
 
     all_orders = await db.orders.find({}, {"_id": 0}).to_list(1000)
+    # ✅ Filter pesanan valid (bukan dibatalkan) untuk hitung revenue
     filtered = [o for o in all_orders if o.get("created_at", "") >= start.isoformat() and o.get("status") != "dibatalkan"]
 
-    total_rev = sum(o["total"] for o in filtered)
+    total_rev = sum(o.get("total", 0) for o in filtered)
     total_ord = len(filtered)
     avg_ord = total_rev / total_ord if total_ord else 0
 
     product_sales = {}
     products = await db.products.find({}, {"_id": 0}).to_list(1000)
-    pcat = {p["name"]: p["category"] for p in products}
-    pstock = {p["name"]: p["stock"] for p in products}
+    # Lookup by id (primary) + name (fallback)
+    pinfo_id = {p.get("id"): p for p in products}
+    pinfo_name = {p.get("name"): p for p in products}
     category_sales = {}
 
     for order in filtered:
         for item in order.get("items", []):
-            pn = item["product_name"]
-            if pn not in product_sales:
-                product_sales[pn] = {"units": 0, "revenue": 0}
-            product_sales[pn]["units"] += item["quantity"]
-            product_sales[pn]["revenue"] += item["subtotal"]
-            cat = pcat.get(pn, "lainnya")
-            category_sales[cat] = category_sales.get(cat, 0) + item["subtotal"]
+            pid = item.get("product_id")
+            pn = item.get("product_name", "-")
+            # Resolve product: prefer id, fallback to name
+            p = pinfo_id.get(pid) or pinfo_name.get(pn)
+            # Use canonical name from product (if found) so renames don't fragment data
+            key_name = (p.get("name") if p else pn) or "-"
+            if key_name not in product_sales:
+                product_sales[key_name] = {"units": 0, "revenue": 0}
+            product_sales[key_name]["units"] += item.get("quantity", 0)
+            product_sales[key_name]["revenue"] += item.get("subtotal", 0)
+            cat = (p.get("category") if p else None) or "lainnya"
+            category_sales[cat] = category_sales.get(cat, 0) + item.get("subtotal", 0)
 
     best_seller = max(product_sales.items(), key=lambda x: x[1]["units"])[0] if product_sales else "N/A"
 
     daily = {}
     for order in filtered:
-        day = order["created_at"][:10]
-        daily[day] = daily.get(day, 0) + order["total"]
+        day = (order.get("created_at") or "")[:10]
+        if day:
+            daily[day] = daily.get(day, 0) + order.get("total", 0)
 
     status_counts = {}
     for order in all_orders:
@@ -2484,9 +2507,11 @@ async def get_sales_report(period: str = "month"):
 
     product_perf = []
     for pn, stats in product_sales.items():
+        # Resolve canonical product for stock
+        p = pinfo_name.get(pn)
         product_perf.append({
             "name": pn, "units": stats["units"], "revenue": stats["revenue"],
-            "stock": pstock.get(pn, 0),
+            "stock": (p.get("stock") if p else 0),
             "pct": round(stats["revenue"] / total_rev * 100, 1) if total_rev else 0
         })
     product_perf.sort(key=lambda x: x["revenue"], reverse=True)
@@ -2501,41 +2526,62 @@ async def get_sales_report(period: str = "month"):
 @api_router.get("/reports/financial")
 async def get_financial_report():
     completed = await db.orders.find({"status": "selesai"}, {"_id": 0}).to_list(1000)
-    total_income = sum(o["total"] for o in completed)
+    total_income = sum(o.get("total", 0) for o in completed)
+    total_delivery = sum(float(o.get("delivery_fee") or 0) for o in completed)
+    # Product revenue = total - delivery (so margin% reflects actual product margin)
+    product_revenue = total_income - total_delivery
 
     products = await db.products.find({}, {"_id": 0}).to_list(1000)
-    pmap = {p["name"]: p for p in products}
+    # Lookup by id (primary) and name (fallback for legacy orders)
+    pmap_id = {p.get("id"): p for p in products}
+    pmap_name = {p.get("name"): p for p in products}
+
+    def lookup_product(item):
+        return pmap_id.get(item.get("product_id")) or pmap_name.get(item.get("product_name"))
+
     total_cogs = 0
     for order in completed:
         for item in order.get("items", []):
-            p = pmap.get(item["product_name"])
+            p = lookup_product(item)
             if p:
-                total_cogs += p.get("cost_price", 0) * item["quantity"]
+                total_cogs += float(p.get("cost_price") or 0) * float(item.get("quantity") or 0)
 
-    gross_profit = total_income - total_cogs
+    gross_profit = product_revenue - total_cogs
     entries = await db.financial_entries.find({"type": "expense"}, {"_id": 0}).to_list(1000)
     total_expenses = sum(e["amount"] for e in entries)
     net_profit = gross_profit - total_expenses
-    margin = (net_profit / total_income * 100) if total_income > 0 else 0
+    # Margin% computed against product revenue (excluding ongkir which is pass-through)
+    margin = (net_profit / product_revenue * 100) if product_revenue > 0 else 0
 
     monthly = {}
     for order in completed:
-        month = order["created_at"][:7]
+        month = order.get("created_at", "")[:7]
+        if not month:
+            continue
         if month not in monthly:
-            monthly[month] = {"income": 0, "cogs": 0, "profit": 0}
-        monthly[month]["income"] += order["total"]
+            monthly[month] = {"income": 0, "cogs": 0, "profit": 0, "delivery": 0}
+        sub = float(order.get("subtotal") or 0)
+        dlv = float(order.get("delivery_fee") or 0)
+        monthly[month]["income"] += sub  # produk revenue only
+        monthly[month]["delivery"] += dlv
         for item in order.get("items", []):
-            p = pmap.get(item["product_name"])
+            p = lookup_product(item)
             if p:
-                monthly[month]["cogs"] += p.get("cost_price", 0) * item["quantity"]
+                monthly[month]["cogs"] += float(p.get("cost_price") or 0) * float(item.get("quantity") or 0)
     for m in monthly:
         monthly[m]["profit"] = monthly[m]["income"] - monthly[m]["cogs"]
 
     return {
-        "total_income": total_income, "total_cogs": total_cogs,
-        "gross_profit": gross_profit, "total_expenses": total_expenses,
-        "net_profit": net_profit, "margin": margin,
-        "monthly": monthly, "transactions": completed[:50],
+        "total_income": total_income,
+        "product_revenue": product_revenue,
+        "total_delivery": total_delivery,
+        "total_cogs": total_cogs,
+        "gross_profit": gross_profit,
+        "total_expenses": total_expenses,
+        "net_profit": net_profit,
+        "margin": margin,
+        "monthly": monthly,
+        "transactions": completed[:50],
         "expense_entries": entries,
     }
 
