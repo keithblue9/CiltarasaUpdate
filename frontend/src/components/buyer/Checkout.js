@@ -334,41 +334,9 @@ export default function Checkout() {
       const newOrder = res.data;
       clearCart();
 
-      const sellerWA = settings?.seller_whatsapp || storeConfig?.seller_notify_phone || storeConfig?.whatsapp;
-      if (sellerWA) {
-        const itemsDetail = items.map(i => `- ${i.product_name} x${i.quantity} = ${formatRp(i.subtotal)}`).join('\n');
-        const paymentLine = (() => {
-          if (currentPaymentType === 'transfer') {
-            const bank = banks.find(b => b.id === form.payment_bank_id);
-            const bankLabel = bank ? `${bank.bank} (${bank.number})` : '';
-            const typeLabel = form.payment_type === 'now' ? texts.pay_now_label : texts.pay_later_label;
-            return `Bayar: Transfer ${bankLabel} - ${typeLabel}`;
-          }
-          if (currentPaymentType === 'qris') return 'Bayar: QRIS (sudah upload bukti)';
-          if (currentPaymentType === 'cod') return 'Bayar: COD';
-          return `Bayar: ${form.payment_method}`;
-        })();
-        const proofLine = form.payment_proof_url
-          ? `\n📎 Bukti bayar: ${form.payment_proof_url.startsWith('/api/') ? API + form.payment_proof_url : form.payment_proof_url}`
-          : '';
-        const template = settings?.message_template || (
-          `Halo ${storeConfig?.name || 'Ciltarasa'}!\n\nSaya mau pesan:\n{items_detail}\n\nNama: {customer_name}\nHP: {customer_phone}\nAlamat: {customer_address}\nCatatan: {notes}\n${paymentLine}${proofLine}\n\nTotal: Rp {total}\nOrder ID: #{order_id}`
-        );
-        const msg = template
-          .replace('{order_id}', newOrder.order_number)
-          .replace('{customer_name}', newOrder.customer_name)
-          .replace('{customer_phone}', newOrder.customer_phone)
-          .replace('{customer_address}', newOrder.customer_address || 'Ambil Sendiri')
-          .replace('{items_detail}', itemsDetail)
-          .replace('{total}', formatRp(newOrder.total).replace('Rp ', ''))
-          .replace('{notes}', (newOrder.notes || '-') + (proofLine ? proofLine : ''));
-        toast.success('Pesanan dibuat! Membuka WhatsApp...');
-        window.location.href = `https://wa.me/${sellerWA}?text=${encodeURIComponent(msg)}`;
-        setTimeout(() => navigate(`/buyer/track?order=${newOrder.order_number}`), 800);
-      } else {
-        toast.success(`Pesanan ${newOrder.order_number} berhasil dibuat!`);
-        navigate(`/buyer/track?order=${newOrder.order_number}`);
-      }
+      // No more auto-WA popup. Buyer can click "Hubungi Seller" button on tracking page if needed.
+      toast.success(`Pesanan ${newOrder.order_number} berhasil dibuat! 🎉`);
+      navigate(`/buyer/track?order=${newOrder.order_number}`);
     } catch (err) {
       toast.error('Gagal membuat pesanan. Coba lagi.');
     } finally {
