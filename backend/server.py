@@ -426,7 +426,7 @@ DEFAULT_PRODUCTS = [
 ]
 
 DEFAULT_SETTINGS = {
-    "seller_whatsapp": "6285249682337",
+    "seller_whatsapp": "6285190884129",
     "store_name": "Ciltarasa",
     "auto_whatsapp": True,
     "message_template": "PESANAN BARU - Ciltarasa\n\nOrder ID: #{order_id}\nPelanggan: {customer_name}\nNo. HP: {customer_phone}\nAlamat: {customer_address}\n\nDetail Pesanan:\n{items_detail}\n\nTotal: Rp {total}\nCatatan: {notes}\n\nSilakan konfirmasi pesanan ini di dashboard Ciltarasa."
@@ -436,8 +436,8 @@ DEFAULT_STORE_CONFIG = {
     "_id": "main",
     "name": "Ciltarasa",
     "logo_url": "",
-    "tagline": "Frozen Food Premium • Malang",
-    "whatsapp": "6285249682337",
+    "tagline": "Homemade Premium - Selected Frozen Food • Malang",
+    "whatsapp": "6285190884129",
     "address": "Jl. Kawi No. 15, Malang, Jawa Timur",
     "operating_hours": "Setiap Hari • 08.00 - 21.00 WIB",
     "cerita": "Ciltarasa lahir dari dapur kecil di Malang tahun 2020. Bermula dari pesanan tetangga yang suka risoles homemade buatan Bunda, kini kami sudah melayani ribuan keluarga di seluruh Malang Raya.\n\nKami percaya makanan beku berkualitas itu bukan instant—tiap produk dibuat fresh tiap hari, dibekukan dengan blast freezer, dan dikirim langsung ke rumah Anda. Tanpa pengawet, tanpa MSG berlebih, hanya rasa autentik yang bikin keluarga ketagihan.\n\nSpesialisasi kami: aneka frozen snack (risoles, lumpia, pastel, cireng) dan Bebek Asap Pawon Ayu—signature dish dengan bumbu rempah Jawa yang sudah turun-temurun.",
@@ -518,7 +518,7 @@ DEFAULT_STORE_CONFIG = {
         "phone_hint": "💡 Pastikan nomor WhatsApp aktif untuk terima kode OTP",
     },
     "fonnte_token": "QyMJ55FmqmLQGUxmwsBw",
-    "seller_notify_phone": "6285249682337",
+    "seller_notify_phone": "6285190884129",
     "wa_notif_enabled": True,
     "low_stock_threshold": 10,
     "restock_safety_days": 2,
