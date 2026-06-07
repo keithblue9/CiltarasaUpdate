@@ -2112,13 +2112,34 @@ async def dashboard_general(period: str = "30d", start: Optional[str] = None, en
         if p and not tp.get("image_url"):
             tp["image_url"] = p.get("image_url", "")
 
-    # Recent orders (last 10)
+    # Recent orders (last 10) — used by "Pesanan Terbaru" widget (incl cancelled, for visibility)
     recent = sorted([o for o in orders], key=lambda o: o.get("created_at", ""), reverse=True)[:10]
     recent_summary = [{
         "id": o.get("id"), "order_number": o.get("order_number"),
-        "customer_name": o.get("customer_name"), "total": o.get("total", 0),
+        "customer_name": o.get("customer_name"), "customer_phone": o.get("customer_phone"),
+        "total": o.get("total", 0),
         "status": o.get("status"), "created_at": o.get("created_at"),
     } for o in recent]
+
+    # ✅ ALL valid orders in range — used by KPI detail modals so they MATCH KPI numbers exactly
+    valid_orders_summary = [{
+        "id": o.get("id"), "order_number": o.get("order_number"),
+        "customer_name": o.get("customer_name"), "customer_phone": o.get("customer_phone"),
+        "total": o.get("total", 0),
+        "status": o.get("status"), "created_at": o.get("created_at"),
+    } for o in sorted(in_range, key=lambda o: o.get("created_at", ""), reverse=True)]
+
+    # ✅ Unique customer aggregation across ALL in-range valid orders (matches kpi.unique_customers exactly)
+    by_phone_in_range = {}
+    for o in in_range:
+        ph = (o.get("customer_phone") or "").strip()
+        if not ph:
+            continue
+        if ph not in by_phone_in_range:
+            by_phone_in_range[ph] = {"name": o.get("customer_name", "-"), "phone": ph, "orders": 0, "total": 0}
+        by_phone_in_range[ph]["orders"] += 1
+        by_phone_in_range[ph]["total"] += float(o.get("total") or 0)
+    valid_customers_summary = sorted(by_phone_in_range.values(), key=lambda x: -x["total"])
 
     # Status breakdown
     status_break = {}
@@ -2135,6 +2156,8 @@ async def dashboard_general(period: str = "30d", start: Optional[str] = None, en
         "trend": trend,
         "top_products": top_products,
         "recent_orders": recent_summary,
+        "valid_orders": valid_orders_summary,           # ✅ ALL valid orders for detail modals
+        "valid_customers": valid_customers_summary,      # ✅ Unique customers for detail modal
         "status_breakdown": [{"status": k, "count": v} for k, v in status_break.items()],
     }
 
@@ -2399,6 +2422,29 @@ async def dashboard_customer(period: str = "30d", start: Optional[str] = None, e
             daily[d]["returning"] += 1
     acquisition = sorted(daily.values(), key=lambda x: x["date"])
 
+    # ✅ Customers IN-RANGE — for KPI detail modals (must match kpi.total_customers exactly)
+    customers_in_range_map = {}
+    new_phones_set = new_phones
+    for o in in_range_orders:
+        ph = (o.get("customer_phone") or "").strip()
+        if not ph:
+            continue
+        if ph not in customers_in_range_map:
+            customers_in_range_map[ph] = {
+                "phone": ph,
+                "name": o.get("customer_name", "-"),
+                "orders_count": 0,
+                "total_spent": 0.0,
+                "is_new": ph in new_phones_set,
+                "last_order_at": o.get("created_at", ""),
+            }
+        c = customers_in_range_map[ph]
+        c["orders_count"] += 1
+        c["total_spent"] += float(o.get("total") or 0)
+        if o.get("created_at", "") > c["last_order_at"]:
+            c["last_order_at"] = o.get("created_at", "")
+    customers_in_range = sorted(customers_in_range_map.values(), key=lambda x: -x["total_spent"])
+
     return {
         "period": {"start": s.isoformat(), "end": e.isoformat(), "key": period},
         "kpi": {
@@ -2408,7 +2454,8 @@ async def dashboard_customer(period: str = "30d", start: Optional[str] = None, e
             "avg_orders_per_customer": round(avg_orders, 2),
             "retention_rate": round((len(returning_phones) / total_customers_in_range * 100), 1) if total_customers_in_range > 0 else 0,
         },
-        "top_customers": top_customers,
+        "top_customers": top_customers,                  # lifetime top 10 (with margin) for the main table
+        "customers_in_range": customers_in_range,         # ✅ ALL customers in range — for KPI detail modals
         "acquisition_trend": acquisition,
     }
 
