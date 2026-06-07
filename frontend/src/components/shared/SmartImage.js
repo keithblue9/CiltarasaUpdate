@@ -13,6 +13,10 @@ const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
 export function normalizeImageUrl(url) {
   if (!url) return '';
   if (typeof url !== 'string') return '';
+  // FIX: Handle uploaded media URLs seperti /api/media/{id}
+  if (trimmed.startsWith('/api/')) {
+    return `${BACKEND_URL}${trimmed}`;
+  }
   const trimmed = url.trim();
   if (!trimmed) return '';
 
