@@ -43,7 +43,9 @@ logger = logging.getLogger(__name__)
 SCHEMA_VERSION = "v2.4.1"
 
 SELLER_PIN_DEFAULT = os.environ.get("SELLER_PIN", "ciltarasa")
-APP_URL = os.environ.get("APP_URL", "")
+APP_URL = os.environ.get("APP_URL", "")          # Legacy fallback
+FRONTEND_URL = os.environ.get("FRONTEND_URL") or APP_URL or "https://ciltarasa.online"
+BACKEND_URL  = os.environ.get("BACKEND_URL") or os.environ.get("RENDER_EXTERNAL_URL") or APP_URL or ""
 
 async def get_active_pin() -> str:
     """Return current seller PIN — DB override if set, else env default."""
@@ -436,7 +438,7 @@ DEFAULT_STORE_CONFIG = {
     "_id": "main",
     "name": "Ciltarasa",
     "logo_url": "",
-    "tagline": "Homemade Premium - Selected Frozen Food • Malang",
+    "tagline": "Frozen Food Premium • Malang",
     "whatsapp": "6285190884129",
     "address": "Jl. Kawi No. 15, Malang, Jawa Timur",
     "operating_hours": "Setiap Hari • 08.00 - 21.00 WIB",
@@ -1109,7 +1111,7 @@ async def create_order(order: OrderCreate):
         # Seller notif
         if auto_chat.get("seller_enabled", True) and seller_phone:
             tpl = auto_chat.get("seller_template") or ""
-            msg = render_chat_template(tpl, doc, store_name, APP_URL) if tpl else build_seller_order_message(doc)
+            msg = render_chat_template(tpl, doc, store_name, FRONTEND_URL) if tpl else build_seller_order_message(doc)
             res = await fonnte_send(seller_phone, msg)
             wa_seller_sent = res.get("ok", False)
             wa_seller_reason = res.get("reason") or res.get("error") or (res.get("response") or {}).get("reason")
@@ -1123,7 +1125,7 @@ async def create_order(order: OrderCreate):
         if auto_chat.get("buyer_enabled", False) and doc.get("customer_phone"):
             tpl_b = auto_chat.get("buyer_template") or ""
             if tpl_b:
-                msg_b = render_chat_template(tpl_b, doc, store_name, APP_URL)
+                msg_b = render_chat_template(tpl_b, doc, store_name, FRONTEND_URL)
                 res_b = await fonnte_send(doc["customer_phone"], msg_b)
                 wa_buyer_sent = res_b.get("ok", False)
                 wa_buyer_reason = res_b.get("reason") or res_b.get("error") or (res_b.get("response") or {}).get("reason")
@@ -1180,7 +1182,7 @@ async def submit_payment_proof(oid: str, body: PaymentProofSubmit):
     await manager.broadcast({"type": "payment_proof_submitted", "data": doc})
     # Forward bukti ke seller via Fonnte (sebagai message + image URL)
     token, seller_phone, enabled = await get_fonnte_config()
-    proof_full_url = body.proof_url if body.proof_url.startswith("http") else f"{APP_URL}{body.proof_url}"
+    proof_full_url = body.proof_url if body.proof_url.startswith("http") else f"{BACKEND_URL}{body.proof_url}"
     wa_sent = False
     wa_reason = None
     if enabled and seller_phone:
@@ -1262,7 +1264,7 @@ async def update_order_status(oid: str, update: OrderStatusUpdate, _auth: bool =
         # Buyer notif
         if auto_chat.get("buyer_enabled", True) and doc.get("customer_phone"):
             tpl = auto_chat.get("buyer_template") or ""
-            msg = render_chat_template(tpl, doc, store_name, APP_URL) if tpl else build_buyer_status_message(doc, APP_URL)
+            msg = render_chat_template(tpl, doc, store_name, FRONTEND_URL) if tpl else build_buyer_status_message(doc, FRONTEND_URL)
             res = await fonnte_send(doc["customer_phone"], msg)
             wa_buyer_sent = res.get("ok", False)
             wa_buyer_reason = res.get("reason") or res.get("error") or (res.get("response") or {}).get("reason")
@@ -1272,7 +1274,7 @@ async def update_order_status(oid: str, update: OrderStatusUpdate, _auth: bool =
         if auto_chat.get("seller_enabled", False) and seller_phone:
             tpl_s = auto_chat.get("seller_template") or ""
             if tpl_s:
-                msg_s = render_chat_template(tpl_s, doc, store_name, APP_URL)
+                msg_s = render_chat_template(tpl_s, doc, store_name, FRONTEND_URL)
                 res_s = await fonnte_send(seller_phone, msg_s)
                 wa_seller_sent = res_s.get("ok", False)
                 wa_seller_reason = res_s.get("reason") or res_s.get("error") or (res_s.get("response") or {}).get("reason")
@@ -2575,7 +2577,7 @@ ai_insights_route.setup(api_router, db, require_seller)
 app.include_router(api_router)
 app.add_middleware(
     CORSMiddleware,
-    allow_credentials=True,
+    allow_credentials=False,
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
