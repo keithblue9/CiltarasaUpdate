@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Download, X, Smartphone, Bell } from 'lucide-react';
+import { Download, X, Smartphone, Bell, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
 import { useApp } from '../../context/AppContext';
 
@@ -7,20 +7,34 @@ const SESSION_KEY = 'ciltarasa_seller_pwa_dismissed';
 
 function swapToSellerManifest() {
   try {
-    const link = document.querySelector('link[rel="manifest"]');
-    if (link && !link.getAttribute('href').includes('seller-manifest')) {
-      link.setAttribute('href', '/seller-manifest.json');
-    }
+    // Remove ALL existing manifest links and write a fresh one with cache buster
+    document.querySelectorAll('link[rel="manifest"]').forEach(l => l.remove());
+    const link = document.createElement('link');
+    link.rel = 'manifest';
+    link.href = '/seller-manifest.json?v=' + Date.now();
+    document.head.appendChild(link);
     document.title = 'Ciltarasa Seller';
     const tc = document.querySelector('meta[name="theme-color"]');
     if (tc) tc.setAttribute('content', '#7C2D12');
-    const at = document.querySelector('meta[name="apple-mobile-web-app-title"]');
-    if (at) at.setAttribute('content', 'Ciltarasa Seller');
+    let at = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+    if (!at) {
+      at = document.createElement('meta');
+      at.setAttribute('name', 'apple-mobile-web-app-title');
+      document.head.appendChild(at);
+    }
+    at.setAttribute('content', 'Ciltarasa Seller');
   } catch (e) {}
 }
 
 function isIOS() {
   return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+}
+
+function isPageOpenedAsSeller() {
+  // True if the page was opened with the seller marker in URL — meaning the inline
+  // script in index.html had a chance to set seller manifest from the very start of parsing.
+  const qs = window.location.search || '';
+  return qs.indexOf('app=seller') !== -1;
 }
 
 export default function SellerPwaInstallBanner() {
@@ -36,7 +50,7 @@ export default function SellerPwaInstallBanner() {
   const delaySec = Number(storeConfig?.pwa_install?.seller_delay_seconds ?? 10);
   const enabled = storeConfig?.pwa_install?.seller_enabled !== false;
 
-  // Swap manifest immediately when seller app mounts
+  // Swap manifest immediately when seller app mounts (best-effort runtime swap)
   useEffect(() => {
     swapToSellerManifest();
   }, []);
@@ -44,7 +58,6 @@ export default function SellerPwaInstallBanner() {
   useEffect(() => {
     const handler = (e) => {
       e.preventDefault();
-      // Always keep the latest prompt; install() will verify manifest is seller
       setDeferredPrompt(e);
     };
     window.addEventListener('beforeinstallprompt', handler);
@@ -64,14 +77,28 @@ export default function SellerPwaInstallBanner() {
     setShow(false);
   };
 
+  // ─── iOS: Open a fresh tab with ?app=seller so inline script bakes seller manifest
+  //     into HTML from the start. This bypasses iOS Safari's aggressive manifest cache.
+  const openFreshSellerTab = () => {
+    const url = window.location.origin + '/?app=seller#/seller';
+    window.open(url, '_blank');
+    toast.info('Di tab baru: tap menu Share (📤) → "Add to Home Screen". Pastikan judul "Ciltarasa Seller".', { duration: 12000 });
+    dismiss();
+  };
+
   const install = async () => {
-    // Ensure manifest is seller before prompting
+    // Always re-swap manifest before any install attempt
     swapToSellerManifest();
 
     if (isIOS()) {
-      // iOS Safari: must use "Share → Add to Home Screen". The dynamic <title>
-      // and apple-mobile-web-app-title (set above) ensure the icon labels "Ciltarasa Seller".
-      toast.info('Buka menu Share (📤) → "Add to Home Screen" untuk install Seller App. Pastikan judul "Ciltarasa Seller".', { duration: 9000 });
+      // If we're NOT already on a ?app=seller URL, force fresh tab — only way to defeat
+      // iOS Safari's manifest cache from a previous /buyer visit.
+      if (!isPageOpenedAsSeller()) {
+        openFreshSellerTab();
+        return;
+      }
+      // Already on a clean seller URL — instructions only
+      toast.info('Buka menu Share (📤) → "Add to Home Screen". Judul harus "Ciltarasa Seller".', { duration: 9000 });
       dismiss();
       return;
     }
@@ -82,12 +109,11 @@ export default function SellerPwaInstallBanner() {
       return;
     }
 
-    // Verify the prompt was captured for SELLER manifest. If not, force reload so it re-fires
-    // with the correct manifest already in place.
+    // Verify the prompt was captured for SELLER manifest. If not, force reload to seller URL.
     const currentManifest = document.querySelector('link[rel="manifest"]')?.getAttribute('href') || '';
     if (!currentManifest.includes('seller-manifest')) {
       toast.info('Memuat ulang halaman supaya install Seller App benar...');
-      setTimeout(() => window.location.reload(), 800);
+      setTimeout(() => { window.location.href = '/?app=seller#/seller'; }, 800);
       return;
     }
 
@@ -108,6 +134,8 @@ export default function SellerPwaInstallBanner() {
 
   if (!enabled || !show || isStandalone) return null;
 
+  const iosNeedsFreshTab = isIOS() && !isPageOpenedAsSeller();
+
   return (
     <div data-testid="seller-pwa-install-banner" className="fixed bottom-4 left-4 right-4 sm:bottom-6 sm:right-6 sm:left-auto sm:max-w-sm z-50 animate-slide-up">
       <div className="rounded-2xl bg-gradient-to-br from-[#7C2D12] to-[#451A03] shadow-2xl p-4 text-white border border-amber-700">
@@ -118,15 +146,19 @@ export default function SellerPwaInstallBanner() {
           <div className="flex-1 min-w-0">
             <p className="font-heading font-bold text-base mb-1">Install Seller App</p>
             <p className="text-xs text-amber-100 mb-3 leading-relaxed">
-              Pasang Ciltarasa Seller di home screen. Akses 1-klik, terima <span className="inline-flex items-center gap-0.5"><Bell size={10} /> notif push</span> real-time, tetap jalan saat offline.
+              {iosNeedsFreshTab ? (
+                <>iOS perlu langkah ekstra agar icon-nya jadi <strong>"Ciltarasa Seller"</strong>. Tap tombol di bawah untuk buka tab baru yang bersih.</>
+              ) : (
+                <>Pasang Ciltarasa Seller di home screen. Akses 1-klik, terima <span className="inline-flex items-center gap-0.5"><Bell size={10} /> notif push</span> real-time.</>
+              )}
             </p>
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
               <button
                 data-testid="seller-pwa-install-btn"
                 onClick={install}
                 className="flex items-center gap-1.5 bg-amber-400 hover:bg-amber-300 text-[#451A03] font-bold text-xs px-3 py-1.5 rounded-full transition-all"
               >
-                <Download size={14} /> Install Sekarang
+                {iosNeedsFreshTab ? <><ExternalLink size={14} /> Buka Tab Baru</> : <><Download size={14} /> Install Sekarang</>}
               </button>
               <button
                 data-testid="seller-pwa-dismiss-btn"
