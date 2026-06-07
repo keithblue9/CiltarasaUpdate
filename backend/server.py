@@ -367,6 +367,8 @@ class StoreConfigUpdate(BaseModel):
     payment_texts: Optional[Dict[str, str]] = None
     auto_chat_config: Optional[Dict[str, Any]] = None
     invoice_texts: Optional[Dict[str, str]] = None
+    receipt_texts: Optional[Dict[str, str]] = None
+    pwa_install: Optional[Dict[str, Any]] = None
     dashboard_config: Optional[Dict[str, Any]] = None
     maintenance_mode: Optional[Dict[str, Any]] = None
 
@@ -523,6 +525,13 @@ DEFAULT_STORE_CONFIG = {
     "seller_notify_phone": "6285190884129",
     "wa_notif_enabled": True,
     "low_stock_threshold": 10,
+    "pwa_install": {
+        "buyer_enabled": True,
+        "buyer_delay_seconds": 30,
+        "buyer_linger_seconds": 5,
+        "seller_enabled": True,
+        "seller_delay_seconds": 10,
+    },
     "restock_safety_days": 2,
     "qris_image_url": "",
     "payment_texts": {
@@ -1304,6 +1313,25 @@ async def update_order_received(oid: str, update: OrderReceivedUpdate):
     )
     doc = await db.orders.find_one({"id": oid}, {"_id": 0})
     await manager.broadcast({"type": "order_updated", "data": doc})
+
+    # ─── Notify seller via WA when buyer reports NOT received ───
+    if not update.received:
+        token, seller_phone, enabled = await get_fonnte_config()
+        if enabled and seller_phone:
+            msg = (
+                f"⚠️ *PESANAN BELUM DITERIMA*\n\n"
+                f"Order: #{doc.get('order_number')}\n"
+                f"Pelanggan: {doc.get('customer_name')}\n"
+                f"No. HP: +{doc.get('customer_phone')}\n"
+                f"Total: {fmt_rp_id(doc.get('total', 0))}\n\n"
+                f"Buyer melaporkan pesanan belum sampai 😟\n"
+                f"Mohon segera ditindaklanjuti 🙏"
+            )
+            try:
+                await fonnte_send(seller_phone, msg)
+            except Exception as e:
+                logger.warning(f"Failed to notify seller about not-received order {oid}: {e}")
+
     return doc
 
 # ─── Settings ────────────────────────────────────────────────────────────────
@@ -2297,19 +2325,38 @@ async def dashboard_customer(period: str = "30d", start: Optional[str] = None, e
     returning_phones = in_range_phones - new_phones
     avg_orders = sum(len(by_phone.get(ph, [])) for ph in in_range_phones) / total_customers_in_range if total_customers_in_range > 0 else 0
 
-    # Top customers (lifetime by spend, top 10)
+    # Top customers (lifetime by spend, top 10) — with margin
+    # Build product cost map for COGS calculation
+    products_list = await db.products.find({}, {"_id": 0, "id": 1, "cost_price": 1}).to_list(5000)
+    product_cost_map = {p["id"]: float(p.get("cost_price") or 0) for p in products_list}
+
     top_customers = []
     for ph, ords in by_phone.items():
         valid_ords = [o for o in ords if o.get("status") != "dibatalkan"]
         if not valid_ords:
             continue
         total_spent = sum(o.get("total", 0) for o in valid_ords)
+        # COGS per customer = sum across all their valid orders' items
+        total_cogs = 0.0
+        for o in valid_ords:
+            for it in (o.get("items") or []):
+                pid = it.get("product_id")
+                qty = float(it.get("quantity") or 0)
+                cost = product_cost_map.get(pid, 0.0)
+                total_cogs += cost * qty
+        # Note: total_spent includes delivery_fee; margin should subtract that to reflect only product margin
+        total_delivery = sum(float(o.get("delivery_fee") or 0) for o in valid_ords)
+        revenue_products = total_spent - total_delivery
+        margin_rp = revenue_products - total_cogs
+        margin_pct = (margin_rp / revenue_products * 100) if revenue_products > 0 else 0
         last_order = max(o.get("created_at", "") for o in valid_ords)
         top_customers.append({
             "phone": ph,
             "name": valid_ords[-1].get("customer_name", "-"),
             "orders_count": len(valid_ords),
             "total_spent": total_spent,
+            "total_margin": round(margin_rp, 2),
+            "margin_pct": round(margin_pct, 1),
             "last_order_at": last_order,
         })
     top_customers = sorted(top_customers, key=lambda x: -x["total_spent"])[:10]
