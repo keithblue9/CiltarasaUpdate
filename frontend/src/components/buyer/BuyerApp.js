@@ -95,9 +95,9 @@ function BuyerHeader({ onCartClick }) {
   }, [cartCount]);
 
   return (
-    <header className="sticky top-0 z-40 backdrop-blur-xl bg-[#FDF8F0]/90 border-b border-[#FED7AA]">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
+    <header className="sticky top-0 z-40 backdrop-blur-xl bg-[#FDF8F0]/90 border-b border-[#FED7AA]" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
+      <div className="max-w-7xl mx-auto" style={{ paddingLeft: 'max(1rem, env(safe-area-inset-left))', paddingRight: 'max(1rem, env(safe-area-inset-right))' }}>
+        <div className="flex items-center justify-between h-14 sm:h-16">
           <button onClick={() => navigate('/buyer')} className="flex items-center">
             <LogoWithText size="sm" />
           </button>
@@ -106,21 +106,21 @@ function BuyerHeader({ onCartClick }) {
             <button onClick={() => navigate('/buyer')} className="text-[#78350F] hover:text-[#D97706] font-body font-semibold text-sm transition-colors">Menu</button>
             <button onClick={() => navigate('/buyer/track')} className="text-[#78350F] hover:text-[#D97706] font-body font-semibold text-sm transition-colors">Lacak Pesanan</button>
           </nav>
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-1 sm:gap-3">
             <ProfileMenu />
             <button
               data-testid="cart-button"
               onClick={onCartClick}
-              className="relative p-2 rounded-full bg-gradient-to-br from-[#F97316] to-[#EA580C] text-white hover:shadow-lg transition-all shadow-md"
+              className="relative min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full bg-gradient-to-br from-[#F97316] to-[#EA580C] text-white hover:shadow-lg transition-all shadow-md"
             >
               <ShoppingCart size={20} />
               {cartCount > 0 && (
-                <span className={`absolute -top-1 -right-1 bg-[#78350F] text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold ${bounce ? 'badge-bounce' : ''}`}>
+                <span className={`absolute top-0 right-0 bg-[#78350F] text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold ${bounce ? 'badge-bounce' : ''}`}>
                   {cartCount}
                 </span>
               )}
             </button>
-            <button className="md:hidden p-2" onClick={() => setMenuOpen(!menuOpen)}>
+            <button className="md:hidden min-w-[44px] min-h-[44px] flex items-center justify-center" onClick={() => setMenuOpen(!menuOpen)}>
               {menuOpen ? <X size={24} className="text-[#78350F]" /> : <Menu size={24} className="text-[#78350F]" />}
             </button>
           </div>
