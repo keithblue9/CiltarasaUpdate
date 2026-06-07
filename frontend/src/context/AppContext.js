@@ -170,8 +170,9 @@ export function AppProvider({ children }) {
     setAuthUser(null);
     setAuthToken(null);
     localStorage.removeItem('ciltarasa_token');
-    localStorage.removeItem('ciltarasa_guest');
-    setAuthMode(null);
+    // Keep guest mode after logout so the OTP/onboarding popup doesn't auto-trigger.
+    localStorage.setItem('ciltarasa_guest', '1');
+    setAuthMode('guest');
   };
   const continueAsGuest = () => {
     localStorage.setItem('ciltarasa_guest', '1');
