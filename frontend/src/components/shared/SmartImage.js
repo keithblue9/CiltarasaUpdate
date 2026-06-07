@@ -6,6 +6,9 @@ const PLACEHOLDER_SVG =
 
 const CORS_PROXY = 'https://corsproxy.io/?';
 
+// FIX: Untuk resolve URL /api/media/ dari upload lokal
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
+
 // Google Drive share URL → direct view URL
 export function normalizeImageUrl(url) {
   if (!url) return '';
