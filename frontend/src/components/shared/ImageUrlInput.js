@@ -65,7 +65,7 @@ export default function ImageUrlInput({ value, onChange, placeholder = 'https://
       setUrlInput(url);
       setPreviewSrc(`${API}${url}`);
       setStatus('loading');
-      onChange(url);
+      onChange(`${API}${url}`);
       toast.success('Foto berhasil diupload! 📸');
     } catch (err) {
       toast.error('Gagal upload: ' + (err.response?.data?.detail || 'error'));
