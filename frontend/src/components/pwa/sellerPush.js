@@ -88,6 +88,7 @@ export async function sendTestPush(pin) {
 
 // ─── Manifest swap: switch to seller-manifest while on seller route ───
 let _originalManifestHref = null;
+let _originalTitle = null;
 export function setSellerManifest() {
   const link = document.querySelector('link[rel="manifest"]');
   if (!link) return;
@@ -95,15 +96,24 @@ export function setSellerManifest() {
   if (link.getAttribute('href') !== '/seller-manifest.json') {
     link.setAttribute('href', '/seller-manifest.json');
   }
+  // Update title (iOS Safari uses for "Add to Home Screen")
+  if (!_originalTitle) _originalTitle = document.title;
+  document.title = 'Ciltarasa Seller';
   // Update theme-color meta for seller (warmer brown)
   let themeMeta = document.querySelector('meta[name="theme-color"]');
   if (themeMeta) themeMeta.setAttribute('content', '#7C2D12');
+  // Update apple-mobile-web-app-title for iOS ATH
+  let appleTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+  if (appleTitle) appleTitle.setAttribute('content', 'Ciltarasa Seller');
 }
 
 export function restoreBuyerManifest() {
   const link = document.querySelector('link[rel="manifest"]');
   if (!link) return;
   link.setAttribute('href', _originalManifestHref || '/manifest.json');
+  if (_originalTitle) document.title = _originalTitle;
   let themeMeta = document.querySelector('meta[name="theme-color"]');
   if (themeMeta) themeMeta.setAttribute('content', '#6B0F1A');
+  let appleTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+  if (appleTitle) appleTitle.setAttribute('content', 'Ciltarasa');
 }

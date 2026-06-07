@@ -2,14 +2,21 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { Download, X, Smartphone } from 'lucide-react';
 import { toast } from 'sonner';
 import { detectEnv } from './detectEnv';
+import { useApp } from '../../context/AppContext';
 
 const SESSION_KEY = 'ciltarasa_pwa_dismissed';
 const SHOWN_TOAST_KEY = 'ciltarasa_pwa_welcomed';
 
 export default function PwaInstallBanner({ onOpenHelp }) {
+  const { storeConfig } = useApp();
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [show, setShow] = useState(false);
   const [env] = useState(() => detectEnv());
+
+  // Configurable delay from store config (defaults: 30s initial, 5s post-scroll)
+  const initialDelay = Number(storeConfig?.pwa_install?.buyer_delay_seconds ?? 30);
+  const linger = Number(storeConfig?.pwa_install?.buyer_linger_seconds ?? 5);
+  const enabled = storeConfig?.pwa_install?.buyer_enabled !== false;
 
   // Handle BIP (Chrome/Edge/Android)
   useEffect(() => {
@@ -31,12 +38,13 @@ export default function PwaInstallBanner({ onOpenHelp }) {
     }
   }, [env.isStandalone]);
 
-  // Trigger: 30s timer OR after browse activity
+  // Trigger: initial timer OR after browse activity
   useEffect(() => {
+    if (!enabled) return;
     if (env.isStandalone) return;
     if (sessionStorage.getItem(SESSION_KEY)) return;
 
-    let timer = setTimeout(() => setShow(true), 30000); // 30s
+    let timer = setTimeout(() => setShow(true), Math.max(0, initialDelay) * 1000);
     // Also trigger if user lingers on catalog
     const catalog = document.getElementById('catalog');
     let observer;
@@ -44,7 +52,7 @@ export default function PwaInstallBanner({ onOpenHelp }) {
       observer = new IntersectionObserver((entries) => {
         if (entries.some((e) => e.isIntersecting)) {
           clearTimeout(timer);
-          timer = setTimeout(() => setShow(true), 5000);
+          timer = setTimeout(() => setShow(true), Math.max(0, linger) * 1000);
         }
       });
       observer.observe(catalog);
@@ -81,7 +89,7 @@ export default function PwaInstallBanner({ onOpenHelp }) {
     setShow(false);
   };
 
-  if (env.isStandalone || !show) return null;
+  if (!enabled || env.isStandalone || !show) return null;
 
   return (
     <div
