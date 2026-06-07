@@ -15,6 +15,21 @@ function fmtDate(iso) {
 const PAYMENT_LABEL = { transfer: 'Transfer', qris: 'QRIS', cod: 'COD', ewallet: 'E-Wallet' };
 
 export function generateReceiptPdf(order, storeConfig) {
+  // Pull configurable wording (with safe defaults)
+  const rt = (storeConfig && storeConfig.receipt_texts) || {};
+  const T = {
+    date_label: rt.date_label || 'Tanggal',
+    cashier_label: rt.cashier_label || 'Kasir',
+    customer_label: rt.customer_label || 'Pelanggan',
+    payment_method_label: rt.payment_method_label || 'Metode Bayar',
+    delivery_fee_label: rt.delivery_fee_label || 'Ongkir',
+    total_label: rt.total_label || 'Total',
+    paid_label: rt.paid_label || 'DiBayar',
+    notes_label: rt.notes_label || 'Catatan',
+    transfer_section_title: rt.transfer_section_title || 'Pembayaran Transfer',
+    footer_thanks: rt.footer_thanks || 'Terimakasih',
+  };
+
   // Thermal-style: 80mm wide x dynamic height
   const W = 80; // mm
   // Estimate height: header(35) + items*8 + footer(50)
@@ -42,13 +57,13 @@ export function generateReceiptPdf(order, storeConfig) {
   // Meta info
   doc.setFontSize(7.5);
   doc.setFont('helvetica', 'normal');
-  doc.text('Tanggal', M, y);
+  doc.text(T.date_label, M, y);
   doc.text(fmtDate(order.created_at), W - M, y, { align: 'right' });
   y += 3.5;
-  doc.text('Kasir', M, y);
+  doc.text(T.cashier_label, M, y);
   doc.text((storeConfig?.name || 'Seller').split(' ')[0], W - M, y, { align: 'right' });
   y += 3.5;
-  doc.text('Pelanggan', M, y);
+  doc.text(T.customer_label, M, y);
   doc.text((order.customer_name || '-').slice(0, 20), W - M, y, { align: 'right' });
   y += 3;
 
@@ -80,19 +95,19 @@ export function generateReceiptPdf(order, storeConfig) {
 
   // Totals
   doc.setFontSize(8);
-  doc.text('Metode Bayar', M, y);
+  doc.text(T.payment_method_label, M, y);
   doc.text(PAYMENT_LABEL[order.payment_method] || order.payment_method || '-', W - M, y, { align: 'right' });
   y += 3.5;
   if (order.delivery_fee && order.delivery_fee > 0) {
-    doc.text('Ongkir', M, y);
+    doc.text(T.delivery_fee_label, M, y);
     doc.text(fmtNum(order.delivery_fee), W - M, y, { align: 'right' });
     y += 3.5;
   }
   doc.setFont('helvetica', 'bold');
-  doc.text('Total', M, y);
+  doc.text(T.total_label, M, y);
   doc.text(fmtNum(order.total), W - M, y, { align: 'right' });
   y += 3.5;
-  doc.text('DiBayar', M, y);
+  doc.text(T.paid_label, M, y);
   doc.text(fmtNum(order.total), W - M, y, { align: 'right' });
   y += 3.5;
 
@@ -103,7 +118,7 @@ export function generateReceiptPdf(order, storeConfig) {
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.5);
-  doc.text(`Catatan : ${(order.notes || '').slice(0, 30)}`, M, y);
+  doc.text(`${T.notes_label} : ${(order.notes || '').slice(0, 30)}`, M, y);
   y += 5;
 
   // Payment info — bank accounts
@@ -111,7 +126,7 @@ export function generateReceiptPdf(order, storeConfig) {
   if (banks.length > 0 && order.payment_method === 'transfer') {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(7.5);
-    doc.text('Pembayaran Transfer', W / 2, y, { align: 'center' });
+    doc.text(T.transfer_section_title, W / 2, y, { align: 'center' });
     y += 3.5;
     doc.setFont('helvetica', 'normal');
     for (const b of banks.slice(0, 3)) {
@@ -124,7 +139,7 @@ export function generateReceiptPdf(order, storeConfig) {
   // Footer
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.5);
-  doc.text('Terimakasih', W / 2, y, { align: 'center' });
+  doc.text(T.footer_thanks, W / 2, y, { align: 'center' });
 
   const filename = `Resi-${order.order_number || order.id}.pdf`;
   doc.save(filename);
