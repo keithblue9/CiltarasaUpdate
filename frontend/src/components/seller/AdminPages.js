@@ -885,58 +885,87 @@ const INVOICE_TEXT_FIELDS = [
   { key: 'footer_disclaimer', label: 'Footer - Disclaimer', placeholder: 'Struk ini adalah bukti pembayaran sah.' },
 ];
 
+// ─── RESI (Thermal Receipt) WORDING CONFIG ──────────────────────────
+const RECEIPT_TEXT_FIELDS = [
+  { key: 'date_label', label: 'Label Tanggal', placeholder: 'Tanggal' },
+  { key: 'cashier_label', label: 'Label Kasir', placeholder: 'Kasir' },
+  { key: 'customer_label', label: 'Label Pelanggan', placeholder: 'Pelanggan' },
+  { key: 'payment_method_label', label: 'Label Metode Bayar', placeholder: 'Metode Bayar' },
+  { key: 'delivery_fee_label', label: 'Label Ongkir', placeholder: 'Ongkir' },
+  { key: 'total_label', label: 'Label Total', placeholder: 'Total' },
+  { key: 'paid_label', label: 'Label Dibayar', placeholder: 'DiBayar' },
+  { key: 'notes_label', label: 'Label Catatan', placeholder: 'Catatan' },
+  { key: 'transfer_section_title', label: 'Heading Section Transfer', placeholder: 'Pembayaran Transfer' },
+  { key: 'footer_thanks', label: 'Footer (Terima Kasih)', placeholder: 'Terimakasih' },
+];
+
 export function InvoiceConfig() {
   const { storeConfig, refreshStoreConfig } = useApp();
-  const [texts, setTexts] = useState({});
+  const [invoiceTexts, setInvoiceTexts] = useState({});
+  const [receiptTexts, setReceiptTexts] = useState({});
   const [saving, setSaving] = useState(false);
   const [previewing, setPreviewing] = useState(false);
+  const [tab, setTab] = useState('invoice'); // 'invoice' | 'receipt'
 
   useEffect(() => {
-    setTexts(storeConfig?.invoice_texts || {});
+    setInvoiceTexts(storeConfig?.invoice_texts || {});
+    setReceiptTexts(storeConfig?.receipt_texts || {});
   }, [storeConfig]);
 
-  const setText = (k, v) => setTexts(t => ({ ...t, [k]: v }));
+  const setInvText = (k, v) => setInvoiceTexts(t => ({ ...t, [k]: v }));
+  const setRecText = (k, v) => setReceiptTexts(t => ({ ...t, [k]: v }));
 
   const handleSave = async () => {
     setSaving(true);
     try {
-      await axios.put(`${API}/api/store-config`, { invoice_texts: texts });
+      await axios.put(`${API}/api/store-config`, { invoice_texts: invoiceTexts, receipt_texts: receiptTexts });
       await refreshStoreConfig();
-      toast.success('Wording invoice tersimpan! 🧾');
+      toast.success(tab === 'invoice' ? 'Wording invoice tersimpan! 🧾' : 'Wording resi tersimpan! 🧾');
     } catch { toast.error('Gagal simpan'); } finally { setSaving(false); }
+  };
+
+  const sampleOrder = {
+    order_number: 'TST-001', customer_name: 'Bunda Demo', customer_phone: '6281234567890',
+    customer_address: 'Jl. Contoh No. 1, Malang', delivery_method: 'delivery',
+    payment_method: 'transfer', subtotal: 75000, delivery_fee: 10000, total: 85000,
+    notes: 'Sample notes', status: 'selesai', received: true,
+    created_at: new Date().toISOString(),
+    items: [
+      { product_name: 'Risoles Frozen (isi 10)', quantity: 2, price: 35000, subtotal: 70000 },
+      { product_name: 'Lumpia Mini', quantity: 1, price: 5000, subtotal: 5000 },
+    ],
   };
 
   const handlePreview = async () => {
     setPreviewing(true);
     try {
-      const mod = await import('../../lib/invoiceGenerator');
-      const sampleOrder = {
-        order_number: 'TST-001', customer_name: 'Bunda Demo', customer_phone: '6281234567890',
-        customer_address: 'Jl. Contoh No. 1, Malang', delivery_method: 'delivery',
-        payment_method: 'transfer', subtotal: 75000, delivery_fee: 10000, total: 85000,
-        notes: 'Sample notes', status: 'selesai', received: true,
-        created_at: new Date().toISOString(),
-        items: [
-          { product_name: 'Risoles Frozen (isi 10)', quantity: 2, price: 35000, subtotal: 70000 },
-          { product_name: 'Lumpia Mini', quantity: 1, price: 5000, subtotal: 5000 },
-        ],
-      };
-      // Gunakan wording yang sedang di-edit (state) sehingga preview real-time
-      const tempConfig = { ...storeConfig, invoice_texts: texts };
-      mod.generateInvoicePdf(sampleOrder, tempConfig);
-      toast.success('Preview Invoice didownload!');
+      if (tab === 'invoice') {
+        const mod = await import('../../lib/invoiceGenerator');
+        const tempConfig = { ...storeConfig, invoice_texts: invoiceTexts };
+        mod.generateInvoicePdf(sampleOrder, tempConfig);
+        toast.success('Preview Invoice didownload!');
+      } else {
+        const mod = await import('../../lib/receiptGenerator');
+        const tempConfig = { ...storeConfig, receipt_texts: receiptTexts };
+        mod.generateReceiptPdf(sampleOrder, tempConfig);
+        toast.success('Preview Resi didownload!');
+      }
     } catch (e) {
       console.error(e);
       toast.error('Gagal preview');
     } finally { setPreviewing(false); }
   };
 
+  const activeFields = tab === 'invoice' ? INVOICE_TEXT_FIELDS : RECEIPT_TEXT_FIELDS;
+  const activeTexts = tab === 'invoice' ? invoiceTexts : receiptTexts;
+  const activeSet = tab === 'invoice' ? setInvText : setRecText;
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="font-heading text-2xl font-bold text-[#7C2D12]">Wording Invoice / Struk</h1>
-          <p className="text-xs text-[#9A3412] mt-0.5">Edit semua teks yang muncul di PDF Invoice yang buyer download.</p>
+          <h1 className="font-heading text-2xl font-bold text-[#7C2D12]">Wording Invoice & Resi</h1>
+          <p className="text-xs text-[#9A3412] mt-0.5">Edit teks Invoice (PDF A5 lengkap) dan Resi (struk thermal kasir) yang buyer download.</p>
         </div>
         <div className="flex gap-2">
           <button data-testid="preview-invoice-btn" onClick={handlePreview} disabled={previewing} className="flex items-center gap-2 bg-white border border-[#FED7AA] text-[#7C2D12] font-bold px-4 py-2 rounded-full hover:bg-amber-50 text-sm">
@@ -948,17 +977,39 @@ export function InvoiceConfig() {
         </div>
       </div>
 
-      <Section title="Teks Invoice" icon={FileText}>
-        <p className="text-xs text-[#9A3412] mb-4">Klik "Preview PDF" untuk lihat hasil sebelum simpan. Invoice akan auto-pakai nama toko, tagline, alamat & WhatsApp dari Profil Toko.</p>
+      {/* Tabs Invoice vs Resi */}
+      <div className="flex gap-2 border-b border-[#FED7AA]">
+        <button
+          data-testid="tab-invoice"
+          onClick={() => setTab('invoice')}
+          className={`px-4 py-2 font-bold text-sm transition-all ${tab === 'invoice' ? 'text-[#EA580C] border-b-2 border-[#EA580C]' : 'text-[#92400E] hover:text-[#7C2D12]'}`}
+        >
+          🧾 Invoice (PDF A5)
+        </button>
+        <button
+          data-testid="tab-receipt"
+          onClick={() => setTab('receipt')}
+          className={`px-4 py-2 font-bold text-sm transition-all ${tab === 'receipt' ? 'text-[#EA580C] border-b-2 border-[#EA580C]' : 'text-[#92400E] hover:text-[#7C2D12]'}`}
+        >
+          📃 Resi (Struk Thermal)
+        </button>
+      </div>
+
+      <Section title={tab === 'invoice' ? 'Teks Invoice' : 'Teks Resi'} icon={FileText}>
+        <p className="text-xs text-[#9A3412] mb-4">
+          {tab === 'invoice'
+            ? 'Klik "Preview PDF" untuk lihat hasil sebelum simpan. Invoice akan auto-pakai nama toko, tagline, alamat & WhatsApp dari Profil Toko.'
+            : 'Resi format struk thermal kecil (80mm). Cocok untuk dicetak ke printer thermal kasir. Auto-pakai nama toko & rekening dari Profil Toko.'}
+        </p>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {INVOICE_TEXT_FIELDS.map(f => (
+          {activeFields.map(f => (
             <div key={f.key}>
               <label className="block text-xs font-semibold text-[#7C2D12] mb-1">{f.label}</label>
               <input
-                data-testid={`invoice-text-${f.key}`}
-                value={texts[f.key] || ''}
+                data-testid={`${tab}-text-${f.key}`}
+                value={activeTexts[f.key] || ''}
                 placeholder={f.placeholder}
-                onChange={e => setText(f.key, e.target.value)}
+                onChange={e => activeSet(f.key, e.target.value)}
                 className={inputCls + ' text-sm'}
               />
             </div>
@@ -1130,6 +1181,89 @@ function Field({ label, children }) {
     <div>
       <label className="block text-xs font-semibold text-[#7C2D12] mb-1">{label}</label>
       {children}
+    </div>
+  );
+}
+
+export function PwaInstallConfig() {
+  const { storeConfig, refreshStoreConfig } = useApp();
+  const [cfg, setCfg] = useState({
+    buyer_enabled: true, buyer_delay_seconds: 30, buyer_linger_seconds: 5,
+    seller_enabled: true, seller_delay_seconds: 10,
+  });
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (storeConfig?.pwa_install) {
+      setCfg({
+        buyer_enabled: storeConfig.pwa_install.buyer_enabled !== false,
+        buyer_delay_seconds: Number(storeConfig.pwa_install.buyer_delay_seconds ?? 30),
+        buyer_linger_seconds: Number(storeConfig.pwa_install.buyer_linger_seconds ?? 5),
+        seller_enabled: storeConfig.pwa_install.seller_enabled !== false,
+        seller_delay_seconds: Number(storeConfig.pwa_install.seller_delay_seconds ?? 10),
+      });
+    }
+  }, [storeConfig]);
+
+  const set = (k, v) => setCfg(c => ({ ...c, [k]: v }));
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await axios.put(`${API}/api/store-config`, { pwa_install: cfg });
+      await refreshStoreConfig();
+      toast.success('Pengaturan popup install tersimpan!');
+    } catch { toast.error('Gagal simpan'); } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="font-heading text-2xl font-bold text-[#7C2D12]">Pengaturan Popup Install App</h1>
+          <p className="text-xs text-[#9A3412] mt-0.5">Atur kapan popup "Install App" muncul untuk buyer dan seller.</p>
+        </div>
+        <button data-testid="save-pwa-install-btn" onClick={handleSave} disabled={saving} className="flex items-center gap-2 bg-gradient-to-r from-[#F97316] to-[#EA580C] text-white font-bold px-5 py-2.5 rounded-full shadow">
+          <Save size={16} /> {saving ? 'Menyimpan...' : 'Simpan'}
+        </button>
+      </div>
+
+      <Section title="Buyer (Pelanggan)" icon={Smartphone}>
+        <label className="flex items-center gap-3 p-3 rounded-xl bg-amber-50 border border-amber-200 mb-4 cursor-pointer">
+          <input data-testid="buyer-pwa-enabled" type="checkbox" checked={cfg.buyer_enabled} onChange={e => set('buyer_enabled', e.target.checked)} className="w-5 h-5 accent-[#EA580C]" />
+          <div>
+            <p className="font-bold text-[#7C2D12] text-sm">Aktifkan popup install untuk buyer</p>
+            <p className="text-xs text-[#9A3412]">Jika nonaktif, popup tidak akan muncul untuk pelanggan.</p>
+          </div>
+        </label>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-semibold text-[#7C2D12] mb-1">Delay Awal (detik)</label>
+            <input data-testid="buyer-pwa-delay" type="number" min="0" value={cfg.buyer_delay_seconds} onChange={e => set('buyer_delay_seconds', Number(e.target.value) || 0)} className={inputCls + ' text-sm'} />
+            <p className="text-[10px] text-[#9A3412] mt-1">Detik sejak halaman dibuka sebelum popup pertama kali muncul (default: 30).</p>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-[#7C2D12] mb-1">Delay Saat Browsing (detik)</label>
+            <input data-testid="buyer-pwa-linger" type="number" min="0" value={cfg.buyer_linger_seconds} onChange={e => set('buyer_linger_seconds', Number(e.target.value) || 0)} className={inputCls + ' text-sm'} />
+            <p className="text-[10px] text-[#9A3412] mt-1">Detik saat buyer scroll ke catalog (default: 5).</p>
+          </div>
+        </div>
+      </Section>
+
+      <Section title="Seller (Toko)" icon={Smartphone}>
+        <label className="flex items-center gap-3 p-3 rounded-xl bg-amber-50 border border-amber-200 mb-4 cursor-pointer">
+          <input data-testid="seller-pwa-enabled" type="checkbox" checked={cfg.seller_enabled} onChange={e => set('seller_enabled', e.target.checked)} className="w-5 h-5 accent-[#EA580C]" />
+          <div>
+            <p className="font-bold text-[#7C2D12] text-sm">Aktifkan popup install untuk seller</p>
+            <p className="text-xs text-[#9A3412]">Jika nonaktif, popup tidak muncul saat seller buka dashboard.</p>
+          </div>
+        </label>
+        <div>
+          <label className="block text-xs font-semibold text-[#7C2D12] mb-1">Delay (detik)</label>
+          <input data-testid="seller-pwa-delay" type="number" min="0" value={cfg.seller_delay_seconds} onChange={e => set('seller_delay_seconds', Number(e.target.value) || 0)} className={inputCls + ' text-sm'} />
+          <p className="text-[10px] text-[#9A3412] mt-1">Detik sejak dashboard seller dibuka sebelum popup muncul (default: 10).</p>
+        </div>
+      </Section>
     </div>
   );
 }

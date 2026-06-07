@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Package, ShoppingBag, BarChart2, DollarSign, MessageCircle, LogOut, X, Wifi, WifiOff, Store, BookOpen, FolderTree, Truck, CreditCard, Tag, Settings, Type, ImagePlus, Sparkles, ShoppingCart, ListOrdered, ShieldAlert, LogIn, KeyRound, TrendingUp, MessagesSquare, FileText, BarChart3, Bell, Power } from 'lucide-react';
+import { LayoutDashboard, Package, ShoppingBag, BarChart2, DollarSign, MessageCircle, LogOut, X, Wifi, WifiOff, Store, BookOpen, FolderTree, Truck, CreditCard, Tag, Settings, Type, ImagePlus, Sparkles, ShoppingCart, ListOrdered, ShieldAlert, LogIn, KeyRound, TrendingUp, MessagesSquare, FileText, BarChart3, Bell, Power, Smartphone } from 'lucide-react';
 import { LogoWithText } from '../shared/Logo';
 import { useApp } from '../../context/AppContext';
 
@@ -27,7 +27,8 @@ const configTabs = [
   { id: 'auto-chat', label: 'Auto-Chat WhatsApp', icon: MessagesSquare },
   { id: 'push-notif', label: 'Push Notification', icon: Bell },
   { id: 'maintenance', label: 'Mode Libur / Tutup', icon: Power },
-  { id: 'invoice', label: 'Wording Invoice', icon: FileText },
+  { id: 'pwa-install', label: 'Popup Install App', icon: Smartphone },
+  { id: 'invoice', label: 'Wording Invoice & Resi', icon: FileText },
   { id: 'dashboard-widgets', label: 'Widget Dashboard', icon: BarChart3 },
   { id: 'discounts', label: 'Diskon Produk', icon: Tag },
   { id: 'whatsapp', label: 'WhatsApp (Fonnte)', icon: MessageCircle },

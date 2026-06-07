@@ -47,7 +47,7 @@ const STATUS_COLOR = { menunggu: '#FCD34D', diproses: '#F97316', siap: '#8B5CF6'
 const PAYMENT_LABEL = { transfer: 'Transfer', qris: 'QRIS', cod: 'COD', ewallet: 'E-Wallet', card: 'Kartu' };
 
 // ─── KPI Card ────────────────────────────────────────────────────
-function KpiCard({ title, value, sub, icon: Icon, color = 'orange', trend }) {
+function KpiCard({ title, value, sub, icon: Icon, color = 'orange', trend, onClick }) {
   const colors = {
     orange: 'bg-orange-100 text-orange-600',
     green: 'bg-green-100 text-green-600',
@@ -56,8 +56,13 @@ function KpiCard({ title, value, sub, icon: Icon, color = 'orange', trend }) {
     red: 'bg-red-100 text-red-600',
     amber: 'bg-amber-100 text-amber-600',
   };
+  const Comp = onClick ? 'button' : 'div';
   return (
-    <div data-testid={`kpi-${title.toLowerCase().replace(/\s+/g, '-').replace(/\//g, '-')}`} className="bg-white rounded-2xl border border-[#FED7AA] p-5 flex items-start gap-4 hover:shadow-md transition-all">
+    <Comp
+      onClick={onClick}
+      data-testid={`kpi-${title.toLowerCase().replace(/\s+/g, '-').replace(/\//g, '-')}`}
+      className={`text-left bg-white rounded-2xl border border-[#FED7AA] p-5 flex items-start gap-4 transition-all w-full ${onClick ? 'hover:shadow-lg hover:border-[#D97706] cursor-pointer active:scale-[0.98]' : 'hover:shadow-md'}`}
+    >
       <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${colors[color]}`}>
         <Icon size={22} />
       </div>
@@ -69,6 +74,56 @@ function KpiCard({ title, value, sub, icon: Icon, color = 'orange', trend }) {
           <span className={`inline-flex items-center text-[10px] font-bold mt-1 ${trend >= 0 ? 'text-green-600' : 'text-red-500'}`}>
             <TrendingUp size={10} className={trend < 0 ? 'rotate-180' : ''} />&nbsp;{trend >= 0 ? '+' : ''}{trend}%
           </span>
+        )}
+        {onClick && (
+          <p className="text-[10px] text-[#D97706] mt-1 opacity-70">Klik untuk detail →</p>
+        )}
+      </div>
+    </Comp>
+  );
+}
+
+// ─── Generic Detail Modal — used by clickable KPIs ───────────────
+function KpiDetailModal({ title, subtitle, columns, rows, footer, onClose }) {
+  if (!rows) return null;
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[85vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-5 border-b border-[#FED7AA]">
+          <div>
+            <h3 className="font-heading font-bold text-[#78350F] text-xl">{title}</h3>
+            {subtitle && <p className="text-xs text-[#92400E] mt-0.5">{subtitle}</p>}
+          </div>
+          <button onClick={onClose} className="p-2 rounded-full hover:bg-[#FED7AA] text-xl">×</button>
+        </div>
+        <div className="p-5 overflow-y-auto flex-1">
+          {rows.length === 0 ? (
+            <p className="text-sm text-[#92400E] text-center py-8">Belum ada data.</p>
+          ) : (
+            <table className="w-full text-xs">
+              <thead className="text-[#92400E] text-[10px] uppercase tracking-wider sticky top-0 bg-white">
+                <tr className="border-b border-[#FED7AA]">
+                  {columns.map((c, i) => (
+                    <th key={i} className={`py-2 px-2 ${c.align === 'right' ? 'text-right' : 'text-left'}`}>{c.label}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r, ri) => (
+                  <tr key={ri} className="border-b border-amber-100 hover:bg-amber-50">
+                    {columns.map((c, ci) => (
+                      <td key={ci} className={`py-2 px-2 ${c.align === 'right' ? 'text-right' : 'text-left'} ${c.className || 'text-[#451A03]'}`}>
+                        {c.render ? c.render(r) : r[c.key]}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+        {footer && (
+          <div className="p-4 border-t border-[#FED7AA] text-xs text-[#92400E] bg-amber-50">{footer}</div>
         )}
       </div>
     </div>
@@ -89,18 +144,85 @@ function ChartCard({ title, children, action, testId }) {
 
 // ─── GENERAL TAB ─────────────────────────────────────────────────
 function GeneralTab({ data, widgets, period, customStart, customEnd }) {
+  const [detail, setDetail] = useState(null); // {title, subtitle, columns, rows, footer}
   if (!data) return <SkeletonGrid />;
   const { kpi, trend, top_products, recent_orders, status_breakdown } = data;
+
+  // Build per-customer aggregation from recent_orders for the customers KPI
+  const byCustomer = {};
+  (recent_orders || []).forEach(o => {
+    const k = o.customer_phone || o.customer_name || '-';
+    if (!byCustomer[k]) byCustomer[k] = { name: o.customer_name, phone: o.customer_phone, orders: 0, total: 0 };
+    byCustomer[k].orders += 1;
+    byCustomer[k].total += Number(o.total || 0);
+  });
+  const customerRows = Object.values(byCustomer).sort((a, b) => b.total - a.total);
+
+  const openRevenue = () => setDetail({
+    title: '💰 Detail Pendapatan',
+    subtitle: `Total ${fmtRp(kpi.revenue)} dari ${kpi.orders} pesanan valid`,
+    columns: [
+      { key: 'order_number', label: 'No. Pesanan' },
+      { key: 'customer_name', label: 'Pelanggan' },
+      { key: 'status', label: 'Status' },
+      { key: 'total', label: 'Total', align: 'right', className: 'font-bold text-[#D97706]', render: r => fmtRp(r.total) },
+      { key: 'created_at', label: 'Tanggal', render: r => r.created_at ? new Date(r.created_at).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '-' },
+    ],
+    rows: recent_orders || [],
+    footer: `Data ${(recent_orders || []).length} pesanan terbaru di periode ini.`,
+  });
+
+  const openOrders = () => setDetail({
+    title: '📦 Detail Pesanan',
+    subtitle: `${kpi.orders} pesanan valid`,
+    columns: [
+      { key: 'order_number', label: 'No. Pesanan' },
+      { key: 'customer_name', label: 'Pelanggan' },
+      { key: 'status', label: 'Status' },
+      { key: 'total', label: 'Total', align: 'right', className: 'font-bold text-[#D97706]', render: r => fmtRp(r.total) },
+    ],
+    rows: recent_orders || [],
+  });
+
+  const openAov = () => setDetail({
+    title: '📊 Rata-rata Order',
+    subtitle: `AOV = ${fmtRp(kpi.aov)} (${fmtRp(kpi.revenue)} / ${kpi.orders} pesanan)`,
+    columns: [
+      { key: 'order_number', label: 'No. Pesanan' },
+      { key: 'customer_name', label: 'Pelanggan' },
+      { key: 'total', label: 'Total', align: 'right', className: 'font-bold text-[#D97706]', render: r => fmtRp(r.total) },
+      { key: 'vs_avg', label: 'vs AOV', align: 'right', render: r => {
+        const diff = Number(r.total || 0) - Number(kpi.aov || 0);
+        return <span className={diff >= 0 ? 'text-green-600 font-bold' : 'text-red-500 font-bold'}>{diff >= 0 ? '+' : ''}{fmtRp(diff)}</span>;
+      } },
+    ],
+    rows: recent_orders || [],
+  });
+
+  const openCustomers = () => setDetail({
+    title: '👥 Detail Pelanggan',
+    subtitle: `${kpi.unique_customers} pelanggan unik (berdasarkan No. HP) di periode ini`,
+    columns: [
+      { key: 'name', label: 'Nama' },
+      { key: 'phone', label: 'HP', render: r => r.phone ? '+' + r.phone : '-' },
+      { key: 'orders', label: 'Order', align: 'right', className: 'font-bold text-[#78350F]' },
+      { key: 'total', label: 'Total Belanja', align: 'right', className: 'font-bold text-[#D97706]', render: r => fmtRp(r.total) },
+    ],
+    rows: customerRows,
+    footer: 'Data dihitung dari pesanan terbaru pada periode aktif.',
+  });
 
   return (
     <div className="space-y-5">
       {/* KPIs */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {widgets.show_revenue_kpi !== false && <KpiCard title="Pendapatan" value={fmtRpShort(kpi.revenue)} sub={`${fmtRp(kpi.revenue)}`} icon={DollarSign} color="green" />}
-        {widgets.show_orders_kpi !== false && <KpiCard title="Total Pesanan" value={fmtNum(kpi.orders)} sub="pesanan valid" icon={ShoppingCart} color="orange" />}
-        {widgets.show_aov_kpi !== false && <KpiCard title="Rata-rata Order" value={fmtRpShort(kpi.aov)} sub="per pesanan" icon={Activity} color="blue" />}
-        {widgets.show_customers_kpi !== false && <KpiCard title="Pelanggan" value={fmtNum(kpi.unique_customers)} sub="unik (HP)" icon={Users} color="purple" />}
+        {widgets.show_revenue_kpi !== false && <KpiCard title="Pendapatan" value={fmtRpShort(kpi.revenue)} sub={`${fmtRp(kpi.revenue)}`} icon={DollarSign} color="green" onClick={openRevenue} />}
+        {widgets.show_orders_kpi !== false && <KpiCard title="Total Pesanan" value={fmtNum(kpi.orders)} sub="pesanan valid" icon={ShoppingCart} color="orange" onClick={openOrders} />}
+        {widgets.show_aov_kpi !== false && <KpiCard title="Rata-rata Order" value={fmtRpShort(kpi.aov)} sub="per pesanan" icon={Activity} color="blue" onClick={openAov} />}
+        {widgets.show_customers_kpi !== false && <KpiCard title="Pelanggan" value={fmtNum(kpi.unique_customers)} sub="unik (HP)" icon={Users} color="purple" onClick={openCustomers} />}
       </div>
+
+      {detail && <KpiDetailModal {...detail} onClose={() => setDetail(null)} />}
 
       {/* AI Insights — pass period for live sync */}
       {widgets.show_ai_insights !== false && <AiInsightsCard period={period} customStart={customStart} customEnd={customEnd} />}
@@ -214,17 +336,70 @@ function GeneralTab({ data, widgets, period, customStart, customEnd }) {
 
 // ─── INVENTORY TAB ───────────────────────────────────────────────
 function InventoryTab({ data, widgets }) {
+  const [detail, setDetail] = useState(null);
   if (!data) return <SkeletonGrid />;
   const { kpi, low_stock_items, out_of_stock_items, top_movers, slow_movers, category_breakdown } = data;
+
+  const allProducts = [...(out_of_stock_items || []), ...(low_stock_items || []), ...(top_movers || []), ...(slow_movers || [])];
+  // Dedupe by id
+  const productMap = {};
+  allProducts.forEach(p => { if (p.id) productMap[p.id] = p; });
+  const productList = Object.values(productMap);
+
+  const productColumns = [
+    { key: 'name', label: 'Produk', className: 'font-bold text-[#451A03]' },
+    { key: 'category', label: 'Kategori' },
+    { key: 'stock', label: 'Stok', align: 'right', className: 'font-bold' },
+    { key: 'price', label: 'Harga', align: 'right', className: 'text-[#D97706] font-bold', render: r => fmtRp(r.price || 0) },
+  ];
+
+  const openTotalProducts = () => setDetail({
+    title: '📦 Detail Total Produk',
+    subtitle: `${kpi.total_products} varian aktif`,
+    columns: productColumns,
+    rows: productList,
+    footer: 'Data agregat dari produk aktif yang tampil di kategori low-stock, top-movers, dll.',
+  });
+
+  const openLowStock = () => setDetail({
+    title: `⚠️ Stok Menipis (< ${kpi.low_stock_threshold} unit)`,
+    subtitle: `${kpi.low_stock_count} produk perlu perhatian`,
+    columns: [
+      ...productColumns,
+      { key: 'velocity_30d', label: 'Velocity/hari', align: 'right' },
+    ],
+    rows: low_stock_items || [],
+  });
+
+  const openOutOfStock = () => setDetail({
+    title: '🚫 Habis Stok',
+    subtitle: `${kpi.out_of_stock_count} produk harus restock`,
+    columns: productColumns,
+    rows: out_of_stock_items || [],
+  });
+
+  const openStockValue = () => setDetail({
+    title: '💎 Nilai Stok',
+    subtitle: `Total ${fmtRp(kpi.stock_value)} (harga modal × qty stok)`,
+    columns: [
+      { key: 'name', label: 'Produk', className: 'font-bold text-[#451A03]' },
+      { key: 'stock', label: 'Stok', align: 'right' },
+      { key: 'cost_price', label: 'Modal/unit', align: 'right', render: r => fmtRp(r.cost_price || r.price || 0) },
+      { key: 'value', label: 'Total', align: 'right', className: 'font-bold text-[#D97706]', render: r => fmtRp(Number(r.cost_price || r.price || 0) * Number(r.stock || 0)) },
+    ],
+    rows: productList,
+  });
 
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {widgets.show_total_products_kpi !== false && <KpiCard title="Total Produk" value={fmtNum(kpi.total_products)} sub="varian aktif" icon={Package} color="blue" />}
-        {widgets.show_low_stock_kpi !== false && <KpiCard title="Stok Menipis" value={fmtNum(kpi.low_stock_count)} sub={`< ${kpi.low_stock_threshold} unit`} icon={AlertTriangle} color="amber" />}
-        {widgets.show_out_of_stock_kpi !== false && <KpiCard title="Habis Stok" value={fmtNum(kpi.out_of_stock_count)} sub="perlu restock" icon={AlertOctagon} color="red" />}
-        {widgets.show_stock_value_kpi !== false && <KpiCard title="Nilai Stok" value={fmtRpShort(kpi.stock_value)} sub="harga modal × qty" icon={DollarSign} color="green" />}
+        {widgets.show_total_products_kpi !== false && <KpiCard title="Total Produk" value={fmtNum(kpi.total_products)} sub="varian aktif" icon={Package} color="blue" onClick={openTotalProducts} />}
+        {widgets.show_low_stock_kpi !== false && <KpiCard title="Stok Menipis" value={fmtNum(kpi.low_stock_count)} sub={`< ${kpi.low_stock_threshold} unit`} icon={AlertTriangle} color="amber" onClick={openLowStock} />}
+        {widgets.show_out_of_stock_kpi !== false && <KpiCard title="Habis Stok" value={fmtNum(kpi.out_of_stock_count)} sub="perlu restock" icon={AlertOctagon} color="red" onClick={openOutOfStock} />}
+        {widgets.show_stock_value_kpi !== false && <KpiCard title="Nilai Stok" value={fmtRpShort(kpi.stock_value)} sub="harga modal × qty" icon={DollarSign} color="green" onClick={openStockValue} />}
       </div>
+
+      {detail && <KpiDetailModal {...detail} onClose={() => setDetail(null)} />}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {widgets.show_low_stock_table !== false && (
@@ -446,17 +621,59 @@ function SalesTab({ data, widgets }) {
 
 // ─── CUSTOMER TAB ────────────────────────────────────────────────
 function CustomerTab({ data, widgets }) {
+  const [detail, setDetail] = useState(null);
   if (!data) return <SkeletonGrid />;
   const { kpi, top_customers, acquisition_trend } = data;
+
+  const customerColumns = [
+    { key: 'name', label: 'Nama', className: 'font-bold text-[#451A03]' },
+    { key: 'phone', label: 'HP', render: r => '+' + r.phone },
+    { key: 'orders_count', label: 'Order', align: 'right', className: 'font-bold text-[#78350F]' },
+    { key: 'total_spent', label: 'Total Belanja', align: 'right', className: 'font-bold text-[#D97706]', render: r => fmtRp(r.total_spent) },
+    { key: 'total_margin', label: 'Margin', align: 'right', className: 'font-bold text-green-700', render: r => fmtRp(r.total_margin || 0) },
+    { key: 'last_order_at', label: 'Terakhir', render: r => r.last_order_at ? new Date(r.last_order_at).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' }) : '-' },
+  ];
+
+  const openTotal = () => setDetail({
+    title: '👥 Detail Total Pelanggan',
+    subtitle: `${kpi.total_customers} pelanggan aktif di periode ini`,
+    columns: customerColumns,
+    rows: top_customers || [],
+    footer: 'Menampilkan top pelanggan berdasarkan total belanja seumur hidup.',
+  });
+
+  const openNew = () => setDetail({
+    title: '✨ Pelanggan Baru',
+    subtitle: `${kpi.new_customers} first-time buyer di periode ini`,
+    columns: customerColumns,
+    rows: (top_customers || []).filter(c => c.orders_count === 1),
+    footer: 'Pelanggan dengan 1 order = kemungkinan first-time buyer di periode ini.',
+  });
+
+  const openReturning = () => setDetail({
+    title: '🔄 Pelanggan Returning',
+    subtitle: `${kpi.returning_customers} pelanggan repeat order — Retensi ${kpi.retention_rate}%`,
+    columns: customerColumns,
+    rows: (top_customers || []).filter(c => c.orders_count > 1),
+  });
+
+  const openAvg = () => setDetail({
+    title: '📊 Rata-rata Order per Pelanggan',
+    subtitle: `AOV pelanggan = ${kpi.avg_orders_per_customer}`,
+    columns: customerColumns,
+    rows: top_customers || [],
+  });
 
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {widgets.show_total_customers_kpi !== false && <KpiCard title="Total Pelanggan" value={fmtNum(kpi.total_customers)} sub="dalam periode" icon={Users} color="purple" />}
-        {widgets.show_new_customers_kpi !== false && <KpiCard title="Pelanggan Baru" value={fmtNum(kpi.new_customers)} sub="first-time buyer" icon={UserPlus} color="green" />}
-        {widgets.show_returning_kpi !== false && <KpiCard title="Returning" value={fmtNum(kpi.returning_customers)} sub={`${kpi.retention_rate}% retensi`} icon={UserCheck} color="blue" />}
-        {widgets.show_avg_orders_kpi !== false && <KpiCard title="Avg Order/Pelanggan" value={kpi.avg_orders_per_customer} sub="dalam periode" icon={ShoppingBag} color="amber" />}
+        {widgets.show_total_customers_kpi !== false && <KpiCard title="Total Pelanggan" value={fmtNum(kpi.total_customers)} sub="dalam periode" icon={Users} color="purple" onClick={openTotal} />}
+        {widgets.show_new_customers_kpi !== false && <KpiCard title="Pelanggan Baru" value={fmtNum(kpi.new_customers)} sub="first-time buyer" icon={UserPlus} color="green" onClick={openNew} />}
+        {widgets.show_returning_kpi !== false && <KpiCard title="Returning" value={fmtNum(kpi.returning_customers)} sub={`${kpi.retention_rate}% retensi`} icon={UserCheck} color="blue" onClick={openReturning} />}
+        {widgets.show_avg_orders_kpi !== false && <KpiCard title="Avg Order/Pelanggan" value={kpi.avg_orders_per_customer} sub="dalam periode" icon={ShoppingBag} color="amber" onClick={openAvg} />}
       </div>
+
+      {detail && <KpiDetailModal {...detail} onClose={() => setDetail(null)} />}
 
       {widgets.show_acquisition_chart !== false && (
         <ChartCard testId="customer-acquisition-chart" title="📈 Akuisisi Pelanggan Harian (Baru vs Returning)">
@@ -488,6 +705,7 @@ function CustomerTab({ data, widgets }) {
                     <th className="text-left py-2 px-2">HP</th>
                     <th className="text-right py-2 px-2">Order</th>
                     <th className="text-right py-2 px-2">Total Belanja</th>
+                    <th className="text-right py-2 px-2">Total Margin</th>
                     <th className="text-left py-2 px-2">Terakhir</th>
                   </tr>
                 </thead>
@@ -499,6 +717,10 @@ function CustomerTab({ data, widgets }) {
                       <td className="py-2 px-2 text-[#92400E] font-mono text-[10px]">+{c.phone}</td>
                       <td className="py-2 px-2 text-right text-[#78350F] font-bold">{c.orders_count}</td>
                       <td className="py-2 px-2 text-right font-bold text-[#D97706]">{fmtRp(c.total_spent)}</td>
+                      <td className="py-2 px-2 text-right">
+                        <div className="font-bold text-green-700">{fmtRp(c.total_margin || 0)}</div>
+                        <div className="text-[10px] text-green-600">{(c.margin_pct || 0).toFixed(1)}%</div>
+                      </td>
                       <td className="py-2 px-2 text-[#92400E] whitespace-nowrap">{c.last_order_at ? new Date(c.last_order_at).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' }) : '-'}</td>
                     </tr>
                   ))}

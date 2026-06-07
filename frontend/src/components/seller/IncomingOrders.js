@@ -19,10 +19,28 @@ const STATUS_MAP = Object.fromEntries(STATUS_STEPS.map(s => [s.key, s]));
 const PAYMENT_LABELS = { transfer: 'Transfer Bank', cod: 'COD', qris: 'QRIS' };
 
 // FASE 7: Ongkir Modal — muncul saat seller transition ke 'siap' utk order delivery
-function OngkirModal({ orderInfo, onClose, onConfirm }) {
+function OngkirModal({ orderInfo, onClose, onConfirm, products = [] }) {
   const [addOngkir, setAddOngkir] = useState(true);
   const [fee, setFee] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  // Compute margin breakdown from product cost_price
+  const order = orderInfo?.order || {};
+  const productMap = React.useMemo(() => {
+    const m = {};
+    (products || []).forEach(p => { m[p.id] = p; });
+    return m;
+  }, [products]);
+
+  const cogs = (order.items || []).reduce((sum, it) => {
+    const p = productMap[it.product_id];
+    const cost = Number(p?.cost_price || 0);
+    return sum + cost * Number(it.quantity || 0);
+  }, 0);
+
+  const subtotal = Number(order.subtotal || 0);
+  const grossMargin = subtotal - cogs;
+  const marginPct = subtotal > 0 ? (grossMargin / subtotal) * 100 : 0;
 
   const handle = async () => {
     const feeNum = addOngkir ? Number(fee) : 0;
@@ -34,9 +52,26 @@ function OngkirModal({ orderInfo, onClose, onConfirm }) {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-      <div data-testid="ongkir-modal" className="bg-white rounded-2xl w-full max-w-md p-6">
+      <div data-testid="ongkir-modal" className="bg-white rounded-2xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
         <h3 className="font-heading font-bold text-[#78350F] text-lg mb-1">Tambah Ongkir?</h3>
-        <p className="text-xs text-[#92400E] mb-4">Order <strong>#{orderInfo?.order?.order_number}</strong> akan ditandai siap dikirim.</p>
+        <p className="text-xs text-[#92400E] mb-4">Order <strong>#{order.order_number}</strong> akan ditandai siap dikirim.</p>
+
+        {/* Margin Breakdown */}
+        <div data-testid="margin-breakdown" className="rounded-xl bg-gradient-to-br from-green-50 to-emerald-50 border border-green-200 p-3 mb-4 text-xs">
+          <p className="font-bold text-green-800 text-sm mb-2">💰 Keuntungan Order Ini</p>
+          <div className="space-y-1">
+            <div className="flex justify-between text-[#451A03]"><span>Revenue (subtotal)</span><span className="font-semibold">{formatRp(subtotal)}</span></div>
+            <div className="flex justify-between text-[#92400E]"><span>HPP / Modal</span><span className="font-semibold">- {formatRp(cogs)}</span></div>
+            <div className="flex justify-between border-t border-green-300 pt-1 text-green-800">
+              <span className="font-bold">Margin Kotor</span>
+              <span className="font-bold">{formatRp(grossMargin)} ({marginPct.toFixed(1)}%)</span>
+            </div>
+            {cogs === 0 && (
+              <p className="text-[10px] text-amber-700 italic mt-1">⚠️ HPP belum diisi di salah satu produk. Edit cost_price di Produk untuk akurasi margin.</p>
+            )}
+          </div>
+        </div>
+
         <label className="flex items-center gap-3 p-3 rounded-xl bg-amber-50 border border-amber-200 mb-3 cursor-pointer">
           <input data-testid="ongkir-checkbox" type="checkbox" checked={addOngkir} onChange={e => setAddOngkir(e.target.checked)} className="w-5 h-5 accent-amber-600" />
           <span className="text-sm font-bold text-[#7C2D12]">Tambahkan ongkir ke total</span>
@@ -53,7 +88,7 @@ function OngkirModal({ orderInfo, onClose, onConfirm }) {
               autoFocus
               className="w-full px-4 py-2.5 rounded-xl border border-[#FED7AA] text-base focus:outline-none focus:ring-2 focus:ring-[#D97706]"
             />
-            <p className="text-[10px] text-[#92400E] mt-1">Total baru: Rp {(Number(orderInfo?.order?.subtotal || 0) + (Number(fee) || 0)).toLocaleString('id-ID')}</p>
+            <p className="text-[10px] text-[#92400E] mt-1">Total baru: Rp {(subtotal + (Number(fee) || 0)).toLocaleString('id-ID')}</p>
           </div>
         )}
         <div className="flex gap-2">
@@ -68,8 +103,12 @@ function OngkirModal({ orderInfo, onClose, onConfirm }) {
   );
 }
 
-function OrderDetailModal({ order, onClose, onStatusChange, onWhatsApp }) {
+function OrderDetailModal({ order, onClose, onStatusChange, onWhatsApp, onViewProof }) {
   const st = STATUS_MAP[order.status];
+  const API_URL = process.env.REACT_APP_BACKEND_URL;
+  const proofSrc = order.payment_proof_url
+    ? (order.payment_proof_url.startsWith('/api/') ? `${API_URL}${order.payment_proof_url}` : order.payment_proof_url)
+    : null;
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
@@ -105,6 +144,16 @@ function OrderDetailModal({ order, onClose, onStatusChange, onWhatsApp }) {
             </div>
           </div>
           <div className="flex flex-col gap-2 pt-2">
+            {proofSrc && (
+              <button
+                data-testid={`view-proof-detail-${order.id}`}
+                onClick={() => onViewProof({ src: proofSrc, order })}
+                className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-amber-100 to-amber-200 text-amber-900 font-bold py-2.5 rounded-xl hover:from-amber-200 hover:to-amber-300 transition-all border-2 border-amber-300 text-sm"
+              >
+                💰 Lihat Bukti Transfer
+                {order.payment_proof_submitted && <span className="text-[10px] bg-green-500 text-white px-1.5 py-0.5 rounded-full">BARU</span>}
+              </button>
+            )}
             {st?.next && (
               <button onClick={() => onStatusChange(order.id, st.next)}
                 className="w-full bg-[#D97706] text-white font-bold py-3 rounded-xl hover:bg-[#B45309] transition-all">
@@ -129,7 +178,7 @@ function OrderDetailModal({ order, onClose, onStatusChange, onWhatsApp }) {
 }
 
 export default function IncomingOrders() {
-  const { wsEvent, settings } = useApp();
+  const { wsEvent, settings, products } = useApp();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('all');
@@ -297,6 +346,7 @@ export default function IncomingOrders() {
           onClose={() => setSelectedOrder(null)}
           onStatusChange={handleStatusChange}
           onWhatsApp={handleWhatsApp}
+          onViewProof={(p) => setProofModal(p)}
         />
       )}
       {ongkirModal && (
@@ -304,6 +354,7 @@ export default function IncomingOrders() {
           orderInfo={ongkirModal}
           onClose={() => setOngkirModal(null)}
           onConfirm={(fee) => handleStatusChange(ongkirModal.orderId, 'siap', fee)}
+          products={products}
         />
       )}
       {proofModal && (

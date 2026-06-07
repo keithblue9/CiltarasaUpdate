@@ -11,7 +11,7 @@ import FinancialReport from './FinancialReport';
 import { StoreProfile, StoreCerita, CategoriesConfig, DeliveryConfig, PaymentsConfig, HomepageTextsConfig, HeroSlideshowConfig, FunFactsConfig, OnboardingTextsConfig } from './StoreConfigPages';
 import DiscountManagement from './DiscountManagement';
 import PurchaseManagement from './PurchaseManagement';
-import { FonnteConfig, HowToOrderConfig, ResetCustomersConfig, ChangePinConfig, TrafficStats, AutoChatConfig, InvoiceConfig, DashboardWidgetsConfig, MaintenanceConfig } from './AdminPages';
+import { FonnteConfig, HowToOrderConfig, ResetCustomersConfig, ChangePinConfig, TrafficStats, AutoChatConfig, InvoiceConfig, DashboardWidgetsConfig, MaintenanceConfig, PwaInstallConfig } from './AdminPages';
 import SellerPushSettings from './SellerPushSettings';
 import SellerPwaInstallBanner from './SellerPwaInstallBanner';
 import { setSellerManifest, restoreBuyerManifest } from '../pwa/sellerPush';
@@ -113,6 +113,7 @@ export default function SellerApp() {
     'dashboard-widgets': <DashboardWidgetsConfig />,
     'push-notif': <SellerPushSettings />,
     maintenance: <MaintenanceConfig />,
+    'pwa-install': <PwaInstallConfig />,
     discounts: <DiscountManagement />,
     whatsapp: <FonnteConfig />,
     'change-pin': <ChangePinConfig onPinChanged={() => handleLogout()} />,
