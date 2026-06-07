@@ -10,13 +10,13 @@ const CORS_PROXY = 'https://corsproxy.io/?';
 export function normalizeImageUrl(url) {
   if (!url) return '';
   if (typeof url !== 'string') return '';
-  // FIX: Handle uploaded media URLs seperti /api/media/{id}
-if (trimmed.startsWith('/api/')) {
-  return `${process.env.REACT_APP_BACKEND_URL || ''}${trimmed}`;
-}
-  }
   const trimmed = url.trim();
   if (!trimmed) return '';
+
+  // Handle uploaded media URLs like /api/media/{id}
+  if (trimmed.startsWith('/api/')) {
+    return `${process.env.REACT_APP_BACKEND_URL || ''}${trimmed}`;
+  }
 
   // Google Drive /file/d/ID/view → uc?export=view&id=ID
   const gdMatch = trimmed.match(/drive\.google\.com\/file\/d\/([^/]+)/);
