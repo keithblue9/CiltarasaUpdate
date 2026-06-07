@@ -436,7 +436,7 @@ DEFAULT_STORE_CONFIG = {
     "_id": "main",
     "name": "Ciltarasa",
     "logo_url": "",
-    "tagline": "Homemade Premium - Selected Frozen Food • Malang",
+    "tagline": "Frozen Food Premium • Malang",
     "whatsapp": "6285190884129",
     "address": "Jl. Kawi No. 15, Malang, Jawa Timur",
     "operating_hours": "Setiap Hari • 08.00 - 21.00 WIB",
@@ -716,6 +716,27 @@ async def seed_database():
         if backfill:
             await db.store_config.update_one({"_id": "main"}, {"$set": backfill})
             logger.info(f"Backfilled store_config: {list(backfill.keys())}")
+
+
+        # ─── MIGRATION: Fix wrong hardcoded phone number ───
+        WRONG_PHONE = "6285249682337"
+        CORRECT_PHONE = "6285190884129"
+        phone_fix = {}
+        if existing.get("whatsapp") == WRONG_PHONE:
+            phone_fix["whatsapp"] = CORRECT_PHONE
+        if existing.get("seller_notify_phone") == WRONG_PHONE:
+            phone_fix["seller_notify_phone"] = CORRECT_PHONE
+        if phone_fix:
+            await db.store_config.update_one({"_id": "main"}, {"$set": phone_fix})
+            logger.info(f"Migrated wrong phone numbers in store_config: {phone_fix}")
+        existing_settings = await db.settings.find_one({"_id": "main"}) or {}
+        if existing_settings.get("seller_whatsapp") == WRONG_PHONE:
+            await db.settings.update_one(
+                {"_id": "main"},
+                {"$set": {"seller_whatsapp": CORRECT_PHONE}},
+                upsert=True,
+            )
+            logger.info("Migrated wrong seller_whatsapp in settings collection")
 
     # ─── FASE 5: VAPID keys (Web Push) ───
     if WEBPUSH_AVAILABLE:
