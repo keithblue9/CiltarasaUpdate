@@ -268,7 +268,7 @@ export default function ProductManagement() {
         {filtered.map(product => (
           <div key={product.id} data-testid={`seller-product-${product.id}`} className={`bg-white rounded-2xl border overflow-hidden ${product.active ? 'border-[#FED7AA]' : 'border-gray-200 opacity-70'}`}>
             <div className="relative h-40">
-              <SmartImage src={product.image_url} alt={product.name} className="w-full h-full object-cover" />
+              <SmartImage src={product.media_urls?.[0] || product.image_url || ''} alt={product.name} className="w-full h-full object-cover" />
               {!product.active && (
                 <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
                   <span className="bg-gray-700 text-white text-xs font-bold px-3 py-1 rounded-full">Nonaktif</span>
