@@ -148,9 +148,12 @@ function GeneralTab({ data, widgets, period, customStart, customEnd }) {
   if (!data) return <SkeletonGrid />;
   const { kpi, trend, top_products, recent_orders, status_breakdown } = data;
 
-  // Build per-customer aggregation from recent_orders for the customers KPI
+  // ✅ FILTER: pesanan dibatalkan TIDAK dihitung untuk KPI Pendapatan/Order/AOV/Pelanggan
+  const validOrders = (recent_orders || []).filter(o => o.status !== 'dibatalkan');
+
+  // Build per-customer aggregation from VALID orders only (cancelled orders shouldn't count)
   const byCustomer = {};
-  (recent_orders || []).forEach(o => {
+  validOrders.forEach(o => {
     const k = o.customer_phone || o.customer_name || '-';
     if (!byCustomer[k]) byCustomer[k] = { name: o.customer_name, phone: o.customer_phone, orders: 0, total: 0 };
     byCustomer[k].orders += 1;
@@ -160,7 +163,7 @@ function GeneralTab({ data, widgets, period, customStart, customEnd }) {
 
   const openRevenue = () => setDetail({
     title: '💰 Detail Pendapatan',
-    subtitle: `Total ${fmtRp(kpi.revenue)} dari ${kpi.orders} pesanan valid`,
+    subtitle: `Total ${fmtRp(kpi.revenue)} dari ${kpi.orders} pesanan valid · Pesanan dibatalkan tidak dihitung`,
     columns: [
       { key: 'order_number', label: 'No. Pesanan' },
       { key: 'customer_name', label: 'Pelanggan' },
@@ -168,25 +171,25 @@ function GeneralTab({ data, widgets, period, customStart, customEnd }) {
       { key: 'total', label: 'Total', align: 'right', className: 'font-bold text-[#D97706]', render: r => fmtRp(r.total) },
       { key: 'created_at', label: 'Tanggal', render: r => r.created_at ? new Date(r.created_at).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '-' },
     ],
-    rows: recent_orders || [],
-    footer: `Data ${(recent_orders || []).length} pesanan terbaru di periode ini.`,
+    rows: validOrders,
+    footer: `Menampilkan ${validOrders.length} pesanan valid (dari ${(recent_orders || []).length} pesanan terbaru). Pesanan berstatus "dibatalkan" tidak masuk hitungan pendapatan.`,
   });
 
   const openOrders = () => setDetail({
-    title: '📦 Detail Pesanan',
-    subtitle: `${kpi.orders} pesanan valid`,
+    title: '📦 Detail Pesanan Valid',
+    subtitle: `${kpi.orders} pesanan valid · Pesanan dibatalkan tidak dihitung`,
     columns: [
       { key: 'order_number', label: 'No. Pesanan' },
       { key: 'customer_name', label: 'Pelanggan' },
       { key: 'status', label: 'Status' },
       { key: 'total', label: 'Total', align: 'right', className: 'font-bold text-[#D97706]', render: r => fmtRp(r.total) },
     ],
-    rows: recent_orders || [],
+    rows: validOrders,
   });
 
   const openAov = () => setDetail({
     title: '📊 Rata-rata Order',
-    subtitle: `AOV = ${fmtRp(kpi.aov)} (${fmtRp(kpi.revenue)} / ${kpi.orders} pesanan)`,
+    subtitle: `AOV = ${fmtRp(kpi.aov)} (${fmtRp(kpi.revenue)} / ${kpi.orders} pesanan valid)`,
     columns: [
       { key: 'order_number', label: 'No. Pesanan' },
       { key: 'customer_name', label: 'Pelanggan' },
@@ -196,12 +199,12 @@ function GeneralTab({ data, widgets, period, customStart, customEnd }) {
         return <span className={diff >= 0 ? 'text-green-600 font-bold' : 'text-red-500 font-bold'}>{diff >= 0 ? '+' : ''}{fmtRp(diff)}</span>;
       } },
     ],
-    rows: recent_orders || [],
+    rows: validOrders,
   });
 
   const openCustomers = () => setDetail({
     title: '👥 Detail Pelanggan',
-    subtitle: `${kpi.unique_customers} pelanggan unik (berdasarkan No. HP) di periode ini`,
+    subtitle: `${kpi.unique_customers} pelanggan unik (berdasarkan No. HP) di periode ini — dari pesanan valid`,
     columns: [
       { key: 'name', label: 'Nama' },
       { key: 'phone', label: 'HP', render: r => r.phone ? '+' + r.phone : '-' },
@@ -209,7 +212,7 @@ function GeneralTab({ data, widgets, period, customStart, customEnd }) {
       { key: 'total', label: 'Total Belanja', align: 'right', className: 'font-bold text-[#D97706]', render: r => fmtRp(r.total) },
     ],
     rows: customerRows,
-    footer: 'Data dihitung dari pesanan terbaru pada periode aktif.',
+    footer: 'Pelanggan dihitung dari pesanan VALID (bukan dibatalkan) pada periode aktif.',
   });
 
   return (
