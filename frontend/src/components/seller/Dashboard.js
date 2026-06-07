@@ -146,20 +146,26 @@ function ChartCard({ title, children, action, testId }) {
 function GeneralTab({ data, widgets, period, customStart, customEnd }) {
   const [detail, setDetail] = useState(null); // {title, subtitle, columns, rows, footer}
   if (!data) return <SkeletonGrid />;
-  const { kpi, trend, top_products, recent_orders, status_breakdown } = data;
+  const { kpi, trend, top_products, recent_orders, valid_orders, valid_customers, status_breakdown } = data;
 
-  // ✅ FILTER: pesanan dibatalkan TIDAK dihitung untuk KPI Pendapatan/Order/AOV/Pelanggan
-  const validOrders = (recent_orders || []).filter(o => o.status !== 'dibatalkan');
+  // ✅ Detail modals use backend-computed valid_orders (full period data, ALREADY excludes cancelled).
+  //    Fallback for old backend: filter recent_orders client-side (won't be complete but better than nothing).
+  const validOrders = valid_orders || (recent_orders || []).filter(o => o.status !== 'dibatalkan');
 
-  // Build per-customer aggregation from VALID orders only (cancelled orders shouldn't count)
-  const byCustomer = {};
-  validOrders.forEach(o => {
-    const k = o.customer_phone || o.customer_name || '-';
-    if (!byCustomer[k]) byCustomer[k] = { name: o.customer_name, phone: o.customer_phone, orders: 0, total: 0 };
-    byCustomer[k].orders += 1;
-    byCustomer[k].total += Number(o.total || 0);
-  });
-  const customerRows = Object.values(byCustomer).sort((a, b) => b.total - a.total);
+  // ✅ Customer aggregation from backend (full period) OR computed client-side from validOrders as fallback.
+  const customerRows = valid_customers || (() => {
+    const m = {};
+    validOrders.forEach(o => {
+      const k = o.customer_phone || o.customer_name || '-';
+      if (!m[k]) m[k] = { name: o.customer_name, phone: o.customer_phone, orders: 0, total: 0 };
+      m[k].orders += 1;
+      m[k].total += Number(o.total || 0);
+    });
+    return Object.values(m).sort((a, b) => b.total - a.total);
+  })();
+
+  const sumValid = validOrders.reduce((s, o) => s + Number(o.total || 0), 0);
+  const sumCustomers = customerRows.reduce((s, c) => s + Number(c.total || 0), 0);
 
   const openRevenue = () => setDetail({
     title: '💰 Detail Pendapatan',
@@ -172,7 +178,7 @@ function GeneralTab({ data, widgets, period, customStart, customEnd }) {
       { key: 'created_at', label: 'Tanggal', render: r => r.created_at ? new Date(r.created_at).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '-' },
     ],
     rows: validOrders,
-    footer: `Menampilkan ${validOrders.length} pesanan valid (dari ${(recent_orders || []).length} pesanan terbaru). Pesanan berstatus "dibatalkan" tidak masuk hitungan pendapatan.`,
+    footer: `Total ${validOrders.length} pesanan valid = ${fmtRp(sumValid)}. Sinkron dengan KPI Pendapatan ${fmtRp(kpi.revenue)}.`,
   });
 
   const openOrders = () => setDetail({
@@ -185,6 +191,7 @@ function GeneralTab({ data, widgets, period, customStart, customEnd }) {
       { key: 'total', label: 'Total', align: 'right', className: 'font-bold text-[#D97706]', render: r => fmtRp(r.total) },
     ],
     rows: validOrders,
+    footer: `Menampilkan semua ${validOrders.length} pesanan valid di periode ini.`,
   });
 
   const openAov = () => setDetail({
@@ -204,7 +211,7 @@ function GeneralTab({ data, widgets, period, customStart, customEnd }) {
 
   const openCustomers = () => setDetail({
     title: '👥 Detail Pelanggan',
-    subtitle: `${kpi.unique_customers} pelanggan unik (berdasarkan No. HP) di periode ini — dari pesanan valid`,
+    subtitle: `${kpi.unique_customers} pelanggan unik (berdasarkan No. HP) di periode ini`,
     columns: [
       { key: 'name', label: 'Nama' },
       { key: 'phone', label: 'HP', render: r => r.phone ? '+' + r.phone : '-' },
@@ -212,7 +219,7 @@ function GeneralTab({ data, widgets, period, customStart, customEnd }) {
       { key: 'total', label: 'Total Belanja', align: 'right', className: 'font-bold text-[#D97706]', render: r => fmtRp(r.total) },
     ],
     rows: customerRows,
-    footer: 'Pelanggan dihitung dari pesanan VALID (bukan dibatalkan) pada periode aktif.',
+    footer: `${customerRows.length} pelanggan unik · Total ${fmtRp(sumCustomers)}. Sinkron dengan KPI Pendapatan.`,
   });
 
   return (
@@ -626,14 +633,19 @@ function SalesTab({ data, widgets }) {
 function CustomerTab({ data, widgets }) {
   const [detail, setDetail] = useState(null);
   if (!data) return <SkeletonGrid />;
-  const { kpi, top_customers, acquisition_trend } = data;
+  const { kpi, top_customers, customers_in_range, acquisition_trend } = data;
+
+  // ✅ Detail modals use ALL customers in range (matches kpi.total_customers exactly).
+  //    top_customers (lifetime top 10) is only used for the main visible table.
+  const periodCustomers = customers_in_range || top_customers || [];
+  const newCustomers = periodCustomers.filter(c => c.is_new === true || (c.is_new === undefined && c.orders_count === 1));
+  const returningCustomers = periodCustomers.filter(c => c.is_new === false || (c.is_new === undefined && c.orders_count > 1));
 
   const customerColumns = [
     { key: 'name', label: 'Nama', className: 'font-bold text-[#451A03]' },
     { key: 'phone', label: 'HP', render: r => '+' + r.phone },
     { key: 'orders_count', label: 'Order', align: 'right', className: 'font-bold text-[#78350F]' },
     { key: 'total_spent', label: 'Total Belanja', align: 'right', className: 'font-bold text-[#D97706]', render: r => fmtRp(r.total_spent) },
-    { key: 'total_margin', label: 'Margin', align: 'right', className: 'font-bold text-green-700', render: r => fmtRp(r.total_margin || 0) },
     { key: 'last_order_at', label: 'Terakhir', render: r => r.last_order_at ? new Date(r.last_order_at).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' }) : '-' },
   ];
 
@@ -641,30 +653,31 @@ function CustomerTab({ data, widgets }) {
     title: '👥 Detail Total Pelanggan',
     subtitle: `${kpi.total_customers} pelanggan aktif di periode ini`,
     columns: customerColumns,
-    rows: top_customers || [],
-    footer: 'Menampilkan top pelanggan berdasarkan total belanja seumur hidup.',
+    rows: periodCustomers,
+    footer: `Menampilkan semua ${periodCustomers.length} pelanggan dengan order valid di periode aktif. Sinkron dengan KPI.`,
   });
 
   const openNew = () => setDetail({
     title: '✨ Pelanggan Baru',
-    subtitle: `${kpi.new_customers} first-time buyer di periode ini`,
+    subtitle: `${kpi.new_customers} first-time buyer di periode ini (order pertama mereka)`,
     columns: customerColumns,
-    rows: (top_customers || []).filter(c => c.orders_count === 1),
-    footer: 'Pelanggan dengan 1 order = kemungkinan first-time buyer di periode ini.',
+    rows: newCustomers,
+    footer: `${newCustomers.length} pelanggan baru. Sinkron dengan KPI.`,
   });
 
   const openReturning = () => setDetail({
     title: '🔄 Pelanggan Returning',
     subtitle: `${kpi.returning_customers} pelanggan repeat order — Retensi ${kpi.retention_rate}%`,
     columns: customerColumns,
-    rows: (top_customers || []).filter(c => c.orders_count > 1),
+    rows: returningCustomers,
+    footer: `${returningCustomers.length} returning customers. Sinkron dengan KPI.`,
   });
 
   const openAvg = () => setDetail({
     title: '📊 Rata-rata Order per Pelanggan',
-    subtitle: `AOV pelanggan = ${kpi.avg_orders_per_customer}`,
+    subtitle: `Avg = ${kpi.avg_orders_per_customer} order/pelanggan dalam periode`,
     columns: customerColumns,
-    rows: top_customers || [],
+    rows: periodCustomers,
   });
 
   return (
