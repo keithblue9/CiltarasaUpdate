@@ -29,6 +29,7 @@ function formatTs(ts) {
 function formatRp(n) { return `Rp ${Number(n).toLocaleString('id-ID')}`; }
 
 function ConfirmReceivedBanner({ order, onRefresh }) {
+  const { storeConfig, settings } = useApp();
   const [loading, setLoading] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
 
@@ -40,7 +41,12 @@ function ConfirmReceivedBanner({ order, onRefresh }) {
         toast.success('Terima kasih sudah konfirmasi! Yuk kasih review 💝');
         setReviewOpen(true);
       } else {
-        toast('Kami catat. Tim kami akan menghubungi kamu segera 📞', { icon: '📞' });
+        toast('Kami catat. Membuka WhatsApp untuk lapor ke seller... 📞', { icon: '📞' });
+        const sellerWA = storeConfig?.whatsapp || settings?.seller_whatsapp;
+        if (sellerWA) {
+          const msg = `Halo! Saya ingin melaporkan bahwa pesanan saya *BELUM DITERIMA* 😟\n\nOrder ID: #${order.order_number}\nNama: ${order.customer_name}\nTotal: Rp ${Number(order.total).toLocaleString('id-ID')}\n\nMohon segera ditindaklanjuti. Terima kasih 🙏`;
+          setTimeout(() => window.open(`https://wa.me/${sellerWA}?text=${encodeURIComponent(msg)}`, '_blank'), 500);
+        }
       }
       onRefresh?.();
     } catch {
@@ -155,7 +161,7 @@ function OrderCard({ order, settings, onRefresh }) {
     try {
       const fd = new FormData();
       fd.append('file', f);
-      const r = await axios.post(`${API}/api/media/upload-proof`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      const r = await axios.post(`${API}/api/media/upload-proof`, fd);
       setProofUrl(r.data.url);
       toast.success('Bukti terupload!');
     } catch { toast.error('Gagal upload'); } finally { setUploading(false); if (fileRef.current) fileRef.current.value = ''; }

@@ -51,7 +51,7 @@ function ProofUploader({ value, onChange, label, hint, testId = 'proof-uploader'
     try {
       const fd = new FormData();
       fd.append('file', f);
-      const r = await axios.post(`${API}/api/media/upload-proof`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      const r = await axios.post(`${API}/api/media/upload-proof`, fd);
       onChange(r.data.url);
       toast.success('Bukti bayar terupload!');
     } catch {
