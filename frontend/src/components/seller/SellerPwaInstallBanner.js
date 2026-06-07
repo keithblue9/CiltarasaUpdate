@@ -4,6 +4,19 @@ import { toast } from 'sonner';
 
 const SESSION_KEY = 'ciltarasa_seller_pwa_dismissed';
 
+function swapToSellerManifest() {
+  try {
+    const link = document.querySelector('link[rel="manifest"]');
+    if (link && !link.getAttribute('href').includes('seller-manifest')) {
+      link.setAttribute('href', '/seller-manifest.json');
+    }
+    const tc = document.querySelector('meta[name="theme-color"]');
+    if (tc) tc.setAttribute('content', '#7C2D12');
+    const at = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+    if (at) at.setAttribute('content', 'Ciltarasa Seller');
+  } catch (e) {}
+}
+
 export default function SellerPwaInstallBanner() {
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [show, setShow] = useState(false);
@@ -12,10 +25,26 @@ export default function SellerPwaInstallBanner() {
     window.navigator?.standalone === true
   );
 
+  // Swap manifest immediately when seller app mounts
+  useEffect(() => {
+    swapToSellerManifest();
+    return () => {
+      // Restore buyer manifest when leaving seller
+      try {
+        const link = document.querySelector('link[rel="manifest"]');
+        if (link) link.setAttribute('href', '/manifest.json');
+      } catch (e) {}
+    };
+  }, []);
+
   useEffect(() => {
     const handler = (e) => {
       e.preventDefault();
-      setDeferredPrompt(e);
+      // Only keep if it fires AFTER manifest was swapped to seller
+      const currentManifest = document.querySelector('link[rel="manifest"]')?.getAttribute('href') || '';
+      if (currentManifest.includes('seller-manifest')) {
+        setDeferredPrompt(e);
+      }
     };
     window.addEventListener('beforeinstallprompt', handler);
     return () => window.removeEventListener('beforeinstallprompt', handler);
@@ -24,7 +53,7 @@ export default function SellerPwaInstallBanner() {
   useEffect(() => {
     if (isStandalone) return;
     if (sessionStorage.getItem(SESSION_KEY)) return;
-    const t = setTimeout(() => setShow(true), 10000); // 10s delay setelah masuk seller
+    const t = setTimeout(() => setShow(true), 10000);
     return () => clearTimeout(t);
   }, [isStandalone]);
 
@@ -34,8 +63,11 @@ export default function SellerPwaInstallBanner() {
   };
 
   const install = async () => {
+    // Ensure manifest is swapped before install
+    swapToSellerManifest();
+
     if (!deferredPrompt) {
-      // iOS Safari: show manual instructions via toast
+      // iOS Safari or manifest not yet re-evaluated: show manual instructions
       toast.info('Buka menu Share → "Add to Home Screen" untuk install Seller App', { duration: 7000 });
       dismiss();
       return;
