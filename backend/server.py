@@ -2929,6 +2929,134 @@ async def get_financial_report():
         "expense_entries": entries,
     }
 
+
+# ─── Cashbook (Catatan Pemasukan per Metode Bayar) ───────────────────────────
+@api_router.get("/reports/cashbook")
+async def get_cashbook_report(
+    start: Optional[str] = Query(None, description="ISO date (YYYY-MM-DD)"),
+    end: Optional[str] = Query(None, description="ISO date (YYYY-MM-DD)"),
+    status_filter: str = Query("paid", description="'paid' = selesai+siap with proof; 'all' = all non-cancelled"),
+):
+    """Cashbook: catatan pemasukan dengan kolom per metode bayar (Tunai, BCA, Mandiri, QRIS, dll).
+    Frontend pakai untuk reconciliation harian."""
+    # Build query
+    q: dict = {"status": {"$ne": "dibatalkan"}}
+    if status_filter == "paid":
+        # "Uang masuk" = order selesai, OR siap+diproses dengan bukti bayar terupload
+        q = {"$or": [
+            {"status": "selesai"},
+            {"status": {"$in": ["siap", "diproses"]}, "payment_proof_url": {"$nin": [None, ""]}},
+        ]}
+    if start or end:
+        date_q = {}
+        if start:
+            date_q["$gte"] = start
+        if end:
+            date_q["$lte"] = end + "T23:59:59"  # inclusive
+        q["created_at"] = date_q
+
+    orders = await db.orders.find(q, {"_id": 0}).sort("created_at", -1).to_list(2000)
+
+    # Build column list from store config
+    cfg = await db.store_config.find_one({"_id": "main"}) or {}
+    bank_accounts = cfg.get("bank_accounts") or []
+    payment_methods = cfg.get("payment_methods") or []
+
+    columns = [{"key": "tunai", "label": "💵 Tunai", "type": "cash"}]
+    # Add a column per bank account
+    for b in bank_accounts:
+        if not isinstance(b, dict):
+            continue
+        bid = b.get("id")
+        if not bid:
+            continue
+        bank_name = b.get("bank") or b.get("bank_name") or "Bank"
+        bank_num = b.get("number") or b.get("account_number") or ""
+        label = f"🏦 {bank_name}"
+        if bank_num:
+            label += f" · {bank_num[-4:]}"  # last 4 digits for compactness
+        columns.append({"key": f"bank:{bid}", "label": label, "type": "bank", "bank_id": bid, "bank_name": bank_name, "bank_number": bank_num})
+
+    # Detect if any orders used QRIS / pay_later — add columns conditionally
+    has_qris = False
+    has_later = False
+    for o in orders:
+        pm = (o.get("payment_method") or "").lower()
+        if pm == "qris":
+            has_qris = True
+        elif pm == "pay_later" or pm == "later":
+            has_later = True
+        # Also check payment_method configured as type qris
+        pm_cfg = next((p for p in payment_methods if p.get("id") == pm), None)
+        if pm_cfg and pm_cfg.get("type") == "qris":
+            has_qris = True
+    if has_qris:
+        columns.append({"key": "qris", "label": "📱 QRIS", "type": "qris"})
+    if has_later:
+        columns.append({"key": "later", "label": "🕒 Bayar Nanti", "type": "later"})
+
+    # Always include "lainnya" at the end (placeholder for unknown payment methods)
+    columns.append({"key": "lainnya", "label": "❓ Lainnya", "type": "other"})
+
+    # Resolve each order to a column_key
+    def resolve_column(order: dict) -> str:
+        pm_id = (order.get("payment_method") or "").lower()
+        pm_bank_id = order.get("payment_method_id") or order.get("payment_bank_id") or ""
+        # Bank transfer with bank_id
+        if pm_id == "transfer" and pm_bank_id:
+            for c in columns:
+                if c.get("bank_id") == pm_bank_id:
+                    return c["key"]
+        # Check by payment method config type
+        pm_cfg = next((p for p in payment_methods if p.get("id") == pm_id), None)
+        pm_type = (pm_cfg.get("type") if pm_cfg else pm_id) or ""
+        pm_type = pm_type.lower()
+        if pm_type in ("cod", "cash") or pm_id in ("cod", "cash", "tunai"):
+            return "tunai"
+        if pm_type == "qris" or pm_id == "qris":
+            return "qris"
+        if pm_id in ("pay_later", "later"):
+            return "later"
+        return "lainnya"
+
+    # Build rows
+    rows = []
+    totals = {c["key"]: 0 for c in columns}
+    for o in orders:
+        col_key = resolve_column(o)
+        if col_key not in totals:
+            col_key = "lainnya"
+        amount = float(o.get("total") or 0)
+        totals[col_key] += amount
+        rows.append({
+            "order_id": o.get("id"),
+            "order_number": o.get("order_number") or "",
+            "date": (o.get("created_at") or "")[:10],
+            "datetime": o.get("created_at") or "",
+            "customer_name": o.get("customer_name") or "-",
+            "customer_phone": o.get("customer_phone") or "",
+            "status": o.get("status"),
+            "amount": amount,
+            "column_key": col_key,
+            "payment_method": o.get("payment_method") or "",
+        })
+
+    # Remove columns with zero total (except keep 'tunai' as it's always meaningful)
+    columns_with_data = [c for c in columns if c["key"] == "tunai" or totals.get(c["key"], 0) > 0]
+    # Also keep all bank columns even if zero (for consistency / future use)
+    columns_with_data = [c for c in columns if c["type"] in ("cash", "bank") or totals.get(c["key"], 0) > 0]
+
+    grand_total = sum(totals.values())
+
+    return {
+        "columns": columns_with_data,
+        "rows": rows,
+        "totals": {c["key"]: totals.get(c["key"], 0) for c in columns_with_data},
+        "grand_total": grand_total,
+        "row_count": len(rows),
+        "filter": {"start": start, "end": end, "status_filter": status_filter},
+    }
+
 # ─── Media Upload ────────────────────────────────────────────────────────────
 ALLOWED_MIME = {"image/jpeg", "image/png", "image/webp", "image/gif"}
 MAX_UPLOAD_BYTES = 5 * 1024 * 1024  # 5MB
