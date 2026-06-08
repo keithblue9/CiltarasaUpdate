@@ -16,6 +16,12 @@ import os
 import json
 import logging
 import httpx
+import uuid
+from pydantic import BaseModel
+
+
+def now_iso():
+    return datetime.now(timezone.utc).isoformat()
 
 logger = logging.getLogger(__name__)
 
@@ -599,6 +605,250 @@ Buat 5 fun facts random — bisa tentang:
             "_generated_at": datetime.now(timezone.utc).isoformat(),
             "_products_analyzed": len(products),
         }
+
+    # ─── Discount Recommendations ────────────────────────────────────────
+    @api_router.post("/ai/discount-recommendations/generate")
+    async def generate_discount_recommendations(_auth: bool = Depends(require_seller)):
+        """AI-recommend strategic per-product discounts based on margin & velocity.
+        Considers: high-margin top sellers (safe to discount), high-margin slow movers
+        (clear inventory), and skips low-margin products (too risky)."""
+        products = await db.products.find({}, {"_id": 0}).to_list(500)
+        active_products = [p for p in products if p.get("active") is not False and p.get("stock", 0) > 0]
+        if not active_products:
+            raise HTTPException(400, "Belum ada produk aktif dengan stok > 0. Tambahkan produk dulu.")
+
+        # ─── Compute 30d sales velocity per product ───
+        from datetime import timedelta
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+        orders_30d = await db.orders.find({
+            "created_at": {"$gte": cutoff},
+            "status": {"$nin": ["dibatalkan"]}
+        }, {"_id": 0, "items": 1}).to_list(5000)
+        velocity_30d = {}
+        for o in orders_30d:
+            for it in o.get("items", []):
+                pid = it.get("product_id")
+                if pid:
+                    velocity_30d[pid] = velocity_30d.get(pid, 0) + it.get("quantity", 0)
+
+        # ─── Score each product ───
+        scored = []
+        for p in active_products:
+            price = float(p.get("price") or 0)
+            cost = float(p.get("cost_price") or 0)
+            if price <= 0:
+                continue
+            margin_pct = ((price - cost) / price) * 100 if cost > 0 else 50.0  # Assume 50% if no cost
+            v30 = velocity_30d.get(p.get("id"), 0)
+            stock = int(p.get("stock") or 0)
+            # Composite score: prefer high margin + decent velocity OR overstocked
+            # Score = margin_pct * 0.6 + velocity_score * 0.3 + stock_pressure * 0.1
+            vel_score = min(v30 / 10.0, 10.0) * 10  # cap at 100
+            stock_score = min(stock / 20.0, 5.0) * 10  # high stock = nudge to clear
+            score = margin_pct * 0.6 + vel_score * 0.3 + stock_score * 0.1
+            scored.append({
+                "product": p,
+                "price": price,
+                "cost": cost,
+                "margin_pct": margin_pct,
+                "velocity_30d": v30,
+                "stock": stock,
+                "score": score,
+            })
+        scored.sort(key=lambda x: -x["score"])
+        # Top candidates (skip extremely low margin: <15%)
+        candidates = [s for s in scored if s["margin_pct"] >= 15.0][:8]
+
+        # ─── Generate recommendations ───
+        # Strategy: AI mode if API key, else algorithmic.
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        mode = "ai"
+        ai_error = None
+        recommendations = []
+
+        if api_key and candidates:
+            # Build compact context for Claude
+            prod_lines = []
+            for s in candidates:
+                p = s["product"]
+                prod_lines.append(
+                    f"- {p.get('name', '-')} (id={p.get('id')}): harga={int(s['price'])}, modal={int(s['cost']) if s['cost'] else 'n/a'}, "
+                    f"margin={s['margin_pct']:.1f}%, terjual_30hari={s['velocity_30d']}, stok={s['stock']}"
+                )
+            prompt = f"""Kamu adalah analyst marketing UMKM frozen food. Beri 5 rekomendasi diskon strategis dari produk berikut.
+
+# Produk
+{chr(10).join(prod_lines)}
+
+# Pertimbangan
+- HIGH-margin + HIGH-velocity → diskon 10-15% (aman, dorong sales lebih)
+- HIGH-margin + slow-mover → diskon 20-25% (clear inventory)
+- HIGH stok (overstocked, >30 pcs) → diskon 15-20% (rotation)
+- Margin minimal aman: 20% setelah diskon
+- Hindari rekomendasi yang bikin margin <15% setelah diskon
+
+# Output JSON saja (no markdown, no extra text):
+{{
+  "recommendations": [
+    {{
+      "product_id": "exact-id-from-list",
+      "discount_pct": 10-25 integer,
+      "reasoning": "1-2 kalimat bahasa santai (Bunda-friendly), jelaskan KENAPA & untuk siapa diskon ini cocok",
+      "confidence": "high" | "medium" | "low"
+    }}
+  ]
+}}
+
+Tepat 5 rekomendasi. Pilih product_id berbeda. Diskon 10-25 (multiples of 5 preferred)."""
+
+            try:
+                raw = await _call_anthropic(prompt)
+                clean = _strip_code_fence(raw)
+                parsed = json.loads(clean)
+                ai_recs = parsed.get("recommendations") if isinstance(parsed, dict) else None
+                if not ai_recs or not isinstance(ai_recs, list):
+                    raise ValueError("AI response missing recommendations array")
+                # Match AI recs to scored data
+                by_pid = {s["product"].get("id"): s for s in scored}
+                for r in ai_recs[:5]:
+                    pid = r.get("product_id")
+                    s = by_pid.get(pid)
+                    if not s:
+                        continue
+                    pct = max(5, min(40, int(r.get("discount_pct") or 10)))
+                    new_price = s["price"] * (1 - pct / 100)
+                    new_margin = ((new_price - s["cost"]) / new_price) * 100 if s["cost"] > 0 and new_price > 0 else 0
+                    p = s["product"]
+                    recommendations.append({
+                        "product_id": pid,
+                        "product_name": p.get("name", ""),
+                        "image_url": p.get("image_url", ""),
+                        "current_price": int(s["price"]),
+                        "cost_price": int(s["cost"]) if s["cost"] else None,
+                        "current_margin_pct": round(s["margin_pct"], 1),
+                        "recommended_discount_pct": pct,
+                        "projected_price": int(new_price),
+                        "projected_margin_pct": round(new_margin, 1),
+                        "sold_30d": s["velocity_30d"],
+                        "stock": s["stock"],
+                        "reasoning": (r.get("reasoning") or "")[:280],
+                        "confidence": r.get("confidence") or "medium",
+                    })
+            except Exception as e:
+                logger.warning(f"Discount rec AI failed: {e}")
+                ai_error = str(e)[:200]
+                mode = "local"
+        else:
+            mode = "local"
+            if not api_key:
+                ai_error = "ANTHROPIC_API_KEY belum di-set. Pakai algoritma lokal."
+
+        # ─── Local fallback: algorithmic recommendations ───
+        if mode == "local" or len(recommendations) < 3:
+            recommendations = []  # reset
+            for s in candidates[:5]:
+                p = s["product"]
+                margin = s["margin_pct"]
+                vel = s["velocity_30d"]
+                stock = s["stock"]
+
+                # Determine discount strategy
+                if vel >= 5 and margin >= 30:
+                    pct = 10
+                    reason = f"🔥 Top seller (terjual {vel} pcs 30 hari) dengan margin sehat ({margin:.0f}%). Diskon ringan 10% bisa boost konversi lebih banyak tanpa korbanin profit."
+                    conf = "high"
+                elif vel >= 5 and margin >= 20:
+                    pct = 8
+                    reason = f"💪 Laris ({vel} pcs/30hari) tapi margin tipis ({margin:.0f}%). Diskon kecil 8% untuk dorong frequency, hati-hati margin tipis."
+                    conf = "medium"
+                elif stock >= 30 and margin >= 25:
+                    pct = 20
+                    reason = f"📦 Stok numpuk ({stock} pcs) tapi margin masih oke ({margin:.0f}%). Diskon agresif 20% untuk clearance & rotation."
+                    conf = "high"
+                elif vel < 3 and margin >= 30:
+                    pct = 15
+                    reason = f"😴 Slow mover (cuma {vel} pcs 30 hari), tapi margin tebal ({margin:.0f}%). Diskon 15% biar awareness naik lagi."
+                    conf = "medium"
+                elif margin >= 40:
+                    pct = 15
+                    reason = f"💎 Margin gemoy ({margin:.0f}%) — aman discount 15% untuk attract repeat buyer."
+                    conf = "high"
+                else:
+                    pct = 10
+                    reason = f"⚖️ Margin moderate ({margin:.0f}%). Diskon mild 10% untuk test pasar."
+                    conf = "medium"
+
+                new_price = s["price"] * (1 - pct / 100)
+                new_margin = ((new_price - s["cost"]) / new_price) * 100 if s["cost"] > 0 and new_price > 0 else 0
+                # Safety: skip if projected margin <15%
+                if s["cost"] > 0 and new_margin < 15:
+                    pct = max(5, int(((s["price"] - s["cost"] / 0.85) / s["price"]) * 100))
+                    new_price = s["price"] * (1 - pct / 100)
+                    new_margin = ((new_price - s["cost"]) / new_price) * 100
+
+                recommendations.append({
+                    "product_id": p.get("id"),
+                    "product_name": p.get("name", ""),
+                    "image_url": p.get("image_url", ""),
+                    "current_price": int(s["price"]),
+                    "cost_price": int(s["cost"]) if s["cost"] else None,
+                    "current_margin_pct": round(s["margin_pct"], 1),
+                    "recommended_discount_pct": pct,
+                    "projected_price": int(new_price),
+                    "projected_margin_pct": round(new_margin, 1),
+                    "sold_30d": s["velocity_30d"],
+                    "stock": s["stock"],
+                    "reasoning": reason,
+                    "confidence": conf,
+                })
+
+        return {
+            "recommendations": recommendations,
+            "_mode": mode,
+            "_model": DEFAULT_MODEL if mode == "ai" else "local-algorithm",
+            "_ai_error": ai_error if mode == "local" else None,
+            "_generated_at": datetime.now(timezone.utc).isoformat(),
+            "_products_analyzed": len(active_products),
+        }
+
+    class DiscountRecApply(BaseModel):
+        recommendations: list  # list of {product_id, product_name, recommended_discount_pct, reasoning}
+
+    @api_router.post("/ai/discount-recommendations/apply")
+    async def apply_discount_recommendations(payload: DiscountRecApply, _auth: bool = Depends(require_seller)):
+        """Create discount entries for each selected recommendation and link to product."""
+        if not payload.recommendations:
+            raise HTTPException(400, "Tidak ada rekomendasi yang dipilih.")
+        created = 0
+        errors = []
+        for rec in payload.recommendations:
+            try:
+                pid = rec.get("product_id")
+                pct = int(rec.get("recommended_discount_pct") or 0)
+                pname = rec.get("product_name") or "Produk"
+                if not pid or pct <= 0:
+                    continue
+                # Build discount doc
+                disc_id = str(uuid.uuid4())
+                doc = {
+                    "id": disc_id,
+                    "name": f"AI: {pname[:30]} {pct}%",
+                    "type": "percent",
+                    "value": pct,
+                    "active": True,
+                    "is_flash_sale": False,
+                    "starts_at": None,
+                    "ends_at": None,
+                    "ai_recommendation": True,
+                    "ai_reasoning": rec.get("reasoning", "")[:300],
+                    "created_at": now_iso(),
+                }
+                await db.discounts.insert_one(doc)
+                await db.products.update_one({"id": pid}, {"$set": {"discount_id": disc_id}})
+                created += 1
+            except Exception as e:
+                errors.append(f"{rec.get('product_id')}: {str(e)[:60]}")
+        return {"created": created, "errors": errors}
 
 
 def _local_fun_facts(products):
