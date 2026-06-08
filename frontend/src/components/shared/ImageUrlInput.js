@@ -81,6 +81,7 @@ export default function ImageUrlInput({ value, onChange, placeholder = 'https://
     'border-[#FED7AA]';
 
   const previewSize = size === 'sm' ? 'h-20 w-20' : size === 'lg' ? 'h-40 w-full' : 'h-28 w-28';
+  const isStacked = size === 'lg'; // ✅ stacked layout for large preview to avoid horizontal collision
 
   return (
     <div className="space-y-2">
@@ -104,9 +105,9 @@ export default function ImageUrlInput({ value, onChange, placeholder = 'https://
         </button>
       </div>
 
-      <div className="flex gap-2 items-start">
+      <div className={isStacked ? 'space-y-2' : 'flex gap-2 items-start'}>
         {/* Preview thumbnail */}
-        <div className={`${previewSize} flex-shrink-0 rounded-xl border-2 ${borderClass} bg-[#FFFBF5] overflow-hidden relative transition-all`}>
+        <div className={`${previewSize} ${isStacked ? '' : 'flex-shrink-0'} rounded-xl border-2 ${borderClass} bg-[#FFFBF5] overflow-hidden relative transition-all`}>
           {uploading ? (
             <div className="w-full h-full flex items-center justify-center"><Loader2 size={20} className="animate-spin text-[#EA580C]" /></div>
           ) : previewSrc ? (
@@ -131,7 +132,7 @@ export default function ImageUrlInput({ value, onChange, placeholder = 'https://
         </div>
 
         {/* Input area */}
-        <div className="flex-1 space-y-1">
+        <div className={isStacked ? 'w-full' : 'flex-1 space-y-1'}>
           {tab === 'upload' ? (
             <div>
               <input
