@@ -3,6 +3,7 @@ import { Plus, Trash2, RefreshCw, TrendingUp, TrendingDown } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import axios from 'axios';
 import { toast } from 'sonner';
+import CashbookTable from './CashbookTable';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 const formatRp = (n) => `Rp ${Number(n).toLocaleString('id-ID')}`;
@@ -178,6 +179,9 @@ export default function FinancialReport() {
           </div>
         )}
       </div>
+
+      {/* Cashbook — pemasukan per metode bayar (Tunai / BCA / Mandiri / QRIS / dst) */}
+      <CashbookTable />
 
       {/* Transaction history */}
       <div className="bg-white rounded-2xl border border-[#FED7AA] p-6">
