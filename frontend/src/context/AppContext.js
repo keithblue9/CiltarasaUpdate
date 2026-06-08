@@ -152,6 +152,40 @@ export function AppProvider({ children }) {
     };
   }, []);
 
+  // ─── Listen for Service Worker push messages and play in-page audio ─────
+  // When a push arrives while the seller PWA is open (foreground), the OS
+  // suppresses showNotification's sound. We rely on the SW to postMessage
+  // back so we can play an in-page chime + vibrate via Web Audio.
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+    let active = true;
+    let handlers = null;
+    (async () => {
+      try {
+        // Dynamic import to avoid Web Audio issues for non-seller routes
+        const mod = await import('../lib/notificationAlert');
+        if (!active) return;
+        handlers = mod;
+        const onMessage = (event) => {
+          const data = event.data;
+          if (!data || data.type !== 'PUSH_RECEIVED') return;
+          const t = data.payload?.alert_type;
+          if (t === 'payment') {
+            handlers.triggerPaymentAlert();
+          } else {
+            handlers.triggerOrderAlert();
+          }
+        };
+        navigator.serviceWorker.addEventListener('message', onMessage);
+        // Save for cleanup
+        return () => navigator.serviceWorker.removeEventListener('message', onMessage);
+      } catch (e) {
+        console.warn('[ws] alert handler attach failed:', e?.message);
+      }
+    })();
+    return () => { active = false; };
+  }, []);
+
   // Auth actions
   const requestOtp = async (phone, name) => {
     const r = await axios.post(`${API}/api/auth/request-otp`, { phone, name });
