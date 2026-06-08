@@ -1506,25 +1506,42 @@ async def get_store_config():
     s = await db.store_config.find_one({"_id": "main"}, {"_id": 0})
     if not s:
         return {}
-    # ─── Backfill defaults: ensure new fields exist with sensible defaults ───
-    # This makes the buyer filter work correctly even if seller never explicitly
-    # saved these flags (e.g., old data from before this feature shipped).
-    if isinstance(s.get("payment_methods"), list):
-        for pm in s["payment_methods"]:
-            if not isinstance(pm, dict):
-                continue
-            pm.setdefault("available_for_delivery", True)
-            pm.setdefault("available_for_pickup", True)
+    # ─── Backfill defaults for delivery options ───
     if isinstance(s.get("delivery_options"), list):
         for d in s["delivery_options"]:
             if not isinstance(d, dict):
                 continue
-            # is_pickup: smart default via id/name detection
             if "is_pickup" not in d:
                 d["is_pickup"] = (
                     (d.get("id") or "").lower() == "pickup"
                     or bool(re.search(r"(ambil|sendiri|pickup)", (d.get("name") or ""), re.I))
                 )
+    # ─── Backfill per-option (payment × delivery) config ───
+    # Each payment_method.by_delivery = { [delivery_option_id]: { available, timing } }
+    # Backfill missing entries from old globals (available_for_delivery/pickup, delivery_timing/pickup_timing)
+    delivery_opts = s.get("delivery_options") or []
+    if isinstance(s.get("payment_methods"), list):
+        for pm in s["payment_methods"]:
+            if not isinstance(pm, dict):
+                continue
+            # Keep global defaults for backward compat
+            pm.setdefault("available_for_delivery", True)
+            pm.setdefault("available_for_pickup", True)
+            pm.setdefault("delivery_timing", "later")
+            pm.setdefault("pickup_timing", "both")
+            # Per-option map
+            by_d = dict(pm.get("by_delivery") or {})
+            for d in delivery_opts:
+                if not isinstance(d, dict):
+                    continue
+                d_id = d.get("id")
+                if not d_id or d_id in by_d:
+                    continue
+                d_pickup = d.get("is_pickup") is True
+                fallback_avail = pm["available_for_pickup"] if d_pickup else pm["available_for_delivery"]
+                fallback_timing = pm["pickup_timing"] if d_pickup else pm["delivery_timing"]
+                by_d[d_id] = {"available": fallback_avail, "timing": fallback_timing}
+            pm["by_delivery"] = by_d
     return s
 
 @api_router.put("/store-config")
