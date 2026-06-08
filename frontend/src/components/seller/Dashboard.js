@@ -803,15 +803,21 @@ function AiInsightsCard({ period, customStart, customEnd }) {
 
       <div className="relative flex items-center justify-between mb-4 flex-wrap gap-2">
         <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white shadow-lg">
+          <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-white shadow-lg ${data?._mode === 'local' ? 'bg-gradient-to-br from-blue-500 to-cyan-500' : 'bg-gradient-to-br from-purple-500 to-pink-500'}`}>
             <Brain size={22} />
           </div>
           <div>
-            <h3 className="font-heading font-bold text-[#451A03] text-lg flex items-center gap-1.5">
-              AI Insights <Sparkles size={14} className="text-purple-500" />
+            <h3 className="font-heading font-bold text-[#451A03] text-lg flex items-center gap-1.5 flex-wrap">
+              {data?._mode === 'local' ? 'Smart Insights' : 'AI Insights'} <Sparkles size={14} className="text-purple-500" />
+              {data?._mode === 'local' && (
+                <span className="text-[9px] font-bold uppercase bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">Local Mode</span>
+              )}
+              {data?._mode === 'ai' && (
+                <span className="text-[9px] font-bold uppercase bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full">Claude AI</span>
+              )}
             </h3>
             <p className="text-[10px] text-[#7C2D12]">
-              {loading ? 'AI sedang berpikir...' :
+              {loading ? 'Menganalisis data...' :
                 data?._cached ? `Cache (${data._cache_age_minutes} menit lalu) · ${data._period_label || data._period || ''}` :
                 data ? `Baru di-generate · ${data._period_label || data._period || ''}` :
                 'Klik refresh untuk generate insights'}
@@ -827,6 +833,17 @@ function AiInsightsCard({ period, customStart, customEnd }) {
           <RefreshCw size={12} className={loading ? 'animate-spin' : ''} /> {loading ? 'Generating...' : 'Refresh'}
         </button>
       </div>
+
+      {/* Info banner when in local mode (no AI API key) */}
+      {data?._mode === 'local' && data?._ai_error && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 text-xs text-blue-900">
+          <p className="font-bold mb-1">ℹ️ Mode Lokal Aktif</p>
+          <p className="text-[11px] leading-relaxed">
+            Insights ini dihitung dari data toko kamu secara real-time (tanpa AI eksternal).
+            Untuk hasil yang lebih kreatif dengan AI Claude, tambahkan <code className="bg-white px-1 rounded">ANTHROPIC_API_KEY</code> di Render → Environment Variables.
+          </p>
+        </div>
+      )}
 
       {loading && !data ? (
         <div className="space-y-3">

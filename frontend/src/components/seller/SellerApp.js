@@ -130,18 +130,43 @@ export default function SellerApp() {
         onClose={() => setSidebarOpen(false)}
       />
       <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="lg:hidden flex items-center justify-between px-4 py-3 bg-white border-b border-[#FED7AA]">
-          <button onClick={() => setSidebarOpen(true)} className="p-2 text-[#78350F]">
+        {/* iOS safe-area top spacer — separate from header for reliable rendering on iPhone Dynamic Island.
+            Fallback minHeight for iOS standalone in case env(safe-area-inset-top) returns 0 (Safari quirk). */}
+        <div
+          className="lg:hidden bg-white sticky top-0 z-30"
+          style={{
+            height: 'env(safe-area-inset-top, 0px)',
+            minHeight: (detectEnv().os === 'ios' && detectEnv().isStandalone) ? 47 : 0,
+          }}
+          aria-hidden="true"
+        />
+        <div
+          className="lg:hidden flex items-center justify-between bg-white border-b border-[#FED7AA] sticky z-30"
+          style={{
+            top: `calc(env(safe-area-inset-top, 0px) + ${(detectEnv().os === 'ios' && detectEnv().isStandalone) ? 0 : 0}px)`,
+            paddingLeft: 'calc(env(safe-area-inset-left, 0px) + 12px)',
+            paddingRight: 'calc(env(safe-area-inset-right, 0px) + 12px)',
+            paddingTop: '10px',
+            paddingBottom: '10px',
+            minHeight: 56,
+          }}
+        >
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="p-2 -ml-2 text-[#78350F] active:bg-[#FFEDD5] rounded-lg flex-shrink-0"
+            style={{ minWidth: 44, minHeight: 44 }}
+            aria-label="Buka menu"
+          >
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" />
             </svg>
           </button>
-          <span className="font-heading font-bold text-[#78350F]">Ciltarasa Seller</span>
+          <span className="font-heading font-bold text-[#78350F] text-base flex-1 text-center px-2 truncate">Ciltarasa Seller</span>
           {detectEnv().isStandalone ? (
-            <span data-testid="seller-installed-badge" className="flex items-center gap-1 px-2 py-1 rounded-full bg-green-100 text-green-700 text-[10px] font-bold">
+            <span data-testid="seller-installed-badge" className="flex items-center gap-1 px-2 py-1 rounded-full bg-green-100 text-green-700 text-[10px] font-bold flex-shrink-0">
               <Smartphone size={11} /> Installed
             </span>
-          ) : <div className="w-10" />}
+          ) : <div style={{ minWidth: 44 }} className="flex-shrink-0" />}
         </div>
         <main className="flex-1 overflow-y-auto p-4 md:p-6">
           {tabContent[activeTab] || tabContent.dashboard}
