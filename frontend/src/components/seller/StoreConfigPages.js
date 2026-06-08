@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Save, Plus, Trash2, Store, BookOpen, FolderTree, Truck, CreditCard, Image as ImageIcon, MapPin, Phone, Clock, Instagram, Music2, Type, ImagePlus, Sparkles, ChevronUp, ChevronDown, LogIn } from 'lucide-react';
+import { Save, Plus, Trash2, Store, BookOpen, FolderTree, Truck, CreditCard, Image as ImageIcon, MapPin, Phone, Clock, Instagram, Music2, Type, ImagePlus, Sparkles, ChevronUp, ChevronDown, LogIn, Brain, RefreshCw, Calendar } from 'lucide-react';
 import axios from 'axios';
 import { useApp } from '../../context/AppContext';
 import { toast } from 'sonner';
@@ -505,19 +505,103 @@ export function HeroSlideshowConfig() {
 }
 
 // ─── FUN FACTS ─────────────────────────────────────────────────
+const REFRESH_PERIOD_OPTIONS = [
+  { value: 0, label: 'Manual saja (tidak auto-refresh)' },
+  { value: 1, label: 'Harian' },
+  { value: 3, label: 'Setiap 3 Hari' },
+  { value: 7, label: 'Mingguan' },
+  { value: 14, label: 'Setiap 2 Minggu' },
+];
+
 export function FunFactsConfig() {
   const { storeConfig, refreshStoreConfig } = useApp();
   const [facts, setFacts] = useState([]);
   const [saving, setSaving] = useState(false);
-  useEffect(() => { setFacts(storeConfig?.fun_facts || []); }, [storeConfig]);
+  const [generating, setGenerating] = useState(false);
+  const [aiMeta, setAiMeta] = useState(null); // {_mode, _generated_at}
+  const [refreshPeriodDays, setRefreshPeriodDays] = useState(7);
+  const [lastGeneratedAt, setLastGeneratedAt] = useState(null);
+
+  useEffect(() => {
+    setFacts(storeConfig?.fun_facts || []);
+    const meta = storeConfig?.fun_facts_meta || {};
+    setRefreshPeriodDays(Number(meta.refresh_period_days ?? 7));
+    setLastGeneratedAt(meta.last_generated_at || null);
+    if (meta.mode) {
+      setAiMeta({ _mode: meta.mode, _generated_at: meta.last_generated_at });
+    }
+  }, [storeConfig]);
+
   const add = () => setFacts([...facts, { id: 'ff-' + Date.now(), image_url: '', title: '', text: '' }]);
   const update = (idx, k, v) => { const u = [...facts]; u[idx] = { ...u[idx], [k]: v }; setFacts(u); };
   const remove = (idx) => setFacts(facts.filter((_, i) => i !== idx));
+
   const save = async () => {
     setSaving(true);
-    try { await axios.put(`${API}/api/store-config`, { fun_facts: facts }); await refreshStoreConfig(); toast.success('Fun facts tersimpan! ✨'); }
-    catch { toast.error('Gagal simpan'); } finally { setSaving(false); }
+    try {
+      await axios.put(`${API}/api/store-config`, {
+        fun_facts: facts,
+        fun_facts_meta: {
+          refresh_period_days: refreshPeriodDays,
+          last_generated_at: lastGeneratedAt,
+          mode: aiMeta?._mode || null,
+        },
+      });
+      await refreshStoreConfig();
+      toast.success('Fun facts tersimpan! ✨');
+    } catch { toast.error('Gagal simpan'); }
+    finally { setSaving(false); }
   };
+
+  const generateAi = async (replaceExisting = true) => {
+    if (!replaceExisting && !window.confirm('Tambah 5 fun facts baru ke list yang ada? (Total bisa > 5)')) return;
+    if (replaceExisting && facts.length > 0 && !window.confirm('Ganti semua fun facts dengan 5 yang baru di-generate AI?')) return;
+    setGenerating(true);
+    try {
+      const r = await axios.post(`${API}/api/ai/fun-facts/generate`);
+      const newFacts = r.data?.fun_facts || [];
+      if (!newFacts.length) {
+        toast.error('AI tidak generate fun facts. Coba lagi.');
+        return;
+      }
+      const next = replaceExisting ? newFacts : [...facts, ...newFacts];
+      setFacts(next);
+      const now = new Date().toISOString();
+      setLastGeneratedAt(now);
+      setAiMeta({ _mode: r.data._mode, _generated_at: now });
+      // Auto-save after generation
+      await axios.put(`${API}/api/store-config`, {
+        fun_facts: next,
+        fun_facts_meta: {
+          refresh_period_days: refreshPeriodDays,
+          last_generated_at: now,
+          mode: r.data._mode,
+        },
+      });
+      await refreshStoreConfig();
+      toast.success(`🎉 5 fun facts baru di-generate via ${r.data._mode === 'ai' ? 'Claude AI' : 'Template Lokal'} & tersimpan otomatis!`, { duration: 5000 });
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || 'Gagal generate fun facts');
+    } finally { setGenerating(false); }
+  };
+
+  // Compute if refresh is "due"
+  const isDue = (() => {
+    if (!refreshPeriodDays || !lastGeneratedAt) return false;
+    try {
+      const last = new Date(lastGeneratedAt);
+      const diffDays = (Date.now() - last.getTime()) / (1000 * 60 * 60 * 24);
+      return diffDays >= refreshPeriodDays;
+    } catch { return false; }
+  })();
+
+  const nextRefreshDate = (() => {
+    if (!refreshPeriodDays || !lastGeneratedAt) return null;
+    try {
+      const last = new Date(lastGeneratedAt);
+      return new Date(last.getTime() + refreshPeriodDays * 24 * 60 * 60 * 1000);
+    } catch { return null; }
+  })();
 
   return (
     <div className="space-y-5">
@@ -528,9 +612,92 @@ export function FunFactsConfig() {
         </div>
         <button data-testid="save-funfacts-btn" onClick={save} disabled={saving} className="flex items-center gap-2 bg-gradient-to-r from-[#F97316] to-[#EA580C] text-white font-bold px-5 py-2.5 rounded-full shadow"><Save size={16} /> {saving ? 'Menyimpan...' : 'Simpan'}</button>
       </div>
-      <Section title="Daftar Fun Facts" icon={Sparkles} action={<button data-testid="add-funfact-btn" onClick={add} className="flex items-center gap-1 text-xs font-bold text-[#EA580C] hover:underline"><Plus size={14} /> Tambah</button>}>
+
+      {/* AI Generator Card */}
+      <div data-testid="funfacts-ai-card" className="rounded-2xl bg-gradient-to-br from-purple-50 via-white to-orange-50 border-2 border-purple-200 p-5 relative overflow-hidden">
+        <div className="absolute -top-4 -right-4 opacity-10 text-9xl">✨</div>
+        <div className="relative flex items-start gap-4 flex-wrap">
+          <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-white shadow-lg flex-shrink-0 ${aiMeta?._mode === 'local' ? 'bg-gradient-to-br from-blue-500 to-cyan-500' : 'bg-gradient-to-br from-purple-500 to-pink-500'}`}>
+            <Brain size={24} />
+          </div>
+          <div className="flex-1 min-w-[200px]">
+            <h3 className="font-heading font-bold text-[#451A03] text-lg flex items-center gap-2 flex-wrap">
+              Generate Fun Facts dengan AI
+              {aiMeta?._mode && (
+                <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full ${aiMeta._mode === 'local' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
+                  {aiMeta._mode === 'local' ? 'Local Templates' : 'Claude AI'}
+                </span>
+              )}
+            </h3>
+            <p className="text-xs text-[#7C2D12] mt-1 leading-relaxed">
+              AI baca produk-produk kamu & generate 5 fun facts personal: sejarah makanan, manfaat gizi, tips kuliner, atau trivia menarik. Random tiap kali di-generate.
+            </p>
+            {lastGeneratedAt && (
+              <p className="text-[10px] text-[#9A3412] mt-2">
+                Terakhir generate: {new Date(lastGeneratedAt).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button
+            data-testid="funfacts-generate-replace-btn"
+            onClick={() => generateAi(true)}
+            disabled={generating}
+            className="flex items-center gap-2 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-bold text-sm px-4 py-2 rounded-full shadow disabled:opacity-50"
+          >
+            <RefreshCw size={14} className={generating ? 'animate-spin' : ''} />
+            {generating ? 'Generating...' : 'Generate 5 Fun Facts (Replace)'}
+          </button>
+          {facts.length > 0 && (
+            <button
+              data-testid="funfacts-generate-add-btn"
+              onClick={() => generateAi(false)}
+              disabled={generating}
+              className="flex items-center gap-2 bg-white border-2 border-purple-300 hover:bg-purple-50 text-purple-700 font-bold text-sm px-4 py-2 rounded-full disabled:opacity-50"
+            >
+              <Plus size={14} />
+              Tambah 5 (Append)
+            </button>
+          )}
+        </div>
+
+        {/* Refresh Period */}
+        <div className="mt-5 pt-5 border-t border-purple-100">
+          <div className="flex items-center gap-2 mb-2">
+            <Calendar size={16} className="text-purple-600" />
+            <h4 className="font-bold text-[#451A03] text-sm">Auto-Refresh Period</h4>
+          </div>
+          <p className="text-[11px] text-[#7C2D12] mb-3">
+            Reminder muncul di sini kalau udah lewat periode ini. Buyer dapat fun facts fresh terus.
+          </p>
+          <select
+            data-testid="funfacts-refresh-period"
+            value={refreshPeriodDays}
+            onChange={e => setRefreshPeriodDays(Number(e.target.value))}
+            className="w-full sm:w-auto px-4 py-2 rounded-xl border-2 border-purple-200 bg-white text-sm font-bold text-[#451A03]"
+          >
+            {REFRESH_PERIOD_OPTIONS.map(opt => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+          {nextRefreshDate && refreshPeriodDays > 0 && (
+            <p className="text-[10px] text-[#9A3412] mt-2">
+              Refresh berikutnya: {nextRefreshDate.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
+            </p>
+          )}
+          {isDue && (
+            <div className="mt-3 p-3 rounded-xl bg-amber-50 border border-amber-300 text-xs text-amber-900">
+              ⏰ <strong>Saatnya refresh!</strong> Periode refresh sudah lewat. Klik "Generate 5 Fun Facts" di atas untuk fresh content.
+            </div>
+          )}
+        </div>
+      </div>
+
+      <Section title="Daftar Fun Facts" icon={Sparkles} action={<button data-testid="add-funfact-btn" onClick={add} className="flex items-center gap-1 text-xs font-bold text-[#EA580C] hover:underline"><Plus size={14} /> Tambah Manual</button>}>
         <div className="space-y-3">
-          {facts.length === 0 && <p className="text-sm text-gray-500 text-center py-6">Belum ada fun fact. Buat 5 fakta menarik tentang toko!</p>}
+          {facts.length === 0 && <p className="text-sm text-gray-500 text-center py-6">Belum ada fun fact. Klik "Generate" di atas untuk AI buat otomatis, atau tambah manual!</p>}
           {facts.map((f, idx) => (
             <div key={f.id || `ff-${idx}`} className="grid grid-cols-12 gap-3 p-4 rounded-xl bg-[#FFFBF5] border border-[#FED7AA]">
               <div className="col-span-12 sm:col-span-4">

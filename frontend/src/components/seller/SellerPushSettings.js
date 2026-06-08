@@ -1,11 +1,16 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Bell, BellOff, BellRing, Save, Smartphone, AlertCircle, CheckCircle2, Send, Trash2 } from 'lucide-react';
+import { Bell, BellOff, BellRing, Save, Smartphone, AlertCircle, CheckCircle2, Send, Trash2, Volume2, Vibrate } from 'lucide-react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import {
   isPushSupported, getCurrentPermission, getExistingSubscription,
   requestSubscribe, unsubscribe, sendTestPush,
 } from '../pwa/sellerPush';
+import {
+  isSoundEnabled, setSoundEnabled,
+  isVibrateEnabled, setVibrateEnabled,
+  triggerOrderAlert, triggerPaymentAlert, unlockAudio,
+} from '../../lib/notificationAlert';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 const PIN_KEY = 'seller_pin';
@@ -18,6 +23,36 @@ export default function SellerPushSettings() {
   const [subscriptions, setSubscriptions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [label, setLabel] = useState('');
+  const [soundOn, setSoundOnState] = useState(isSoundEnabled());
+  const [vibrateOn, setVibrateOnState] = useState(isVibrateEnabled());
+
+  const toggleSound = () => {
+    const v = !soundOn;
+    setSoundOnState(v);
+    setSoundEnabled(v);
+    if (v) {
+      unlockAudio();
+      // play a sample immediately so user can confirm it works
+      setTimeout(() => triggerOrderAlert(), 100);
+    }
+    toast.success(`Suara notif ${v ? 'aktif' : 'mati'}`);
+  };
+  const toggleVibrate = () => {
+    const v = !vibrateOn;
+    setVibrateOnState(v);
+    setVibrateEnabled(v);
+    toast.success(`Getar notif ${v ? 'aktif' : 'mati'}`);
+  };
+  const testSoundOnly = () => {
+    unlockAudio();
+    triggerOrderAlert();
+    toast.info('🔔 Tes suara order baru — kalau ga kedengeran, cek volume HP & toggle suara di atas.', { duration: 6000 });
+  };
+  const testPaymentSoundOnly = () => {
+    unlockAudio();
+    triggerPaymentAlert();
+    toast.info('💰 Tes suara bukti transfer (3 beep cepat)', { duration: 4000 });
+  };
 
   const refresh = useCallback(async () => {
     setSupported(await isPushSupported());
@@ -177,6 +212,73 @@ export default function SellerPushSettings() {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Sound & Vibrate (foreground audio fix) */}
+      <div data-testid="alert-settings-card" className="rounded-2xl bg-gradient-to-br from-orange-50 to-amber-50 border-2 border-amber-300 p-5">
+        <div className="flex items-center gap-2 mb-1">
+          <Volume2 size={20} className="text-amber-700" />
+          <h3 className="font-heading font-bold text-[#7C2D12] text-base">Suara & Getar Notif</h3>
+        </div>
+        <p className="text-xs text-[#9A3412] mb-4">
+          Kalau push notif silent saat app dibuka, ini yang bunyiin in-app. Sound di-generate via Web Audio (no file download). Toggle on dan tes.
+        </p>
+
+        <div className="space-y-3 mb-4">
+          <label className="flex items-center justify-between p-3 rounded-xl bg-white border border-amber-200 cursor-pointer">
+            <div className="flex items-center gap-3">
+              <Volume2 size={18} className={soundOn ? 'text-green-600' : 'text-gray-400'} />
+              <div>
+                <p className="font-bold text-sm text-[#7C2D12]">Bunyikan Chime</p>
+                <p className="text-[10px] text-[#9A3412]">2-tone "ding-dong" saat order baru / bukti bayar masuk</p>
+              </div>
+            </div>
+            <input
+              data-testid="alert-sound-toggle"
+              type="checkbox"
+              checked={soundOn}
+              onChange={toggleSound}
+              className="w-12 h-6 accent-amber-600"
+            />
+          </label>
+
+          <label className="flex items-center justify-between p-3 rounded-xl bg-white border border-amber-200 cursor-pointer">
+            <div className="flex items-center gap-3">
+              <Vibrate size={18} className={vibrateOn ? 'text-green-600' : 'text-gray-400'} />
+              <div>
+                <p className="font-bold text-sm text-[#7C2D12]">Getarkan HP</p>
+                <p className="text-[10px] text-[#9A3412]">Pattern kuat: getar-jeda-getar-jeda-long. Android only (iOS limited).</p>
+              </div>
+            </div>
+            <input
+              data-testid="alert-vibrate-toggle"
+              type="checkbox"
+              checked={vibrateOn}
+              onChange={toggleVibrate}
+              className="w-12 h-6 accent-amber-600"
+            />
+          </label>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <button
+            data-testid="alert-test-order-btn"
+            onClick={testSoundOnly}
+            className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold px-3 py-2 rounded-full"
+          >
+            <Bell size={14} /> Tes Suara Order
+          </button>
+          <button
+            data-testid="alert-test-payment-btn"
+            onClick={testPaymentSoundOnly}
+            className="flex items-center gap-1.5 bg-green-500 hover:bg-green-600 text-white text-xs font-bold px-3 py-2 rounded-full"
+          >
+            <Bell size={14} /> Tes Suara Bukti Bayar
+          </button>
+        </div>
+        <p className="text-[10px] text-[#9A3412] mt-3 italic">
+          💡 Tap dulu salah satu tombol tes di atas. iOS perlu user gesture pertama untuk unlock audio.
+        </p>
       </div>
 
       {/* Subscriptions List */}

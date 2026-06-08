@@ -3,6 +3,7 @@ import { Eye, MessageCircle, Search, Filter, RefreshCw, ChevronDown } from 'luci
 import axios from 'axios';
 import { useApp } from '../../context/AppContext';
 import { toast } from 'sonner';
+import { triggerOrderAlert, triggerPaymentAlert } from '../../lib/notificationAlert';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 const formatRp = (n) => `Rp ${Number(n).toLocaleString('id-ID')}`;
@@ -200,13 +201,16 @@ export default function IncomingOrders() {
   useEffect(() => { load(); }, []);
   useEffect(() => {
     if (wsEvent?.type === 'order_created') {
-      toast.success(`Pesanan baru: ${wsEvent.data?.order_number} dari ${wsEvent.data?.customer_name}!`);
+      // ✅ Foreground notification: in-page sound + vibrate (OS won't play push sound when app is open)
+      triggerOrderAlert();
+      toast.success(`🔔 Pesanan baru: ${wsEvent.data?.order_number} dari ${wsEvent.data?.customer_name}!`);
       setOrders(prev => [wsEvent.data, ...prev]);
     }
     if (wsEvent?.type === 'order_updated' || wsEvent?.type === 'payment_proof_submitted') {
       setOrders(prev => prev.map(o => o.id === wsEvent.data?.id ? wsEvent.data : o));
       if (selectedOrder?.id === wsEvent.data?.id) setSelectedOrder(wsEvent.data);
       if (wsEvent.type === 'payment_proof_submitted') {
+        triggerPaymentAlert();
         toast.success(`💰 Bukti bayar masuk dari ${wsEvent.data?.customer_name}!`);
       }
     }

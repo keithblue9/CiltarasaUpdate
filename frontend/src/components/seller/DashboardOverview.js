@@ -5,6 +5,7 @@ import axios from 'axios';
 import { useApp } from '../../context/AppContext';
 import SmartImage from '../shared/SmartImage';
 import { toast } from 'sonner';
+import { triggerOrderAlert, triggerPaymentAlert } from '../../lib/notificationAlert';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 const formatRp = (n) => `Rp ${Number(n).toLocaleString('id-ID')}`;
@@ -124,7 +125,15 @@ export default function DashboardOverview({ onTabChange }) {
 
   useEffect(() => { load(); }, []);
   useEffect(() => {
-    if (wsEvent?.type === 'order_created' || wsEvent?.type === 'order_updated' || wsEvent?.type === 'purchase_updated') {
+    if (wsEvent?.type === 'order_created') {
+      triggerOrderAlert();
+      toast.success(`🔔 Pesanan baru masuk: ${wsEvent.data?.order_number}`);
+      load();
+    } else if (wsEvent?.type === 'payment_proof_submitted') {
+      triggerPaymentAlert();
+      toast.success(`💰 Bukti transfer masuk dari ${wsEvent.data?.customer_name}`);
+      load();
+    } else if (wsEvent?.type === 'order_updated' || wsEvent?.type === 'purchase_updated') {
       load();
     }
   }, [wsEvent]);
