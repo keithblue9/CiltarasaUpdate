@@ -268,9 +268,10 @@ def render_chat_template(tpl: str, order: dict, store_name: str = "Ciltarasa", a
     if pm_id == "transfer" and pm_bank_id and bank_accounts:
         for b in bank_accounts:
             if b.get("id") == pm_bank_id:
-                bank_name = b.get("bank_name") or b.get("name") or "Bank"
-                acc_num = b.get("account_number") or b.get("number") or ""
-                acc_holder = b.get("account_holder") or b.get("holder") or ""
+                # ✅ Field names: `bank` (BCA/Mandiri), `name` (holder), `number` (rekening)
+                bank_name = b.get("bank") or b.get("bank_name") or "Bank"
+                acc_num = b.get("number") or b.get("account_number") or ""
+                acc_holder = b.get("name") or b.get("account_holder") or ""
                 pm_account = f"{bank_name} {acc_num}" + (f" a.n. {acc_holder}" if acc_holder else "")
                 break
     elif pm_id == "qris":
