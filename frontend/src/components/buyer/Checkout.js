@@ -241,20 +241,81 @@ export default function Checkout() {
   const { cart, cartTotal, clearCart, settings, storeConfig, authUser, authToken } = useApp();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
-  const [form, setForm] = useState({
+
+  // ─── Delivery options dari storeConfig (replaces hardcoded delivery/pickup) ───
+  const DELIVERY_EMOJI = { pickup: '🏠', kurir_toko: '🛵', gosend: '🛵', grab: '🛵', jne_jnt: '📦', ekspedisi: '📦' };
+  const deliveryOptions = useMemo(() => {
+    const raw = (storeConfig?.delivery_options || []).filter(d => d.active !== false);
+    if (raw.length === 0) {
+      // Backward-compat fallback
+      return [
+        { id: 'pickup', name: 'Ambil Sendiri', description: 'Ambil langsung di toko, gratis ongkir', fee: 0, is_pickup: true },
+        { id: 'delivery', name: 'Pengiriman', description: 'Kirim ke alamat', fee: 0, is_pickup: false },
+      ];
+    }
+    return raw.map(d => ({
+      ...d,
+      // Detect pickup: explicit flag OR known id OR name contains "ambil"/"pickup"/"sendiri"
+      is_pickup: d.is_pickup === true
+        || d.id === 'pickup'
+        || /(ambil|sendiri|pickup)/i.test(d.name || ''),
+      emoji: d.emoji || DELIVERY_EMOJI[d.id] || '🚚',
+    }));
+  }, [storeConfig]);
+
+  const [form, setForm] = useState(() => ({
     customer_name: authUser?.name || '',
     customer_phone: authUser?.phone ? authUser.phone.replace(/^62/, '0') : '',
     customer_address: '',
-    delivery_method: 'delivery', notes: '', payment_method: 'transfer',
+    delivery_method: '', // ← set ke option pertama via useEffect
+    delivery_option_id: '',
+    delivery_fee: 0,
+    notes: '',
+    payment_method: 'transfer',
     payment_bank_id: '', payment_type: '', payment_proof_url: '',
-  });
-  const [qrisStage, setQrisStage] = useState('pending'); // pending | paid | cancelled
+  }));
+  const [qrisStage, setQrisStage] = useState('pending');
 
+  // Init delivery_method on first load (or when options change)
+  useEffect(() => {
+    if (!form.delivery_option_id && deliveryOptions.length > 0) {
+      const first = deliveryOptions[0];
+      setForm(f => ({
+        ...f,
+        delivery_option_id: first.id,
+        delivery_method: first.is_pickup ? 'pickup' : 'delivery',
+        delivery_fee: Number(first.fee) || 0,
+      }));
+    }
+  }, [deliveryOptions, form.delivery_option_id]);
+
+  const currentDelivery = deliveryOptions.find(d => d.id === form.delivery_option_id);
+  const isDelivery = currentDelivery ? !currentDelivery.is_pickup : (form.delivery_method === 'delivery');
+
+  const setDelivery = (opt) => {
+    setForm(f => ({
+      ...f,
+      delivery_option_id: opt.id,
+      delivery_method: opt.is_pickup ? 'pickup' : 'delivery',
+      delivery_fee: Number(opt.fee) || 0,
+      // Clear address kalau switch ke pickup
+      customer_address: opt.is_pickup ? '' : f.customer_address,
+    }));
+  };
+
+  // ─── Filter payment methods by delivery context (is_pickup vs delivery) ───
+  // Each method may have `available_for_delivery: bool` and `available_for_pickup: bool` (default both true)
   const activePayments = useMemo(() => {
-    const list = (storeConfig?.payment_methods || []).filter(p => p.active !== false);
+    const list = (storeConfig?.payment_methods || []).filter(p => {
+      if (p.active === false) return false;
+      const isPickup = currentDelivery?.is_pickup === true;
+      if (isPickup && p.available_for_pickup === false) return false;
+      if (!isPickup && p.available_for_delivery === false) return false;
+      return true;
+    });
     if (list.length === 0) return DEFAULT_PAYMENTS;
     return list.map(p => ({ ...p, emoji: p.emoji || PAYMENT_EMOJI[p.type] || PAYMENT_EMOJI[p.id] || '💳' }));
-  }, [storeConfig]);
+  }, [storeConfig, currentDelivery]);
 
   const banks = useMemo(() => storeConfig?.bank_accounts || [], [storeConfig]);
   const qrisImageUrl = storeConfig?.qris_image_url || '';
@@ -287,7 +348,7 @@ export default function Checkout() {
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   // Validasi: tombol submit hanya enabled jika payment flow lengkap
-  const isDelivery = form.delivery_method === 'delivery';
+  // (isDelivery sudah didefinisikan di atas via currentDelivery.is_pickup)
   const paymentReady = useMemo(() => {
     if (currentPaymentType === 'transfer') {
       if (!form.payment_bank_id) return false;
@@ -311,7 +372,7 @@ export default function Checkout() {
     e.preventDefault();
     if (cart.length === 0) { toast.error('Keranjang kosong!'); return; }
     if (!form.customer_name || !form.customer_phone) { toast.error('Nama dan nomor HP wajib diisi!'); return; }
-    if (form.delivery_method === 'delivery' && !form.customer_address) { toast.error('Alamat wajib diisi untuk pengiriman!'); return; }
+    if (isDelivery && !form.customer_address) { toast.error('Alamat wajib diisi untuk pengiriman!'); return; }
     if (!paymentReady) {
       if (currentPaymentType === 'transfer' && !form.payment_bank_id) { toast.error('Pilih bank tujuan transfer dulu'); return; }
       if (currentPaymentType === 'transfer' && !form.payment_type) { toast.error('Pilih cara bayar (Sekarang/Nanti)'); return; }
@@ -327,8 +388,12 @@ export default function Checkout() {
         const price = product.final_price || product.price;
         return { product_id: product.id, product_name: product.name, price, quantity: qty, subtotal: price * qty, image_url: product.image_url || '' };
       });
+      const orderTotal = cartTotal + (Number(form.delivery_fee) || 0);
       const res = await axios.post(`${API}/api/orders`, {
-        ...form, items, subtotal: cartTotal, total: cartTotal,
+        ...form,
+        items,
+        subtotal: cartTotal,
+        total: orderTotal,
         user_id: authToken || null,
       });
       const newOrder = res.data;
@@ -383,17 +448,38 @@ export default function Checkout() {
 
         {/* Delivery */}
         <div className="bg-white rounded-2xl border border-[#FED7AA] p-6">
-          <h3 className="font-heading font-bold text-[#78350F] text-lg mb-4">Metode Pengambilan</h3>
-          <div className="grid grid-cols-2 gap-3 mb-4">
-            {[{ id: 'delivery', label: 'Pengiriman', emoji: '🚚' }, { id: 'pickup', label: 'Ambil Sendiri', emoji: '🏠' }].map(m => (
-              <button key={m.id} type="button" data-testid={`delivery-${m.id}`} onClick={() => set('delivery_method', m.id)}
-                className={`p-4 rounded-xl border-2 font-semibold text-sm transition-all flex flex-col items-center gap-2 ${
-                  form.delivery_method === m.id ? 'border-[#D97706] bg-[#FEF3C7] text-[#78350F]' : 'border-[#FED7AA] text-[#92400E] hover:border-[#D97706]'}`}>
-                <span className="text-2xl">{m.emoji}</span>{m.label}
-              </button>
-            ))}
-          </div>
-          {form.delivery_method === 'delivery' && (
+          <h3 className="font-heading font-bold text-[#78350F] text-lg mb-4">Metode Pengambilan / Pengiriman</h3>
+          {deliveryOptions.length === 0 ? (
+            <p className="text-sm text-[#92400E]">Tidak ada opsi pengiriman aktif. Silakan hubungi seller.</p>
+          ) : (
+            <div className={`grid gap-3 mb-4 ${deliveryOptions.length === 1 ? 'grid-cols-1' : deliveryOptions.length === 2 ? 'grid-cols-2' : 'grid-cols-2 sm:grid-cols-3'}`}>
+              {deliveryOptions.map(opt => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  data-testid={`delivery-${opt.id}`}
+                  onClick={() => setDelivery(opt)}
+                  className={`p-3 rounded-xl border-2 font-semibold text-xs transition-all flex flex-col items-center gap-1.5 text-center ${
+                    form.delivery_option_id === opt.id
+                      ? 'border-[#D97706] bg-[#FEF3C7] text-[#78350F]'
+                      : 'border-[#FED7AA] text-[#92400E] hover:border-[#D97706]'
+                  }`}
+                >
+                  <span className="text-2xl">{opt.emoji}</span>
+                  <span className="leading-tight">{opt.name}</span>
+                  {Number(opt.fee) > 0 ? (
+                    <span className="text-[10px] font-bold text-[#EA580C] mt-0.5">+{formatRp(opt.fee)}</span>
+                  ) : (
+                    <span className="text-[10px] font-normal text-emerald-700 mt-0.5">Gratis</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+          {currentDelivery?.description && (
+            <p className="text-[11px] text-[#9A3412] italic mb-3">💡 {currentDelivery.description}</p>
+          )}
+          {isDelivery && (
             <div>
               <label className="block text-sm font-semibold text-[#78350F] mb-1">Alamat Lengkap *</label>
               <textarea data-testid="checkout-address-input" required value={form.customer_address} onChange={e => set('customer_address', e.target.value)}
@@ -471,9 +557,21 @@ export default function Checkout() {
               </div>
             ))}
           </div>
-          <div className="border-t border-[#FED7AA] pt-3 flex justify-between">
-            <span className="font-bold text-[#78350F]">Total</span>
-            <span className="font-bold text-[#D97706] text-lg">{formatRp(cartTotal)}</span>
+          <div className="border-t border-[#FED7AA] pt-3 space-y-1.5">
+            <div className="flex justify-between text-sm text-[#451A03]">
+              <span>Subtotal</span>
+              <span className="font-semibold">{formatRp(cartTotal)}</span>
+            </div>
+            <div className="flex justify-between text-sm text-[#451A03]">
+              <span>Ongkir{currentDelivery ? ` (${currentDelivery.name})` : ''}</span>
+              <span className="font-semibold">
+                {Number(form.delivery_fee) > 0 ? formatRp(form.delivery_fee) : <span className="text-emerald-700">Gratis</span>}
+              </span>
+            </div>
+            <div className="flex justify-between pt-2 border-t border-[#FED7AA]/60">
+              <span className="font-bold text-[#78350F]">Total</span>
+              <span className="font-bold text-[#D97706] text-lg">{formatRp(cartTotal + (Number(form.delivery_fee) || 0))}</span>
+            </div>
           </div>
         </div>
 
