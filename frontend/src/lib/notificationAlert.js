@@ -1,25 +1,26 @@
 /**
- * In-page notification alert: sound + vibrate.
+ * In-page notification alert: sound + vibrate, with full user control.
  *
- * Solves 4 root causes that make Web Push silent on seller PWA:
- *   1. When app is in foreground, OS suppresses showNotification() sound.
- *   2. iOS Safari ignores `vibrate` property in showNotification options.
- *   3. WebSocket `order_created` events fire but had no audible feedback.
- *   4. Web Audio API generates a chime programmatically — no audio asset
- *      needed (no download, no cache, works offline).
+ * Improvements over v1:
+ *  - Volume slider (0-100%) — fixes "suara kecil banget"
+ *  - Vibration intensity (Lembut/Normal/Kuat) — adjustable pattern
+ *  - Async resume of AudioContext (fixes silent on idle PWA)
+ *  - Falls back to vibrate-only if audio context can't be unlocked
+ *  - Detect suspended state and notify caller for UI feedback
  *
- * Usage:
- *   import { triggerOrderAlert } from '../lib/notificationAlert';
- *   triggerOrderAlert();  // 2-tone chime + strong vibrate
- *
- * Pref:
- *   localStorage.ciltarasa_seller_alert_sound    "1" | "0"  (default "1")
- *   localStorage.ciltarasa_seller_alert_vibrate  "1" | "0"  (default "1")
+ * Storage keys:
+ *   ciltarasa_seller_alert_sound       "1" | "0"   (default "1")
+ *   ciltarasa_seller_alert_vibrate     "1" | "0"   (default "1")
+ *   ciltarasa_seller_alert_volume      "0"-"100"   (default "85")
+ *   ciltarasa_seller_alert_vibe_intens "light" | "normal" | "strong" (default "normal")
  */
 
 const LS_SOUND = 'ciltarasa_seller_alert_sound';
 const LS_VIBRATE = 'ciltarasa_seller_alert_vibrate';
+const LS_VOLUME = 'ciltarasa_seller_alert_volume';
+const LS_VIBE_INTENSITY = 'ciltarasa_seller_alert_vibe_intens';
 
+// ─── Preference getters/setters ─────────────────────────────────────
 export function isSoundEnabled() {
   try { return localStorage.getItem(LS_SOUND) !== '0'; } catch { return true; }
 }
@@ -32,8 +33,47 @@ export function isVibrateEnabled() {
 export function setVibrateEnabled(on) {
   try { localStorage.setItem(LS_VIBRATE, on ? '1' : '0'); } catch {}
 }
+export function getVolume() {
+  try {
+    const v = Number(localStorage.getItem(LS_VOLUME));
+    if (!isFinite(v) || v < 0) return 85;
+    return Math.min(100, v);
+  } catch { return 85; }
+}
+export function setVolume(vol) {
+  try {
+    const v = Math.max(0, Math.min(100, Math.round(Number(vol) || 0)));
+    localStorage.setItem(LS_VOLUME, String(v));
+  } catch {}
+}
+export function getVibrateIntensity() {
+  try {
+    const v = localStorage.getItem(LS_VIBE_INTENSITY);
+    if (v === 'light' || v === 'normal' || v === 'strong') return v;
+    return 'normal';
+  } catch { return 'normal'; }
+}
+export function setVibrateIntensity(intensity) {
+  try {
+    if (['light', 'normal', 'strong'].includes(intensity)) {
+      localStorage.setItem(LS_VIBE_INTENSITY, intensity);
+    }
+  } catch {}
+}
 
-// ─── Shared AudioContext (reuse to avoid Safari memory leak) ───
+// Vibrate pattern presets — picked to feel distinctive on Android
+const VIBE_PATTERNS = {
+  light:  [120, 80, 120],
+  normal: [200, 100, 200, 100, 400],
+  strong: [400, 100, 400, 100, 400, 100, 600],
+};
+const VIBE_PAYMENT_PATTERNS = {
+  light:  [80, 50, 80],
+  normal: [100, 50, 100, 50, 100],
+  strong: [150, 80, 150, 80, 200],
+};
+
+// ─── Shared AudioContext ───────────────────────────────────────
 let _audioCtx = null;
 function getAudioContext() {
   if (_audioCtx && _audioCtx.state !== 'closed') return _audioCtx;
@@ -42,137 +82,111 @@ function getAudioContext() {
     if (!AC) return null;
     _audioCtx = new AC();
     return _audioCtx;
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
-// ─── Unlock AudioContext on first user gesture (iOS requirement) ───
-// Safari/Chrome on iOS require any user gesture before audio can play.
-// We listen once to any touch/click on document and unlock the context.
 let _audioUnlocked = false;
 export function unlockAudio() {
-  if (_audioUnlocked) return;
-  const ctx = getAudioContext();
-  if (!ctx) return;
-  if (ctx.state === 'suspended') {
-    ctx.resume().then(() => { _audioUnlocked = true; }).catch(() => {});
-  } else {
-    _audioUnlocked = true;
-  }
-}
-
-// Auto-attach a one-time gesture listener on first import to unlock audio
-if (typeof window !== 'undefined' && typeof document !== 'undefined') {
-  const handler = () => {
-    unlockAudio();
-    document.removeEventListener('touchstart', handler);
-    document.removeEventListener('click', handler);
-    document.removeEventListener('keydown', handler);
-  };
-  document.addEventListener('touchstart', handler, { passive: true, once: false });
-  document.addEventListener('click', handler, { passive: true, once: false });
-  document.addEventListener('keydown', handler, { passive: true, once: false });
-}
-
-// ─── Play a 2-tone "ding-dong" alert chime ───
-export function playAlertSound() {
-  if (!isSoundEnabled()) return false;
   const ctx = getAudioContext();
   if (!ctx) return false;
+  if (ctx.state === 'suspended') {
+    ctx.resume()
+      .then(() => { _audioUnlocked = true; })
+      .catch(() => {});
+  } else if (ctx.state === 'running') {
+    _audioUnlocked = true;
+  }
+  return _audioUnlocked;
+}
+
+if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+  const handler = () => {
+    const ctx = getAudioContext();
+    if (ctx && ctx.state === 'suspended') {
+      ctx.resume().then(() => { _audioUnlocked = true; }).catch(() => {});
+    }
+  };
+  document.addEventListener('touchstart', handler, { passive: true });
+  document.addEventListener('click', handler, { passive: true });
+  document.addEventListener('keydown', handler, { passive: true });
+}
+
+// ─── Core sound primitive (with proper async resume) ─────────────
+async function _scheduleChime(envelopes) {
+  if (!isSoundEnabled()) return { ok: false, reason: 'disabled' };
+  const ctx = getAudioContext();
+  if (!ctx) return { ok: false, reason: 'no_audio_api' };
+
+  // ✅ AWAIT resume — fixes silent oscillator bug on idle PWA
+  if (ctx.state === 'suspended') {
+    try { await ctx.resume(); }
+    catch { return { ok: false, reason: 'needs_gesture' }; }
+  }
+  if (ctx.state !== 'running') return { ok: false, reason: 'not_running' };
+
+  const volMul = getVolume() / 100;
+  const now = ctx.currentTime;
+
   try {
-    // If suspended, attempt resume (works if called from event handler)
-    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
-
-    const now = ctx.currentTime;
-
-    // ─── Tone 1: G5 (783.99 Hz) ───
-    const osc1 = ctx.createOscillator();
-    const gain1 = ctx.createGain();
-    osc1.type = 'sine';
-    osc1.frequency.setValueAtTime(783.99, now);
-    gain1.gain.setValueAtTime(0, now);
-    gain1.gain.linearRampToValueAtTime(0.35, now + 0.02);
-    gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
-    osc1.connect(gain1).connect(ctx.destination);
-    osc1.start(now);
-    osc1.stop(now + 0.3);
-
-    // ─── Tone 2: C6 (1046.50 Hz) — higher to grab attention ───
-    const osc2 = ctx.createOscillator();
-    const gain2 = ctx.createGain();
-    osc2.type = 'sine';
-    osc2.frequency.setValueAtTime(1046.50, now + 0.18);
-    gain2.gain.setValueAtTime(0, now + 0.18);
-    gain2.gain.linearRampToValueAtTime(0.4, now + 0.20);
-    gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
-    osc2.connect(gain2).connect(ctx.destination);
-    osc2.start(now + 0.18);
-    osc2.stop(now + 0.65);
-
-    // ─── Tone 3 (echo at 0.5s for emphasis) ───
-    const osc3 = ctx.createOscillator();
-    const gain3 = ctx.createGain();
-    osc3.type = 'triangle';
-    osc3.frequency.setValueAtTime(880, now + 0.5);
-    gain3.gain.setValueAtTime(0, now + 0.5);
-    gain3.gain.linearRampToValueAtTime(0.25, now + 0.52);
-    gain3.gain.exponentialRampToValueAtTime(0.001, now + 0.9);
-    osc3.connect(gain3).connect(ctx.destination);
-    osc3.start(now + 0.5);
-    osc3.stop(now + 0.95);
-
-    return true;
+    for (const env of envelopes) {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = env.type || 'sine';
+      osc.frequency.setValueAtTime(env.freq, now + env.start);
+      gain.gain.setValueAtTime(0, now + env.start);
+      gain.gain.linearRampToValueAtTime(env.peak * volMul, now + env.start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + env.start + env.duration);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(now + env.start);
+      osc.stop(now + env.start + env.duration + 0.05);
+    }
+    return { ok: true };
   } catch (e) {
-    console.warn('[alert] sound failed:', e);
-    return false;
+    return { ok: false, reason: 'schedule_failed', error: String(e) };
   }
 }
 
-// ─── Trigger device vibration (Android/desktop browsers; iOS limited) ───
+export async function triggerOrderAlert() {
+  let soundResult = { ok: false, reason: 'disabled' };
+  if (isSoundEnabled()) {
+    soundResult = await _scheduleChime([
+      { type: 'sine',     freq: 783.99, start: 0,    peak: 0.55, duration: 0.30 },
+      { type: 'sine',     freq: 1046.5, start: 0.18, peak: 0.60, duration: 0.45 },
+      { type: 'triangle', freq: 880,    start: 0.50, peak: 0.40, duration: 0.40 },
+    ]);
+  }
+  const vibrateOk = vibrateAlert(VIBE_PATTERNS[getVibrateIntensity()]);
+  return { soundOk: soundResult.ok, vibrateOk, soundReason: soundResult.reason };
+}
+
+export async function triggerPaymentAlert() {
+  let soundResult = { ok: false, reason: 'disabled' };
+  if (isSoundEnabled()) {
+    soundResult = await _scheduleChime([
+      { type: 'sine', freq: 1200, start: 0.00, peak: 0.50, duration: 0.10 },
+      { type: 'sine', freq: 1200, start: 0.15, peak: 0.50, duration: 0.10 },
+      { type: 'sine', freq: 1200, start: 0.30, peak: 0.50, duration: 0.10 },
+    ]);
+  }
+  const vibrateOk = vibrateAlert(VIBE_PAYMENT_PATTERNS[getVibrateIntensity()]);
+  return { soundOk: soundResult.ok, vibrateOk, soundReason: soundResult.reason };
+}
+
+// ─── Legacy non-async wrappers ────────────────────────────────
+export function playAlertSound() {
+  triggerOrderAlert().catch(() => {});
+  return true;
+}
+
 export function vibrateAlert(pattern) {
   if (!isVibrateEnabled()) return false;
   if (typeof navigator === 'undefined' || !navigator.vibrate) return false;
-  // Strong pattern: buzz-pause-buzz-pause-long-buzz
-  const p = pattern || [200, 100, 200, 100, 400];
-  try {
-    navigator.vibrate(p);
-    return true;
-  } catch {
-    return false;
-  }
+  const p = pattern || VIBE_PATTERNS[getVibrateIntensity()];
+  try { navigator.vibrate(p); return true; } catch { return false; }
 }
 
-// ─── Master trigger: sound + vibrate combined ───
-export function triggerOrderAlert() {
-  const soundOk = playAlertSound();
-  const vibrateOk = vibrateAlert();
-  return { soundOk, vibrateOk };
-}
-
-// ─── Special pattern for "payment proof submitted" (3 quick beeps) ───
-export function triggerPaymentAlert() {
-  if (!isSoundEnabled()) {
-    vibrateAlert([100, 50, 100, 50, 100]);
-    return;
-  }
-  const ctx = getAudioContext();
-  if (!ctx) return;
-  try {
-    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
-    const now = ctx.currentTime;
-    [0, 0.15, 0.3].forEach((delay) => {
-      const o = ctx.createOscillator();
-      const g = ctx.createGain();
-      o.type = 'sine';
-      o.frequency.setValueAtTime(1200, now + delay);
-      g.gain.setValueAtTime(0, now + delay);
-      g.gain.linearRampToValueAtTime(0.3, now + delay + 0.02);
-      g.gain.exponentialRampToValueAtTime(0.001, now + delay + 0.1);
-      o.connect(g).connect(ctx.destination);
-      o.start(now + delay);
-      o.stop(now + delay + 0.12);
-    });
-    vibrateAlert([100, 50, 100, 50, 100]);
-  } catch {}
+export function audioStatus() {
+  const ctx = _audioCtx;
+  if (!ctx) return 'not_initialized';
+  return ctx.state;
 }
