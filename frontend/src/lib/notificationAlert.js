@@ -109,6 +109,25 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
   document.addEventListener('touchstart', handler, { passive: true });
   document.addEventListener('click', handler, { passive: true });
   document.addEventListener('keydown', handler, { passive: true });
+
+  // ─── Silent keepalive: prevents iOS/Safari from auto-suspending AudioContext ───
+  // Every 8 seconds, schedule an inaudible 5ms oscillator. This keeps the audio
+  // graph "active" so when a real notif arrives, we don't have to await resume().
+  // Only runs after user unlocked audio (so we don't try before first gesture).
+  setInterval(() => {
+    if (!_audioUnlocked) return;
+    const ctx = _audioCtx;
+    if (!ctx || ctx.state !== 'running') return;
+    try {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.00001, ctx.currentTime); // effectively silent
+      osc.frequency.setValueAtTime(20, ctx.currentTime); // sub-audible
+      osc.connect(gain).connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.005);
+    } catch {}
+  }, 8000);
 }
 
 // ─── Core sound primitive (with proper async resume) ─────────────
