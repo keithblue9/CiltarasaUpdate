@@ -1503,7 +1503,28 @@ async def update_settings(update: SettingsUpdate, _auth: bool = Depends(require_
 @api_router.get("/store-config")
 async def get_store_config():
     s = await db.store_config.find_one({"_id": "main"}, {"_id": 0})
-    return s or {}
+    if not s:
+        return {}
+    # ─── Backfill defaults: ensure new fields exist with sensible defaults ───
+    # This makes the buyer filter work correctly even if seller never explicitly
+    # saved these flags (e.g., old data from before this feature shipped).
+    if isinstance(s.get("payment_methods"), list):
+        for pm in s["payment_methods"]:
+            if not isinstance(pm, dict):
+                continue
+            pm.setdefault("available_for_delivery", True)
+            pm.setdefault("available_for_pickup", True)
+    if isinstance(s.get("delivery_options"), list):
+        for d in s["delivery_options"]:
+            if not isinstance(d, dict):
+                continue
+            # is_pickup: smart default via id/name detection
+            if "is_pickup" not in d:
+                d["is_pickup"] = (
+                    (d.get("id") or "").lower() == "pickup"
+                    or bool(re.search(r"(ambil|sendiri|pickup)", (d.get("name") or ""), re.I))
+                )
+    return s
 
 @api_router.put("/store-config")
 async def update_store_config(update: StoreConfigUpdate, _auth: bool = Depends(require_seller)):
