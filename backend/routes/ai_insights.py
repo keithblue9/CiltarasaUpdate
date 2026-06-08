@@ -497,3 +497,164 @@ def setup(api_router, db, require_seller):
             "model": DEFAULT_MODEL,
             "endpoint": ANTHROPIC_API_URL,
         }
+
+    # ─── Fun Facts Generator ─────────────────────────────────────────────
+    @api_router.post("/ai/fun-facts/generate")
+    async def generate_fun_facts(_auth: bool = Depends(require_seller)):
+        """Generate 5 fun facts based on products being sold. AI mode (Claude)
+        with local fallback (curated templates) when API key unavailable."""
+        products = await db.products.find({}, {"_id": 0, "name": 1, "category": 1, "description": 1}).to_list(200)
+        if not products:
+            raise HTTPException(400, "Belum ada produk. Tambahkan produk dulu untuk generate fun facts.")
+
+        # Build product context (max 30 products to keep prompt compact)
+        prod_lines = []
+        for p in products[:30]:
+            line = f"- {p.get('name', '-')}"
+            if p.get('category'):
+                line += f" (kategori: {p['category']})"
+            if p.get('description'):
+                line += f" — {p['description'][:80]}"
+            prod_lines.append(line)
+        prod_context = "\n".join(prod_lines)
+
+        prompt = f"""Kamu adalah copywriter F&B Indonesia untuk toko frozen food rumahan. Buatkan **5 fun facts menarik** yang akan ditampilkan di popup beranda toko buyer.
+
+# Konteks Produk Toko
+{prod_context}
+
+# Tugas
+Buat 5 fun facts random — bisa tentang:
+- Sejarah / asal-usul makanan (mis: "Tau ga sih, risoles itu berasal dari Belanda...")
+- Manfaat gizi / dampak positif konsumsi
+- Trivia menarik (mis: "1 ekor bebek bisa menghasilkan...")
+- Tips kuliner singkat
+- Fakta budaya kuliner Indonesia
+- Fun trivia yang related sama produk yang dijual
+
+# Output: JSON valid SAJA (tanpa markdown wrapper, tanpa teks ekstra)
+{{
+  "fun_facts": [
+    {{
+      "title": "Judul pendek 4-7 kata, menarik & catchy",
+      "text": "Narasi 2-3 kalimat (max 220 karakter total) Bahasa Indonesia santai, hangat, kayak ngobrol sm teman. Pakai 1-2 emoji yang relevan."
+    }}
+  ]
+}}
+
+# Aturan
+- HARUS exactly 5 fun facts.
+- Bahasa Indonesia santai (Bunda-friendly), bukan formal/korporat.
+- HINDARI klaim kesehatan medis berlebihan ("menyembuhkan", "obat", dll).
+- Variasi topik: jangan semua tentang sejarah, atau semua tentang gizi.
+- Title catchy, bukan boring kayak "Fakta Risoles" tapi mis "Risoles Si Imigran Belanda".
+- Hanya JSON valid."""
+
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        mode = "ai"
+        ai_error = None
+        data = None
+
+        if api_key:
+            try:
+                raw = await _call_anthropic(prompt)
+                clean = _strip_code_fence(raw)
+                parsed = json.loads(clean)
+                facts = parsed.get("fun_facts") if isinstance(parsed, dict) else None
+                if not facts or not isinstance(facts, list):
+                    raise ValueError("AI response missing fun_facts array")
+                data = facts[:5]
+            except Exception as e:
+                logger.warning(f"Fun facts AI failed: {e}")
+                ai_error = str(e)[:200]
+                mode = "local"
+        else:
+            ai_error = "ANTHROPIC_API_KEY belum di-set. Pakai template lokal."
+            mode = "local"
+
+        if mode == "local":
+            data = _local_fun_facts(products)
+
+        # Normalize: ensure each fact has id, title, text, image_url
+        normalized = []
+        for i, f in enumerate(data or []):
+            normalized.append({
+                "id": f"ff-{int(datetime.now(timezone.utc).timestamp())}-{i}",
+                "title": (f.get("title") or "")[:80],
+                "text": (f.get("text") or "")[:300],
+                "image_url": "",
+            })
+
+        return {
+            "fun_facts": normalized,
+            "_mode": mode,
+            "_model": DEFAULT_MODEL if mode == "ai" else "local-templates",
+            "_ai_error": ai_error if mode == "local" else None,
+            "_generated_at": datetime.now(timezone.utc).isoformat(),
+            "_products_analyzed": len(products),
+        }
+
+
+def _local_fun_facts(products):
+    """Curated template fun facts that adapt to product names/categories.
+    Used as fallback when Anthropic API unavailable."""
+    cats = set()
+    names = []
+    for p in products:
+        if p.get('category'):
+            cats.add(p['category'].lower())
+        if p.get('name'):
+            names.append(p['name'])
+
+    # Detect food types from product names/categories for relevance
+    has_risoles = any('risoles' in (p.get('name') or '').lower() for p in products) or 'risoles' in cats
+    has_bebek = any('bebek' in (p.get('name') or '').lower() for p in products) or 'ungkep' in cats or 'bebek' in cats
+    has_lumpia = any('lumpia' in (p.get('name') or '').lower() for p in products)
+    has_mie = any('mie' in (p.get('name') or '').lower() or 'cwimie' in (p.get('name') or '').lower() for p in products)
+    has_roti = any('roti' in (p.get('name') or '').lower() or 'maryam' in (p.get('name') or '').lower() for p in products)
+    has_singkong = any('singkong' in (p.get('name') or '').lower() for p in products)
+
+    pool = []
+
+    if has_risoles:
+        pool += [
+            {"title": "Risoles Si Imigran Belanda 🇳🇱", "text": "Tau ga sih? Risoles itu sebenernya dari Belanda, namanya 'rissole'. Dibawa ke Indonesia jaman kolonial, terus di-twist jadi gurih ala kita. Sekarang lebih populer di sini daripada di negara asalnya!"},
+            {"title": "Camilan Resmi Acara Keluarga 🎉", "text": "Risoles itu top 3 camilan wajib arisan & syukuran di Indonesia. Versi homemade rasanya lebih juara karena dimasak fresh tanpa pengawet. Frozen risoles yang tinggal goreng = solusi praktis!"},
+        ]
+    if has_bebek:
+        pool += [
+            {"title": "Bebek Lebih Sehat dari Ayam? 🦆", "text": "Daging bebek punya kadar zat besi 2x lipat dari ayam. Cocok banget buat anak-anak yang lagi tumbuh & ibu menyusui. Bonusnya: rasa lebih gurih & 'umami'!"},
+            {"title": "Bumbu Ungkep Awet Berhari-hari ⏰", "text": "Teknik ungkep tradisional Indonesia bikin bumbu meresap sampe ke tulang. Tinggal goreng/panggang sebentar = makan enak instant. Hidden gem masakan nusantara!"},
+        ]
+    if has_lumpia:
+        pool += [
+            {"title": "Lumpia Semarang Diakui UNESCO? 🌯", "text": "Lumpia Semarang itu peranakan budaya Tionghoa-Jawa yang bertahan 200+ tahun. Filling rebung khas-nya cuma ada di Indonesia, ga ditemuin di lumpia versi China!"},
+        ]
+    if has_mie:
+        pool += [
+            {"title": "Cwimie: Lambang Kekayaan? 🍜", "text": "Di budaya Tionghoa, mi panjang dianggap simbol umur panjang. Makanya pas Imlek atau ultah ada tradisi makan mi. Cwimie Malang sendiri sudah jadi ikon kuliner sejak 1970-an!"},
+        ]
+    if has_roti:
+        pool += [
+            {"title": "Roti Maryam dari Timur Tengah 🌍", "text": "Roti Maryam asal-usulnya dari Yaman & Saudi (di sana namanya 'roti canai' versi flatter). Sampai di Indonesia jadi paten breakfast — manis pakai gula, atau gurih buat cocol kuah kari!"},
+        ]
+    if has_singkong:
+        pool += [
+            {"title": "Singkong: Padi-nya Orang Kreatif 🌾", "text": "Indonesia produsen singkong nomor 4 dunia. Dari satu umbi singkong bisa jadi 50+ olahan: tape, getuk, keripik, sampe boba. Versi kekinian: singkong keju yang viral di mana-mana!"},
+        ]
+
+    # General Indonesian frozen food facts (always useful)
+    pool += [
+        {"title": "Frozen Bukan Berarti Ga Sehat 🧊", "text": "Penelitian membuktikan: makanan yang di-freeze cepat justru pertahankan nutrisinya lebih baik dari yang disimpan di kulkas biasa. Kuncinya proses pembekuannya cepat!"},
+        {"title": "Tips Goreng Frozen Anti-Berminyak 🍳", "text": "Jangan thawing dulu! Langsung masukin ke minyak panas yang sudah 170°C. Hasilnya crispy luar tapi tetap empuk dalam. Trik chef restoran yang sekarang viral di TikTok 😉"},
+        {"title": "1 Order Frozen = Hemat 3 Jam ⏰", "text": "Bikin risoles dari nol butuh 2-3 jam: bikin kulit, isian, lipat, bekukan. Pesan frozen = tinggal goreng. Hemat waktu buat hal yang lebih penting bareng keluarga 💝"},
+        {"title": "UMKM Frozen Naik 400% Sejak Pandemi 📈", "text": "Sejak 2020, UMKM frozen food rumahan tumbuh 400%. Banyak ibu-ibu jadi 'mompreneur' sukses dari dapur rumah. Beli dari mereka = support ekonomi keluarga lokal 🤝"},
+        {"title": "Aman 30 Hari di Freezer ❄️", "text": "Frozen food kemasan vakum bisa awet 30 hari di freezer suhu -18°C. Bandingin kulkas biasa yang cuma 2-3 hari. Selalu cek label 'best before' ya, Bunda!"},
+        {"title": "Ngirit Listrik dengan Frozen Food 💡", "text": "Lebih hemat listrik masak frozen food (cuma 10 menit pakai kompor) dibandingkan bikin from scratch (1-2 jam pakai oven/kompor). Win for the planet too 🌍"},
+    ]
+
+    # Pick 5 with variety (start with food-specific, fill with general)
+    import random
+    random.shuffle(pool)
+    selected = pool[:5]
+    return selected
