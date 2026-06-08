@@ -575,38 +575,107 @@ Buat 5 fun facts random — bisa tentang:
         if mode == "local":
             data = _local_fun_facts(products)
 
-        # ─── Generate eye-catching AI image URLs for each fact ───
-        # Uses Pollinations.ai (free, no API key, AI-art generator).
-        # Prompt = food-keyword extracted from title + product context + photo style.
-        # Browser will lazy-load — first hit takes 5-15s, subsequent hits are CDN-cached.
+        # ─── Generate beautiful gradient SVG data URLs per fact ───
+        # Inline SVG data URLs ALWAYS load (no external dependency), eye-catching,
+        # branded, contextual (palette matches food type via keyword detection).
         import hashlib, urllib.parse, re
 
-        # Build food vocabulary from actual products (case-insensitive)
-        food_vocab = []
-        for p in products[:30]:
-            for w in re.findall(r'[A-Za-z]{4,}', (p.get('name') or '')):
-                if w.lower() not in ('homemade', 'premium', 'fresh', 'ungkep', 'isi', 'rasa'):
-                    food_vocab.append(w.lower())
-        food_vocab_set = set(food_vocab)
+        # Indonesian-warm food palettes: (gradient_start, gradient_end, default_emoji)
+        PALETTES = [
+            ('#F97316', '#DC2626', '🥘'),  # 0: orange→red — savory/spicy
+            ('#FBBF24', '#F59E0B', '🥐'),  # 1: gold→amber — pastry
+            ('#10B981', '#059669', '🥬'),  # 2: emerald — veggie/fresh
+            ('#EF4444', '#B91C1C', '🌶️'),  # 3: red — spicy/hot
+            ('#FB923C', '#EA580C', '🍞'),  # 4: orange — bread
+            ('#A16207', '#78350F', '🍰'),  # 5: brown — baked
+            ('#0EA5E9', '#0284C7', '🍜'),  # 6: blue — cool/noodles
+            ('#A855F7', '#7E22CE', '🍡'),  # 7: purple — sweet
+            ('#84CC16', '#65A30D', '🌿'),  # 8: lime — herbs
+            ('#F472B6', '#DB2777', '🍓'),  # 9: pink — fruit/sweet
+        ]
+
+        # Keyword → (palette_index, emoji_override). Matches food type so colors are contextual.
+        KEYWORD_MAP = {
+            # Fried snacks (orange/red palette)
+            'risoles': (4, '🥟'), 'lumpia': (4, '🥡'), 'gorengan': (4, '🍟'),
+            'pisang': (1, '🍌'), 'tahu': (4, '🥡'),
+            # Duck/poultry (brown palette)
+            'bebek': (5, '🦆'), 'ayam': (5, '🍗'), 'ungkep': (5, '🍗'),
+            # Noodles (red/brown — warm noodle bowl)
+            'mie': (0, '🍜'), 'cwimie': (0, '🍜'), 'bakmi': (0, '🍜'),
+            # Bread/pastry (gold)
+            'roti': (1, '🥖'), 'maryam': (1, '🥖'), 'donat': (1, '🍩'),
+            # Cake/sweet (pink/purple)
+            'cake': (9, '🍰'), 'kue': (9, '🍰'), 'manis': (9, '🍬'),
+            # Root veggies (brown/amber)
+            'singkong': (5, '🍠'), 'kentang': (1, '🥔'), 'ubi': (5, '🍠'),
+            # Veggies (green)
+            'sayur': (2, '🥗'), 'salad': (2, '🥗'),
+            # Spicy
+            'sambal': (3, '🌶️'), 'pedas': (3, '🌶️'), 'rica': (3, '🌶️'),
+            # Beverages
+            'jamu': (8, '🌿'), 'teh': (5, '🍵'),
+            # Frozen/cold
+            'frozen': (6, '🧊'), 'beku': (6, '🧊'), 'es': (6, '🧊'),
+            # Sweet/dessert
+            'dessert': (9, '🍮'), 'puding': (9, '🍮'),
+            # Generic Indonesian
+            'nusantara': (4, '🍱'), 'tradisional': (5, '🍲'), 'rumahan': (1, '🍲'),
+            'keju': (1, '🧀'), 'coklat': (5, '🍫'), 'cokelat': (5, '🍫'),
+            'serat': (2, '🌾'), 'sehat': (2, '💚'), 'gizi': (2, '💚'),
+            'legacy': (5, '📜'), 'sejarah': (5, '📜'),
+            'lambang': (7, '✨'), 'kekayaan': (1, '💰'),
+        }
 
         def _build_image_url(fact_title, fact_text):
-            # Extract food-relevant words from title (skip emoji/punctuation)
-            clean_title = re.sub(r'[^\w\s]', ' ', (fact_title or ''))
-            title_words = [w for w in clean_title.split() if w.isascii() and len(w) > 3]
+            t = fact_title or fact_text or 'ciltarasa'
+            t_lower = t.lower()
+            h = hashlib.md5(t.encode('utf-8')).hexdigest()
 
-            # Pick food words that appear in our product catalog (higher relevance)
-            relevant = [w for w in title_words if w.lower() in food_vocab_set]
-            # If none match products, use first 2-3 ascii title words
-            if not relevant:
-                relevant = title_words[:3]
+            # 1. Try keyword match first (contextual palette + emoji)
+            palette_idx = None
+            emoji_override = None
+            for kw, (idx, em) in KEYWORD_MAP.items():
+                if kw in t_lower:
+                    palette_idx = idx
+                    emoji_override = em
+                    break
 
-            # Build a clear, photo-styled prompt
-            food_part = ' '.join(relevant[:4]) if relevant else 'Indonesian food'
-            prompt = f"{food_part}, Indonesian frozen food, vibrant food photography, warm natural lighting, top-down view, on rustic wooden plate, appetizing close-up, no text, no watermark, high detail, professional"
+            # 2. Fallback to hash-based palette if no keyword matched
+            if palette_idx is None:
+                palette_idx = int(h[0:2], 16) % len(PALETTES)
 
-            seed = int(hashlib.md5((fact_title or '').encode('utf-8')).hexdigest()[:8], 16)
-            encoded = urllib.parse.quote(prompt[:280])
-            return f"https://image.pollinations.ai/prompt/{encoded}?width=800&height=600&nologo=true&seed={seed}&model=flux"
+            color1, color2, default_emoji = PALETTES[palette_idx]
+
+            # 3. Emoji priority: user-written emoji in title > keyword emoji > palette default
+            emoji = emoji_override or default_emoji
+            for ch in t:
+                cp = ord(ch)
+                if (0x1F300 <= cp <= 0x1FAFF) or (0x2600 <= cp <= 0x27BF):
+                    emoji = ch
+                    break
+
+            # 4. Build SVG: gradient + dot pattern + soft circle + giant emoji
+            svg = (
+                f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600">'
+                f'<defs>'
+                f'<linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">'
+                f'<stop offset="0%" stop-color="{color1}"/>'
+                f'<stop offset="100%" stop-color="{color2}"/>'
+                f'</linearGradient>'
+                f'<pattern id="dots" x="0" y="0" width="40" height="40" patternUnits="userSpaceOnUse">'
+                f'<circle cx="20" cy="20" r="2" fill="white" fill-opacity="0.18"/>'
+                f'</pattern>'
+                f'</defs>'
+                f'<rect width="800" height="600" fill="url(#g)"/>'
+                f'<rect width="800" height="600" fill="url(#dots)"/>'
+                f'<circle cx="400" cy="280" r="180" fill="white" fill-opacity="0.13"/>'
+                f'<text x="400" y="350" font-size="220" text-anchor="middle" dominant-baseline="middle">'
+                f'{emoji}'
+                f'</text>'
+                f'</svg>'
+            )
+            return 'data:image/svg+xml;charset=UTF-8,' + urllib.parse.quote(svg)
 
         # Normalize: ensure each fact has id, title, text, image_url
         normalized = []
@@ -614,6 +683,7 @@ Buat 5 fun facts random — bisa tentang:
             title = (f.get("title") or "")[:80]
             text = (f.get("text") or "")[:300]
             existing_img = (f.get("image_url") or "").strip()
+            # Only generate SVG if user/AI didn't already provide an image_url
             img_url = existing_img or _build_image_url(title, text)
             normalized.append({
                 "id": f"ff-{int(datetime.now(timezone.utc).timestamp())}-{i}",
