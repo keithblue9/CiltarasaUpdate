@@ -14,6 +14,7 @@ import PurchaseManagement from './PurchaseManagement';
 import { FonnteConfig, HowToOrderConfig, ResetCustomersConfig, ChangePinConfig, TrafficStats, AutoChatConfig, InvoiceConfig, DashboardWidgetsConfig, MaintenanceConfig, PwaInstallConfig } from './AdminPages';
 import SellerPushSettings from './SellerPushSettings';
 import SellerPwaInstallBanner from './SellerPwaInstallBanner';
+import PendingOrdersAlert from './PendingOrdersAlert';
 import { setSellerManifest, restoreBuyerManifest } from '../pwa/sellerPush';
 import { Smartphone } from 'lucide-react';
 import { detectEnv } from '../pwa/detectEnv';
@@ -173,6 +174,9 @@ export default function SellerApp() {
         </main>
       </div>
       <SellerPwaInstallBanner />
+      {activeTab !== 'orders' && (
+        <PendingOrdersAlert onNavigateOrders={() => setActiveTab('orders')} />
+      )}
     </div>
   );
 }

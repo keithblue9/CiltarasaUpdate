@@ -217,17 +217,31 @@ export function DeliveryConfig() {
   const [items, setItems] = useState([]);
   const [saving, setSaving] = useState(false);
   useEffect(() => {
-    // Normalize: ensure is_pickup is EXPLICIT boolean (smart-detect for legacy data)
+    // Normalize: ensure all flags are EXPLICIT booleans + sane defaults per option
     const raw = storeConfig?.delivery_options || [];
-    setItems(raw.map(d => ({
-      ...d,
-      is_pickup: d.is_pickup === true
+    setItems(raw.map(d => {
+      const detectedPickup = d.is_pickup === true
         || (d.id || '').toLowerCase() === 'pickup'
-        || /(ambil|sendiri|pickup)/i.test(d.name || ''),
-      active: d.active !== false,
-    })));
+        || /(ambil|sendiri|pickup)/i.test(d.name || '');
+      return {
+        ...d,
+        is_pickup: detectedPickup,
+        active: d.active !== false,
+        // requires_address: default = NOT pickup (pickup ngga butuh alamat)
+        requires_address: d.requires_address !== undefined ? d.requires_address : !detectedPickup,
+        // needs_ongkir_input: default false; if true, seller fills ongkir saat tandai siap kirim
+        needs_ongkir_input: d.needs_ongkir_input === true,
+        // emoji + free_label: seller bisa override
+        emoji: d.emoji || (detectedPickup ? '🏠' : '🚚'),
+        free_label: d.free_label || 'Gratis',
+      };
+    }));
   }, [storeConfig]);
-  const add = () => setItems([...items, { id: 'opt-' + Date.now(), name: '', description: '', fee: 0, active: true, is_pickup: false }]);
+  const add = () => setItems([...items, {
+    id: 'opt-' + Date.now(), name: '', description: '', fee: 0,
+    active: true, is_pickup: false, requires_address: true,
+    needs_ongkir_input: false, emoji: '🚚', free_label: 'Gratis',
+  }]);
   const update = (idx, k, v) => { const u = [...items]; u[idx] = { ...u[idx], [k]: v }; setItems(u); };
   const remove = (idx) => setItems(items.filter((_, i) => i !== idx));
   const handleSave = async () => { setSaving(true); try { await axios.put(`${API}/api/store-config`, { delivery_options: items }); await refreshStoreConfig(); toast.success('Tersimpan!'); } catch { toast.error('Gagal'); } finally { setSaving(false); } };
@@ -241,33 +255,73 @@ export function DeliveryConfig() {
       <Section title="Opsi Pengiriman" icon={Truck} action={<button data-testid="add-delivery-btn" onClick={add} className="flex items-center gap-1 text-xs font-bold text-[#EA580C] hover:underline"><Plus size={14} /> Tambah</button>}>
         <div className="space-y-3">
           {items.map((it, idx) => {
-            const inferredPickup = it.is_pickup === true
-              || it.id === 'pickup'
-              || /(ambil|sendiri|pickup)/i.test(it.name || '');
             return (
             <div key={it.id || `del-${idx}`} className="p-3 rounded-xl bg-[#FFFBF5] border border-[#FED7AA] space-y-2">
+              {/* Row 1: Nama, Emoji, Ongkir */}
               <div className="grid grid-cols-12 gap-2">
                 <div className="col-span-12 sm:col-span-4"><Field label="Nama"><input className={inputCls} value={it.name} onChange={e => update(idx, 'name', e.target.value)} placeholder="Kurir Toko" /></Field></div>
-                <div className="col-span-6 sm:col-span-3"><Field label="Ongkir (Rp)"><input type="number" className={inputCls} value={it.fee} onChange={e => update(idx, 'fee', Number(e.target.value))} /></Field></div>
-                <div className="col-span-6 sm:col-span-4"><Field label="Deskripsi"><input className={inputCls} value={it.description} onChange={e => update(idx, 'description', e.target.value)} placeholder="Diantar kurir toko..." /></Field></div>
-                <div className="col-span-12 sm:col-span-1 flex sm:flex-col items-center justify-end sm:justify-end gap-3 sm:gap-1 pb-2">
-                  <label className="flex items-center gap-1 cursor-pointer text-[10px] font-bold text-[#7C2D12]" title="Aktifkan opsi ini">
+                <div className="col-span-3 sm:col-span-1"><Field label="Emoji"><input className={inputCls + ' text-center text-xl'} maxLength={4} value={it.emoji} onChange={e => update(idx, 'emoji', e.target.value)} placeholder="🚚" /></Field></div>
+                <div className="col-span-9 sm:col-span-3"><Field label="Ongkir (Rp)"><input type="number" className={inputCls} value={it.fee} onChange={e => update(idx, 'fee', Number(e.target.value))} disabled={it.needs_ongkir_input} placeholder={it.needs_ongkir_input ? 'Diisi nanti' : '0'} /></Field></div>
+                <div className="col-span-9 sm:col-span-3"><Field label="Deskripsi"><input className={inputCls} value={it.description} onChange={e => update(idx, 'description', e.target.value)} placeholder="Diantar kurir toko..." /></Field></div>
+                <div className="col-span-3 sm:col-span-1 flex flex-col items-center justify-end gap-1 pb-2">
+                  <label className="flex items-center gap-1 cursor-pointer text-[10px] font-bold text-[#7C2D12]">
                     <input type="checkbox" checked={it.active !== false} onChange={e => update(idx, 'active', e.target.checked)} className="w-4 h-4 accent-[#EA580C]" />
                     AKTIF
                   </label>
                   <button onClick={() => remove(idx)} className="p-1 rounded text-red-500 hover:bg-red-50"><Trash2 size={14} /></button>
                 </div>
               </div>
-              <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-[#7C2D12] pl-1 pt-1 border-t border-[#FED7AA]/60">
-                <input
-                  data-testid={`delivery-is-pickup-${idx}`}
-                  type="checkbox"
-                  checked={inferredPickup}
-                  onChange={e => update(idx, 'is_pickup', e.target.checked)}
-                  className="w-4 h-4 accent-emerald-600"
-                />
-                🏠 Ini opsi <strong>Ambil Sendiri</strong> (buyer datang langsung, tidak butuh alamat)
-              </label>
+              {/* Row 2: Free label + advanced flags */}
+              <div className="grid grid-cols-12 gap-2 pt-2 border-t border-[#FED7AA]/60">
+                <div className="col-span-12 sm:col-span-3">
+                  <Field label='Wording "Gratis"'>
+                    <input className={inputCls + ' text-xs py-1.5'} value={it.free_label} onChange={e => update(idx, 'free_label', e.target.value)} placeholder="Gratis" />
+                  </Field>
+                  <p className="text-[9px] text-gray-500 italic mt-0.5">Muncul kalau ongkir = 0</p>
+                </div>
+                <div className="col-span-12 sm:col-span-9 flex flex-wrap gap-3 items-center text-xs pt-3">
+                  <label className="flex items-center gap-1.5 cursor-pointer font-semibold text-[#7C2D12]">
+                    <input
+                      data-testid={`delivery-is-pickup-${idx}`}
+                      type="checkbox"
+                      checked={it.is_pickup}
+                      onChange={e => {
+                        update(idx, 'is_pickup', e.target.checked);
+                        // Auto-toggle requires_address logically
+                        if (e.target.checked) update(idx, 'requires_address', false);
+                      }}
+                      className="w-4 h-4 accent-emerald-600"
+                    />
+                    🏠 Ambil Sendiri
+                  </label>
+                  <label className="flex items-center gap-1.5 cursor-pointer font-semibold text-[#7C2D12]">
+                    <input
+                      data-testid={`delivery-requires-address-${idx}`}
+                      type="checkbox"
+                      checked={it.requires_address}
+                      onChange={e => update(idx, 'requires_address', e.target.checked)}
+                      className="w-4 h-4 accent-blue-600"
+                    />
+                    🏠 Butuh Alamat Lengkap
+                  </label>
+                  <label className="flex items-center gap-1.5 cursor-pointer font-semibold text-[#7C2D12]">
+                    <input
+                      data-testid={`delivery-needs-ongkir-${idx}`}
+                      type="checkbox"
+                      checked={it.needs_ongkir_input}
+                      onChange={e => {
+                        update(idx, 'needs_ongkir_input', e.target.checked);
+                        if (e.target.checked) update(idx, 'fee', 0);
+                      }}
+                      className="w-4 h-4 accent-purple-600"
+                    />
+                    💰 Ongkir Diisi Nanti (saat Tandai Siap)
+                  </label>
+                </div>
+                <p className="col-span-12 text-[10px] text-[#9A3412] italic">
+                  💡 <strong>Butuh Alamat</strong>: muncul field alamat di checkout. <strong>Ongkir Nanti</strong>: ongkir bukan flat — seller isi nominal saat order siap kirim (mis: GoSend ongkir variabel).
+                </p>
+              </div>
             </div>
           );})}
         </div>

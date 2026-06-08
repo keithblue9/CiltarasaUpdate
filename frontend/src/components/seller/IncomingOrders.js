@@ -218,12 +218,19 @@ export default function IncomingOrders() {
   }, [wsEvent]);
 
   const handleStatusChange = async (orderId, newStatus, deliveryFee = null) => {
-    // FASE 7: Saat transition ke 'siap' + order delivery → prompt ongkir
+    // ─── Smart ongkir prompt: trigger ONLY if delivery option has needs_ongkir_input ───
+    // Backward compat: legacy orders without delivery_option_id → check by delivery_method
     if (newStatus === 'siap' && deliveryFee === null) {
       const order = orders.find(o => o.id === orderId);
-      if (order && order.delivery_method === 'delivery' && (!order.delivery_fee || order.delivery_fee === 0)) {
-        setOngkirModal({ orderId, order });
-        return;
+      if (order && (!order.delivery_fee || order.delivery_fee === 0)) {
+        const deliveryOpt = (storeConfig?.delivery_options || []).find(d => d.id === order.delivery_option_id);
+        const needsOngkir = deliveryOpt
+          ? deliveryOpt.needs_ongkir_input === true
+          : (order.delivery_method === 'delivery'); // legacy fallback
+        if (needsOngkir) {
+          setOngkirModal({ orderId, order });
+          return;
+        }
       }
     }
     try {

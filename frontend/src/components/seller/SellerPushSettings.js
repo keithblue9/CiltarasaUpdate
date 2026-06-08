@@ -370,19 +370,19 @@ export default function SellerPushSettings() {
 
         {/* Audio context status — banner if suspended */}
         {soundOn && audioState !== 'running' && audioState !== 'not_initialized' && (
-          <div className="mb-3 p-3 rounded-xl bg-red-50 border-2 border-red-300">
-            <p className="text-xs font-bold text-red-700 mb-2">
-              🔇 Audio Suspended — Notif bunyi mungkin gagal
+          <div className="mb-3 p-3 rounded-xl bg-amber-50 border-2 border-amber-300">
+            <p className="text-xs font-bold text-amber-800 mb-2">
+              🔇 Suara di-pause sementara
             </p>
-            <p className="text-[11px] text-red-600 mb-2">
-              Browser auto-suspend Web Audio kalau page idle. Klik tombol di bawah untuk unlock lagi.
+            <p className="text-[11px] text-amber-700 mb-2 leading-relaxed">
+              <strong>Apa ini?</strong> Browser otomatis "matiin" mesin suara kalau halaman ga dipake lama. Ini wajar, ga ada masalah. Cuma kalau order masuk pas state ini, suara mungkin pelan/ga bunyi. Klik tombol di bawah untuk "nyalain" lagi mesin suaranya.
             </p>
             <button
               data-testid="alert-unlock-audio-btn"
               onClick={handleUnlockAudio}
-              className="bg-red-600 hover:bg-red-700 text-white text-xs font-bold px-3 py-1.5 rounded-full"
+              className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold px-3 py-1.5 rounded-full"
             >
-              🔓 Aktifkan Audio Lagi
+              🔓 Aktifkan Suara Lagi
             </button>
           </div>
         )}
