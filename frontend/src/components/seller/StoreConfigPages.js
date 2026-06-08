@@ -180,9 +180,9 @@ export function CategoriesConfig() {
 
   useEffect(() => { setCats(storeConfig?.categories || []); }, [storeConfig]);
 
-  const add = () => setCats([...cats, { id: 'kat-' + Date.now(), name: '', icon: '📦' }]);
-  const update = (idx, k, v) => { const u = [...cats]; u[idx] = { ...u[idx], [k]: v }; setCats(u); };
-  const remove = (idx) => setCats(cats.filter((_, i) => i !== idx));
+  const add = () => setCats(prev => [...prev, { id: 'kat-' + Date.now(), name: '', icon: '📦' }]);
+  const update = (idx, k, v) => setCats(prev => { const u = [...prev]; u[idx] = { ...u[idx], [k]: v }; return u; });
+  const remove = (idx) => setCats(prev => prev.filter((_, i) => i !== idx));
 
   const handleSave = async () => {
     setSaving(true);
@@ -237,13 +237,13 @@ export function DeliveryConfig() {
       };
     }));
   }, [storeConfig]);
-  const add = () => setItems([...items, {
+  const add = () => setItems(prev => [...prev, {
     id: 'opt-' + Date.now(), name: '', description: '', fee: 0,
     active: true, is_pickup: false, requires_address: true,
     needs_ongkir_input: false, emoji: '🚚', free_label: 'Gratis',
   }]);
-  const update = (idx, k, v) => { const u = [...items]; u[idx] = { ...u[idx], [k]: v }; setItems(u); };
-  const remove = (idx) => setItems(items.filter((_, i) => i !== idx));
+  const update = (idx, k, v) => setItems(prev => { const u = [...prev]; u[idx] = { ...u[idx], [k]: v }; return u; });
+  const remove = (idx) => setItems(prev => prev.filter((_, i) => i !== idx));
   const handleSave = async () => { setSaving(true); try { await axios.put(`${API}/api/store-config`, { delivery_options: items }); await refreshStoreConfig(); toast.success('Tersimpan!'); } catch { toast.error('Gagal'); } finally { setSaving(false); } };
 
   return (
@@ -386,9 +386,9 @@ export function PaymentsConfig() {
     setQrisImageUrl(storeConfig?.qris_image_url || '');
     setPaymentTexts(storeConfig?.payment_texts || {});
   }, [storeConfig]);
-  const add = () => setItems([...items, { id: 'pay-' + Date.now(), name: '', type: 'transfer', details: '', active: true, available_for_delivery: true, available_for_pickup: true, delivery_timing: 'later', pickup_timing: 'both', by_delivery: {} }]);
-  const update = (idx, k, v) => { const u = [...items]; u[idx] = { ...u[idx], [k]: v }; setItems(u); };
-  const remove = (idx) => setItems(items.filter((_, i) => i !== idx));
+  const add = () => setItems(prev => [...prev, { id: 'pay-' + Date.now(), name: '', type: 'transfer', details: '', active: true, available_for_delivery: true, available_for_pickup: true, delivery_timing: 'later', pickup_timing: 'both', by_delivery: {} }]);
+  const update = (idx, k, v) => setItems(prev => { const u = [...prev]; u[idx] = { ...u[idx], [k]: v }; return u; });
+  const remove = (idx) => setItems(prev => prev.filter((_, i) => i !== idx));
   const setText = (k, v) => setPaymentTexts(t => ({ ...t, [k]: v }));
   const handleSave = async () => {
     setSaving(true);
@@ -653,9 +653,9 @@ export function HeroSlideshowConfig() {
   const [slides, setSlides] = useState([]);
   const [saving, setSaving] = useState(false);
   useEffect(() => { setSlides(storeConfig?.hero_slides || []); }, [storeConfig]);
-  const add = () => setSlides([...slides, { id: 'slide-' + Date.now(), image_url: '', duration_ms: 5000, active: true }]);
-  const update = (idx, k, v) => { const u = [...slides]; u[idx] = { ...u[idx], [k]: v }; setSlides(u); };
-  const remove = (idx) => setSlides(slides.filter((_, i) => i !== idx));
+  const add = () => setSlides(prev => [...prev, { id: 'slide-' + Date.now(), image_url: '', duration_ms: 5000, active: true }]);
+  const update = (idx, k, v) => setSlides(prev => { const u = [...prev]; u[idx] = { ...u[idx], [k]: v }; return u; });
+  const remove = (idx) => setSlides(prev => prev.filter((_, i) => i !== idx));
   const move = (idx, dir) => {
     const ni = idx + dir;
     if (ni < 0 || ni >= slides.length) return;
@@ -756,9 +756,9 @@ export function FunFactsConfig() {
     }
   }, [storeConfig]);
 
-  const add = () => setFacts([...facts, { id: 'ff-' + Date.now(), image_url: '', title: '', text: '', show_image: false }]);
-  const update = (idx, k, v) => { const u = [...facts]; u[idx] = { ...u[idx], [k]: v }; setFacts(u); };
-  const remove = (idx) => setFacts(facts.filter((_, i) => i !== idx));
+  const add = () => setFacts(prev => [...prev, { id: 'ff-' + Date.now(), image_url: '', title: '', text: '', show_image: false }]);
+  const update = (idx, k, v) => setFacts(prev => { const u = [...prev]; u[idx] = { ...u[idx], [k]: v }; return u; });
+  const remove = (idx) => setFacts(prev => prev.filter((_, i) => i !== idx));
   const toggleImage = (idx) => {
     const u = [...facts];
     const curr = u[idx].show_image ?? !!u[idx].image_url;
