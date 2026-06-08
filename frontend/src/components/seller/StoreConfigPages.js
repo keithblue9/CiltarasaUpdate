@@ -513,6 +513,17 @@ const REFRESH_PERIOD_OPTIONS = [
   { value: 14, label: 'Setiap 2 Minggu' },
 ];
 
+// Berapa lama popup boleh muncul lagi setelah buyer close-nya
+const RESHOW_HOURS_OPTIONS = [
+  { value: 0, label: 'Sekali saja per sesi browser' },
+  { value: 1, label: 'Setelah 1 jam' },
+  { value: 6, label: 'Setelah 6 jam' },
+  { value: 12, label: 'Setelah 12 jam' },
+  { value: 24, label: 'Setelah 1 hari' },
+  { value: 72, label: 'Setelah 3 hari' },
+  { value: 168, label: 'Setelah 1 minggu' },
+];
+
 export function FunFactsConfig() {
   const { storeConfig, refreshStoreConfig } = useApp();
   const [facts, setFacts] = useState([]);
@@ -520,21 +531,31 @@ export function FunFactsConfig() {
   const [generating, setGenerating] = useState(false);
   const [aiMeta, setAiMeta] = useState(null); // {_mode, _generated_at}
   const [refreshPeriodDays, setRefreshPeriodDays] = useState(7);
+  const [reshowAfterHours, setReshowAfterHours] = useState(24);
   const [lastGeneratedAt, setLastGeneratedAt] = useState(null);
 
   useEffect(() => {
     setFacts(storeConfig?.fun_facts || []);
     const meta = storeConfig?.fun_facts_meta || {};
     setRefreshPeriodDays(Number(meta.refresh_period_days ?? 7));
+    setReshowAfterHours(Number(meta.reshow_after_hours ?? 24));
     setLastGeneratedAt(meta.last_generated_at || null);
     if (meta.mode) {
       setAiMeta({ _mode: meta.mode, _generated_at: meta.last_generated_at });
     }
   }, [storeConfig]);
 
-  const add = () => setFacts([...facts, { id: 'ff-' + Date.now(), image_url: '', title: '', text: '' }]);
+  const add = () => setFacts([...facts, { id: 'ff-' + Date.now(), image_url: '', title: '', text: '', show_image: false }]);
   const update = (idx, k, v) => { const u = [...facts]; u[idx] = { ...u[idx], [k]: v }; setFacts(u); };
   const remove = (idx) => setFacts(facts.filter((_, i) => i !== idx));
+  const toggleImage = (idx) => {
+    const u = [...facts];
+    const curr = u[idx].show_image ?? !!u[idx].image_url;
+    u[idx] = { ...u[idx], show_image: !curr };
+    // Kalau dimatikan, kosongkan image_url juga (biar bersih)
+    if (curr) u[idx].image_url = '';
+    setFacts(u);
+  };
 
   const save = async () => {
     setSaving(true);
@@ -543,6 +564,7 @@ export function FunFactsConfig() {
         fun_facts: facts,
         fun_facts_meta: {
           refresh_period_days: refreshPeriodDays,
+          reshow_after_hours: reshowAfterHours,
           last_generated_at: lastGeneratedAt,
           mode: aiMeta?._mode || null,
         },
@@ -574,6 +596,7 @@ export function FunFactsConfig() {
         fun_facts: next,
         fun_facts_meta: {
           refresh_period_days: refreshPeriodDays,
+          reshow_after_hours: reshowAfterHours,
           last_generated_at: now,
           mode: r.data._mode,
         },
@@ -693,33 +716,79 @@ export function FunFactsConfig() {
             </div>
           )}
         </div>
+
+        {/* Reshow Timer — berapa lama setelah buyer close popup, baru muncul lagi */}
+        <div className="mt-5 pt-5 border-t border-purple-100">
+          <div className="flex items-center gap-2 mb-2">
+            <Calendar size={16} className="text-orange-600" />
+            <h4 className="font-bold text-[#451A03] text-sm">Reshow Timer (setelah buyer close)</h4>
+          </div>
+          <p className="text-[11px] text-[#7C2D12] mb-3">
+            Berapa lama jeda sebelum popup muncul lagi setelah buyer klik tutup? Bigger = less nagging.
+          </p>
+          <select
+            data-testid="funfacts-reshow-hours"
+            value={reshowAfterHours}
+            onChange={e => setReshowAfterHours(Number(e.target.value))}
+            className="w-full sm:w-auto px-4 py-2 rounded-xl border-2 border-orange-200 bg-white text-sm font-bold text-[#451A03]"
+          >
+            {RESHOW_HOURS_OPTIONS.map(opt => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+          <p className="text-[10px] text-[#9A3412] mt-2 italic">
+            💡 Default 1 hari. Kalau popup muncul terlalu sering, perpanjang ke 3 hari atau 1 minggu.
+          </p>
+        </div>
       </div>
 
       <Section title="Daftar Fun Facts" icon={Sparkles} action={<button data-testid="add-funfact-btn" onClick={add} className="flex items-center gap-1 text-xs font-bold text-[#EA580C] hover:underline"><Plus size={14} /> Tambah Manual</button>}>
         <div className="space-y-3">
           {facts.length === 0 && <p className="text-sm text-gray-500 text-center py-6">Belum ada fun fact. Klik "Generate" di atas untuk AI buat otomatis, atau tambah manual!</p>}
-          {facts.map((f, idx) => (
-            <div key={f.id || `ff-${idx}`} className="grid grid-cols-12 gap-3 p-4 rounded-xl bg-[#FFFBF5] border border-[#FED7AA]">
-              <div className="col-span-12 sm:col-span-4">
-                <Field label={`Gambar Fun Fact #${idx + 1}`}>
-                  <ImageUrlInput
-                    value={f.image_url}
-                    onChange={v => update(idx, 'image_url', v)}
-                    placeholder="Upload atau paste URL gambar 4:3"
-                    testIdPrefix={`funfact-img-${idx}`}
-                    size="lg"
-                  />
-                </Field>
+          {facts.map((f, idx) => {
+            // show_image: explicit flag. Backward-compat: if undefined, infer from image_url
+            const showImage = f.show_image ?? !!f.image_url;
+            return (
+            <div key={f.id || `ff-${idx}`} className="rounded-xl bg-[#FFFBF5] border border-[#FED7AA] p-4">
+              <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                <span className="text-xs font-bold text-[#7C2D12] uppercase tracking-wide">Fun Fact #{idx + 1}</span>
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-[#7C2D12]">
+                    <input
+                      data-testid={`funfact-show-image-${idx}`}
+                      type="checkbox"
+                      checked={showImage}
+                      onChange={() => toggleImage(idx)}
+                      className="w-4 h-4 accent-[#EA580C]"
+                    />
+                    <ImagePlus size={14} className={showImage ? 'text-[#EA580C]' : 'text-gray-400'} />
+                    Tampilkan Gambar
+                  </label>
+                  <button onClick={() => remove(idx)} className="p-1.5 rounded-lg bg-red-50 text-red-500 hover:bg-red-100"><Trash2 size={14} /></button>
+                </div>
               </div>
-              <div className="col-span-11 sm:col-span-7 space-y-2">
-                <Field label={`Judul Fun Fact #${idx + 1}`}><input data-testid={`funfact-title-${idx}`} className={inputCls} value={f.title} onChange={e => update(idx, 'title', e.target.value)} placeholder="Risoles Bunda Itu Resep Turunan" /></Field>
-                <Field label="Narasi / Cerita"><textarea data-testid={`funfact-text-${idx}`} rows={4} className={inputCls + ' resize-none'} value={f.text} onChange={e => update(idx, 'text', e.target.value)} placeholder="Cerita menarik tentang produk atau brand..." /></Field>
-              </div>
-              <div className="col-span-1 flex justify-end">
-                <button onClick={() => remove(idx)} className="p-2 rounded-lg bg-red-50 text-red-500 self-start"><Trash2 size={14} /></button>
+
+              <div className={`grid gap-3 ${showImage ? 'grid-cols-12' : 'grid-cols-1'}`}>
+                {showImage && (
+                  <div className="col-span-12 sm:col-span-5">
+                    <Field label="Gambar (4:3 ideal)">
+                      <ImageUrlInput
+                        value={f.image_url}
+                        onChange={v => update(idx, 'image_url', v)}
+                        placeholder="Upload atau paste URL"
+                        testIdPrefix={`funfact-img-${idx}`}
+                        size="lg"
+                      />
+                    </Field>
+                  </div>
+                )}
+                <div className={`${showImage ? 'col-span-12 sm:col-span-7' : 'col-span-1'} space-y-2`}>
+                  <Field label="Judul"><input data-testid={`funfact-title-${idx}`} className={inputCls} value={f.title} onChange={e => update(idx, 'title', e.target.value)} placeholder="Risoles Si Imigran Belanda 🇳🇱" /></Field>
+                  <Field label="Narasi / Cerita"><textarea data-testid={`funfact-text-${idx}`} rows={4} className={inputCls + ' resize-none'} value={f.text} onChange={e => update(idx, 'text', e.target.value)} placeholder="Cerita menarik tentang produk atau brand..." /></Field>
+                </div>
               </div>
             </div>
-          ))}
+          );})}
         </div>
       </Section>
     </div>
