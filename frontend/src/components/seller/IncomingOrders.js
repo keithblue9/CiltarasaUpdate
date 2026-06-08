@@ -329,10 +329,12 @@ export default function IncomingOrders() {
                         {order.payment_method === 'transfer' && order.payment_bank_id && (() => {
                           const bank = (storeConfig?.bank_accounts || []).find(b => b.id === order.payment_bank_id);
                           if (!bank) return null;
-                          const label = `${bank.bank_name || bank.name || 'Bank'}${bank.account_number ? ' ' + bank.account_number : ''}`;
+                          // ✅ Use correct field names: bank (name), number (rekening); fallback for newer naming
+                          const bankName = bank.bank || bank.bank_name || 'Bank';
+                          const accNum = bank.number || bank.account_number || '';
                           return (
                             <span className="bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded text-[10px] font-semibold">
-                              🏦 {label}
+                              🏦 {bankName}{accNum ? ` · ${accNum}` : ''}
                             </span>
                           );
                         })()}

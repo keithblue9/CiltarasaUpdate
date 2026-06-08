@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Trash2, Edit2, Tag, X, Save } from 'lucide-react';
+import { Plus, Trash2, Edit2, Tag, X, Save, Sparkles, Brain, RefreshCw, Check, TrendingUp, Package } from 'lucide-react';
 import axios from 'axios';
 import { useApp } from '../../context/AppContext';
 import { toast } from 'sonner';
@@ -140,6 +140,60 @@ export default function DiscountManagement() {
   const [showForm, setShowForm] = useState(false);
   const [editItem, setEditItem] = useState(null);
 
+  // ─── AI Recommendations state ───
+  const [aiRecs, setAiRecs] = useState([]);
+  const [aiMode, setAiMode] = useState(null); // 'ai' | 'local'
+  const [aiGenerating, setAiGenerating] = useState(false);
+  const [aiApplying, setAiApplying] = useState(false);
+  const [selectedRecIds, setSelectedRecIds] = useState(new Set());
+  const [showAiSection, setShowAiSection] = useState(true);
+
+  const generateAiRecs = async () => {
+    setAiGenerating(true);
+    try {
+      const r = await axios.post(`${API}/api/ai/discount-recommendations/generate`);
+      const recs = r.data?.recommendations || [];
+      if (!recs.length) {
+        toast.error('Tidak ada rekomendasi. Pastikan ada produk aktif dengan margin cukup.');
+        return;
+      }
+      setAiRecs(recs);
+      setAiMode(r.data._mode);
+      // Auto-select all by default (user can untick)
+      setSelectedRecIds(new Set(recs.map(rec => rec.product_id)));
+      toast.success(`🎉 ${recs.length} rekomendasi diskon dari ${r.data._mode === 'ai' ? 'Claude AI' : 'algoritma lokal'}!`);
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || 'Gagal generate rekomendasi');
+    } finally { setAiGenerating(false); }
+  };
+
+  const toggleRec = (pid) => {
+    setSelectedRecIds(prev => {
+      const next = new Set(prev);
+      if (next.has(pid)) next.delete(pid); else next.add(pid);
+      return next;
+    });
+  };
+
+  const applyAiRecs = async () => {
+    const toApply = aiRecs.filter(r => selectedRecIds.has(r.product_id));
+    if (toApply.length === 0) { toast.error('Pilih minimal 1 rekomendasi'); return; }
+    if (!window.confirm(`Aktifkan ${toApply.length} diskon? Tiap rekomendasi akan dibuat sebagai entry diskon baru & otomatis di-apply ke produk-nya.`)) return;
+    setAiApplying(true);
+    try {
+      const r = await axios.post(`${API}/api/ai/discount-recommendations/apply`, { recommendations: toApply });
+      await refreshDiscounts();
+      await refreshProducts();
+      const { created, errors } = r.data || {};
+      toast.success(`✅ ${created} diskon dibuat & diaktifkan!${(errors || []).length ? ` (${errors.length} skipped)` : ''}`);
+      // Clear applied recs from view
+      setAiRecs(prev => prev.filter(r => !selectedRecIds.has(r.product_id)));
+      setSelectedRecIds(new Set());
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || 'Gagal apply rekomendasi');
+    } finally { setAiApplying(false); }
+  };
+
   const handleSave = async (form) => {
     try {
       const payload = {
@@ -194,6 +248,152 @@ export default function DiscountManagement() {
         <button data-testid="add-discount-btn" onClick={() => { setEditItem(null); setShowForm(true); }} className="flex items-center gap-2 bg-gradient-to-r from-[#F97316] to-[#EA580C] text-white font-bold px-5 py-2.5 rounded-full shadow hover:shadow-lg">
           <Plus size={18} /> Tambah Diskon
         </button>
+      </div>
+
+      {/* ─── AI Recommendations Card ─── */}
+      <div data-testid="ai-discount-rec-card" className="rounded-2xl bg-gradient-to-br from-purple-50 via-white to-orange-50 border-2 border-purple-200 p-5 relative overflow-hidden">
+        <div className="absolute -top-4 -right-4 opacity-10 text-9xl">✨</div>
+        <div className="relative">
+          <div className="flex items-start gap-3 flex-wrap mb-4">
+            <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-white shadow-lg flex-shrink-0 ${aiMode === 'local' ? 'bg-gradient-to-br from-blue-500 to-cyan-500' : 'bg-gradient-to-br from-purple-500 to-pink-500'}`}>
+              <Brain size={24} />
+            </div>
+            <div className="flex-1 min-w-[200px]">
+              <h3 className="font-heading font-bold text-[#451A03] text-lg flex items-center gap-2 flex-wrap">
+                Rekomendasi Diskon by AI
+                {aiMode && (
+                  <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full ${aiMode === 'local' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
+                    {aiMode === 'local' ? 'Local Algorithm' : 'Claude AI'}
+                  </span>
+                )}
+              </h3>
+              <p className="text-xs text-[#7C2D12] mt-1 leading-relaxed">
+                AI analisa produk laris + margin sehat → kasih rekomendasi diskon strategis. Tiap saran ada estimasi margin setelah diskon, biar kamu tau bakal masih untung berapa.
+              </p>
+            </div>
+          </div>
+
+          {aiRecs.length === 0 ? (
+            <button
+              data-testid="generate-ai-rec-btn"
+              onClick={generateAiRecs}
+              disabled={aiGenerating}
+              className="w-full sm:w-auto flex items-center gap-2 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-bold text-sm px-5 py-2.5 rounded-full shadow disabled:opacity-50"
+            >
+              <Sparkles size={16} className={aiGenerating ? 'animate-spin' : ''} />
+              {aiGenerating ? 'Menganalisa produk...' : 'Generate Rekomendasi AI'}
+            </button>
+          ) : (
+            <>
+              <div className="flex items-center justify-between flex-wrap gap-2 mb-3 p-2.5 rounded-xl bg-white/70 border border-purple-100">
+                <p className="text-xs font-bold text-[#451A03]">
+                  💡 {aiRecs.length} rekomendasi · <span className="text-purple-700">{selectedRecIds.size} dipilih</span>
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setSelectedRecIds(new Set(aiRecs.map(r => r.product_id)))}
+                    className="text-[11px] font-bold text-purple-700 hover:underline"
+                  >
+                    Pilih Semua
+                  </button>
+                  <button
+                    onClick={() => setSelectedRecIds(new Set())}
+                    className="text-[11px] font-bold text-gray-500 hover:underline"
+                  >
+                    Hapus Pilihan
+                  </button>
+                  <button
+                    onClick={generateAiRecs}
+                    disabled={aiGenerating}
+                    className="text-[11px] font-bold text-orange-600 hover:underline flex items-center gap-1"
+                  >
+                    <RefreshCw size={11} className={aiGenerating ? 'animate-spin' : ''} /> Regenerate
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-2 mb-3">
+                {aiRecs.map(rec => {
+                  const selected = selectedRecIds.has(rec.product_id);
+                  const marginColor = rec.projected_margin_pct >= 30 ? 'text-emerald-700 bg-emerald-50' : rec.projected_margin_pct >= 20 ? 'text-amber-700 bg-amber-50' : 'text-red-700 bg-red-50';
+                  const confColor = rec.confidence === 'high' ? 'bg-emerald-100 text-emerald-700' : rec.confidence === 'medium' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-700';
+                  return (
+                    <label
+                      key={rec.product_id}
+                      data-testid={`ai-rec-${rec.product_id}`}
+                      onClick={() => toggleRec(rec.product_id)}
+                      className={`flex gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${
+                        selected
+                          ? 'border-purple-500 bg-purple-50/60'
+                          : 'border-gray-200 bg-white hover:border-purple-300'
+                      }`}
+                    >
+                      <div className="flex-shrink-0 pt-0.5">
+                        <input
+                          type="checkbox"
+                          checked={selected}
+                          onChange={() => {}}
+                          className="w-5 h-5 accent-purple-600 cursor-pointer pointer-events-none"
+                        />
+                      </div>
+                      <SmartImage src={rec.image_url} alt="" className="w-14 h-14 rounded-lg object-cover flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-2 flex-wrap">
+                          <p className="font-bold text-sm text-[#451A03] truncate flex-1 min-w-[120px]">{rec.product_name}</p>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-2xl font-extrabold text-[#EA580C] leading-none">{rec.recommended_discount_pct}%</span>
+                            <span className="text-[10px] font-bold text-[#EA580C] mt-1">OFF</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 mt-1 flex-wrap">
+                          <span className="text-[11px] text-gray-500 line-through">{fmt(rec.current_price)}</span>
+                          <span className="text-[12px] font-bold text-[#7C2D12]">→ {fmt(rec.projected_price)}</span>
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${marginColor}`}>
+                            Margin: {rec.projected_margin_pct}%
+                          </span>
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${confColor} uppercase`}>
+                            {rec.confidence === 'high' ? '🎯 Kuat' : rec.confidence === 'medium' ? '📊 Sedang' : '🤷 Hati-hati'}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 mt-1.5 flex-wrap text-[10px] text-[#9A3412]">
+                          <span className="flex items-center gap-0.5"><TrendingUp size={11} /> {rec.sold_30d} terjual / 30 hari</span>
+                          <span className="flex items-center gap-0.5"><Package size={11} /> Stok: {rec.stock}</span>
+                          <span>Margin sekarang: <strong>{rec.current_margin_pct}%</strong></span>
+                        </div>
+                        <p className="text-[11px] text-[#451A03] mt-1.5 italic leading-relaxed">
+                          {rec.reasoning}
+                        </p>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <button
+                  data-testid="apply-ai-recs-btn"
+                  onClick={applyAiRecs}
+                  disabled={aiApplying || selectedRecIds.size === 0}
+                  className="flex items-center gap-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold text-sm px-5 py-2.5 rounded-full shadow disabled:opacity-50"
+                >
+                  <Check size={16} />
+                  {aiApplying ? 'Membuat diskon...' : `Aktifkan ${selectedRecIds.size} Diskon Terpilih`}
+                </button>
+                <button
+                  onClick={() => { setAiRecs([]); setSelectedRecIds(new Set()); }}
+                  className="text-sm text-gray-600 hover:underline px-3"
+                >
+                  Tutup Rekomendasi
+                </button>
+              </div>
+              {aiMode === 'local' && (
+                <p className="text-[10px] text-blue-700 mt-3 italic">
+                  💡 Pakai algoritma lokal. Untuk rekomendasi yang lebih kontekstual, tambah <code className="bg-blue-50 px-1 rounded">ANTHROPIC_API_KEY</code> di env Render.
+                </p>
+              )}
+            </>
+          )}
+        </div>
       </div>
 
       {discounts.length === 0 ? (
