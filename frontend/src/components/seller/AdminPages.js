@@ -696,6 +696,8 @@ const PLACEHOLDERS = [
   { tag: '{items_detail}', desc: 'List detail item' },
   { tag: '{total}', desc: 'Total bayar' },
   { tag: '{subtotal}', desc: 'Subtotal' },
+  { tag: '{payment_method}', desc: 'Metode bayar (Transfer/QRIS/COD)' },
+  { tag: '{payment_account}', desc: 'Bank + No rekening yang dipilih buyer' },
   { tag: '{notes}', desc: 'Catatan pelanggan' },
   { tag: '{status}', desc: 'Label status' },
   { tag: '{status_desc}', desc: 'Deskripsi status' },

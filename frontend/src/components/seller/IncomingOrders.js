@@ -179,7 +179,7 @@ function OrderDetailModal({ order, onClose, onStatusChange, onWhatsApp, onViewPr
 }
 
 export default function IncomingOrders() {
-  const { wsEvent, settings, products } = useApp();
+  const { wsEvent, settings, products, storeConfig } = useApp();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('all');
@@ -320,6 +320,24 @@ export default function IncomingOrders() {
                     </div>
                     <p className="text-sm text-[#451A03] mt-1 font-semibold">{order.customer_name}</p>
                     <p className="text-xs text-[#92400E] mt-0.5">{order.customer_phone} · {order.delivery_method === 'delivery' ? 'Pengiriman' : 'Ambil Sendiri'}</p>
+                    {/* Payment method + rekening info — visible at-a-glance */}
+                    {order.payment_method && (
+                      <div className="text-xs mt-1 flex items-center gap-1.5 flex-wrap">
+                        <span className="bg-[#FEF3C7] text-[#78350F] px-1.5 py-0.5 rounded font-semibold">
+                          💳 {PAYMENT_LABELS[order.payment_method] || order.payment_method}
+                        </span>
+                        {order.payment_method === 'transfer' && order.payment_bank_id && (() => {
+                          const bank = (storeConfig?.bank_accounts || []).find(b => b.id === order.payment_bank_id);
+                          if (!bank) return null;
+                          const label = `${bank.bank_name || bank.name || 'Bank'}${bank.account_number ? ' ' + bank.account_number : ''}`;
+                          return (
+                            <span className="bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded text-[10px] font-semibold">
+                              🏦 {label}
+                            </span>
+                          );
+                        })()}
+                      </div>
+                    )}
                     <p className="text-xs text-[#92400E] mt-0.5">{order.items?.length} item · {new Date(order.created_at).toLocaleString('id-ID',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</p>
                   </div>
                   <div className="flex flex-col items-end gap-2">

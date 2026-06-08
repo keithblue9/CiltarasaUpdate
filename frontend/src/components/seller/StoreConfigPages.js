@@ -217,7 +217,7 @@ export function DeliveryConfig() {
   const [items, setItems] = useState([]);
   const [saving, setSaving] = useState(false);
   useEffect(() => { setItems(storeConfig?.delivery_options || []); }, [storeConfig]);
-  const add = () => setItems([...items, { id: 'opt-' + Date.now(), name: '', description: '', fee: 0, active: true }]);
+  const add = () => setItems([...items, { id: 'opt-' + Date.now(), name: '', description: '', fee: 0, active: true, is_pickup: false }]);
   const update = (idx, k, v) => { const u = [...items]; u[idx] = { ...u[idx], [k]: v }; setItems(u); };
   const remove = (idx) => setItems(items.filter((_, i) => i !== idx));
   const handleSave = async () => { setSaving(true); try { await axios.put(`${API}/api/store-config`, { delivery_options: items }); await refreshStoreConfig(); toast.success('Tersimpan!'); } catch { toast.error('Gagal'); } finally { setSaving(false); } };
@@ -230,21 +230,36 @@ export function DeliveryConfig() {
       </div>
       <Section title="Opsi Pengiriman" icon={Truck} action={<button data-testid="add-delivery-btn" onClick={add} className="flex items-center gap-1 text-xs font-bold text-[#EA580C] hover:underline"><Plus size={14} /> Tambah</button>}>
         <div className="space-y-3">
-          {items.map((it, idx) => (
+          {items.map((it, idx) => {
+            const inferredPickup = it.is_pickup === true
+              || it.id === 'pickup'
+              || /(ambil|sendiri|pickup)/i.test(it.name || '');
+            return (
             <div key={it.id || `del-${idx}`} className="p-3 rounded-xl bg-[#FFFBF5] border border-[#FED7AA] space-y-2">
               <div className="grid grid-cols-12 gap-2">
-                <div className="col-span-4"><Field label="Nama"><input className={inputCls} value={it.name} onChange={e => update(idx, 'name', e.target.value)} placeholder="Kurir Toko" /></Field></div>
-                <div className="col-span-3"><Field label="Ongkir (Rp)"><input type="number" className={inputCls} value={it.fee} onChange={e => update(idx, 'fee', Number(e.target.value))} /></Field></div>
-                <div className="col-span-4"><Field label="Deskripsi"><input className={inputCls} value={it.description} onChange={e => update(idx, 'description', e.target.value)} /></Field></div>
-                <div className="col-span-1 flex flex-col items-center justify-end pb-2">
-                  <label className="flex items-center gap-1 cursor-pointer text-xs font-bold text-[#7C2D12]">
-                    <input type="checkbox" checked={it.active} onChange={e => update(idx, 'active', e.target.checked)} className="w-4 h-4 accent-[#EA580C]" />
+                <div className="col-span-12 sm:col-span-4"><Field label="Nama"><input className={inputCls} value={it.name} onChange={e => update(idx, 'name', e.target.value)} placeholder="Kurir Toko" /></Field></div>
+                <div className="col-span-6 sm:col-span-3"><Field label="Ongkir (Rp)"><input type="number" className={inputCls} value={it.fee} onChange={e => update(idx, 'fee', Number(e.target.value))} /></Field></div>
+                <div className="col-span-6 sm:col-span-4"><Field label="Deskripsi"><input className={inputCls} value={it.description} onChange={e => update(idx, 'description', e.target.value)} placeholder="Diantar kurir toko..." /></Field></div>
+                <div className="col-span-12 sm:col-span-1 flex sm:flex-col items-center justify-end sm:justify-end gap-3 sm:gap-1 pb-2">
+                  <label className="flex items-center gap-1 cursor-pointer text-[10px] font-bold text-[#7C2D12]" title="Aktifkan opsi ini">
+                    <input type="checkbox" checked={it.active !== false} onChange={e => update(idx, 'active', e.target.checked)} className="w-4 h-4 accent-[#EA580C]" />
+                    AKTIF
                   </label>
-                  <button onClick={() => remove(idx)} className="mt-1 p-1 text-red-500"><Trash2 size={14} /></button>
+                  <button onClick={() => remove(idx)} className="p-1 rounded text-red-500 hover:bg-red-50"><Trash2 size={14} /></button>
                 </div>
               </div>
+              <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-[#7C2D12] pl-1 pt-1 border-t border-[#FED7AA]/60">
+                <input
+                  data-testid={`delivery-is-pickup-${idx}`}
+                  type="checkbox"
+                  checked={inferredPickup}
+                  onChange={e => update(idx, 'is_pickup', e.target.checked)}
+                  className="w-4 h-4 accent-emerald-600"
+                />
+                🏠 Ini opsi <strong>Ambil Sendiri</strong> (buyer datang langsung, tidak butuh alamat)
+              </label>
             </div>
-          ))}
+          );})}
         </div>
       </Section>
     </div>
@@ -305,26 +320,59 @@ export function PaymentsConfig() {
       </div>
       <Section title="Opsi Pembayaran" icon={CreditCard} action={<button data-testid="add-payment-btn" onClick={add} className="flex items-center gap-1 text-xs font-bold text-[#EA580C] hover:underline"><Plus size={14} /> Tambah</button>}>
         <div className="space-y-3">
-          {items.map((it, idx) => (
-            <div key={it.id || `pay-${idx}`} className="p-3 rounded-xl bg-[#FFFBF5] border border-[#FED7AA]">
+          {items.map((it, idx) => {
+            const availDelivery = it.available_for_delivery !== false; // default true
+            const availPickup = it.available_for_pickup !== false;     // default true
+            return (
+            <div key={it.id || `pay-${idx}`} className="p-3 rounded-xl bg-[#FFFBF5] border border-[#FED7AA] space-y-2">
               <div className="grid grid-cols-12 gap-2 items-end">
-                <div className="col-span-3"><Field label="Nama"><input className={inputCls} value={it.name} onChange={e => update(idx, 'name', e.target.value)} placeholder="Transfer BCA" /></Field></div>
-                <div className="col-span-2">
+                <div className="col-span-12 sm:col-span-3"><Field label="Nama"><input className={inputCls} value={it.name} onChange={e => update(idx, 'name', e.target.value)} placeholder="Transfer BCA" /></Field></div>
+                <div className="col-span-6 sm:col-span-2">
                   <Field label="Tipe">
                     <select className={inputCls} value={it.type} onChange={e => update(idx, 'type', e.target.value)}>
                       <option value="transfer">Transfer Bank</option>
                       <option value="qris">QRIS</option>
-                      <option value="cod">COD</option>
+                      <option value="cod">COD / Tunai</option>
                       <option value="ewallet">E-Wallet</option>
                     </select>
                   </Field>
                 </div>
-                <div className="col-span-5"><Field label="Detail / Petunjuk"><input className={inputCls} value={it.details} onChange={e => update(idx, 'details', e.target.value)} /></Field></div>
-                <div className="col-span-1 pb-2"><input data-testid={`payment-active-${it.id || idx}`} type="checkbox" checked={it.active} onChange={e => update(idx, 'active', e.target.checked)} className="w-4 h-4 accent-[#EA580C]" /></div>
-                <button onClick={() => remove(idx)} className="col-span-1 p-2.5 rounded-xl bg-red-50 text-red-500"><Trash2 size={16} /></button>
+                <div className="col-span-12 sm:col-span-5"><Field label="Detail / Petunjuk"><input className={inputCls} value={it.details} onChange={e => update(idx, 'details', e.target.value)} /></Field></div>
+                <div className="col-span-6 sm:col-span-1 pb-2 flex items-center gap-1">
+                  <input data-testid={`payment-active-${it.id || idx}`} type="checkbox" checked={it.active !== false} onChange={e => update(idx, 'active', e.target.checked)} className="w-4 h-4 accent-[#EA580C]" />
+                  <span className="text-[10px] font-bold text-[#7C2D12]">AKTIF</span>
+                </div>
+                <button onClick={() => remove(idx)} className="col-span-6 sm:col-span-1 p-2.5 rounded-xl bg-red-50 text-red-500 self-end"><Trash2 size={16} /></button>
+              </div>
+              {/* Availability per delivery context */}
+              <div className="flex flex-wrap gap-3 pt-2 border-t border-[#FED7AA]/60 text-xs">
+                <span className="text-[#7C2D12] font-bold">Tersedia untuk:</span>
+                <label className="flex items-center gap-1 cursor-pointer font-semibold text-[#7C2D12]">
+                  <input
+                    data-testid={`payment-avail-delivery-${idx}`}
+                    type="checkbox"
+                    checked={availDelivery}
+                    onChange={e => update(idx, 'available_for_delivery', e.target.checked)}
+                    className="w-4 h-4 accent-blue-600"
+                  />
+                  🚚 Pengiriman
+                </label>
+                <label className="flex items-center gap-1 cursor-pointer font-semibold text-[#7C2D12]">
+                  <input
+                    data-testid={`payment-avail-pickup-${idx}`}
+                    type="checkbox"
+                    checked={availPickup}
+                    onChange={e => update(idx, 'available_for_pickup', e.target.checked)}
+                    className="w-4 h-4 accent-emerald-600"
+                  />
+                  🏠 Ambil Sendiri
+                </label>
+                <span className="text-[10px] text-[#9A3412] italic">
+                  💡 Mis: COD/Tunai mungkin hanya tersedia untuk Ambil Sendiri
+                </span>
               </div>
             </div>
-          ))}
+          );})}
         </div>
       </Section>
 
