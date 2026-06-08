@@ -7,7 +7,7 @@
  *  - background sync queue for offline orders
  */
 
-const VERSION = 'ciltarasa-v1.1.0-pwa-seller';
+const VERSION = 'ciltarasa-v1.2.0-notif-alert';
 const STATIC_CACHE = `${VERSION}-static`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 const API_CACHE = `${VERSION}-api`;
@@ -129,23 +129,49 @@ self.addEventListener('push', (event) => {
     try { data = event.data.json(); } catch { data = { title: 'Ciltarasa', body: event.data.text() }; }
   }
   event.waitUntil(
-    self.registration.showNotification(data.title || 'Ciltarasa', {
-      body: data.body || '',
-      icon: '/icons/icon-192.png',
-      badge: '/icons/icon-96.png',
-      vibrate: [120, 60, 120, 60, 240],
-      tag: data.tag || 'order-new',
-      renotify: true,
-      requireInteraction: !!data.requireInteraction,
-      data: {
-        url: data.url || '/#/seller',
-        order_number: data.order_number || null,
-        ...(data.data || {}),
-      },
-      actions: data.actions || [
-        { action: 'open', title: 'Buka Dashboard' },
-      ],
-    })
+    (async () => {
+      // 1) Show OS notification (background + lock screen)
+      await self.registration.showNotification(data.title || 'Ciltarasa', {
+        body: data.body || '',
+        icon: '/icons/icon-192.png',
+        badge: '/icons/icon-96.png',
+        // Strong attention-grabbing vibrate (Android — iOS ignores this)
+        vibrate: [300, 100, 300, 100, 300, 100, 500],
+        tag: data.tag || 'order-new',
+        renotify: true,
+        silent: false, // explicit: play default OS sound
+        requireInteraction: !!data.requireInteraction,
+        timestamp: Date.now(),
+        data: {
+          url: data.url || '/#/seller',
+          order_number: data.order_number || null,
+          alert_type: data.alert_type || 'order',
+          ...(data.data || {}),
+        },
+        actions: data.actions || [
+          { action: 'open', title: 'Buka Dashboard' },
+        ],
+      });
+
+      // 2) Forward to any open page so it can play in-page audio + vibrate
+      //    (covers the case where app is open but OS suppresses showNotification sound)
+      try {
+        const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+        for (const c of clients) {
+          c.postMessage({
+            type: 'PUSH_RECEIVED',
+            payload: {
+              alert_type: data.alert_type || 'order',
+              order_number: data.order_number,
+              title: data.title,
+              body: data.body,
+            },
+          });
+        }
+      } catch (e) {
+        // ignore
+      }
+    })()
   );
 });
 
