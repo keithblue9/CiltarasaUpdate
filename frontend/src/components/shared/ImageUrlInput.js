@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { Upload, Link as LinkIcon, Check, X, Loader2, Image as ImageIcon } from 'lucide-react';
-import { normalizeImageUrl } from './SmartImage';
+import SmartImage, { normalizeImageUrl } from './SmartImage';
 import { toast } from 'sonner';
 
 const API = process.env.REACT_APP_BACKEND_URL;
@@ -112,13 +112,11 @@ export default function ImageUrlInput({ value, onChange, placeholder = 'https://
             <div className="w-full h-full flex items-center justify-center"><Loader2 size={20} className="animate-spin text-[#EA580C]" /></div>
           ) : previewSrc ? (
             <>
-              <img
+              <SmartImage
                 src={previewSrc}
                 alt="preview"
                 className="w-full h-full object-cover"
-                loading="lazy"
-                referrerPolicy="no-referrer"
-                onLoad={() => setStatus('ok')}
+                onLoadOk={() => setStatus('ok')}
                 onError={() => setStatus('error')}
               />
               <div className="absolute top-1 right-1">
