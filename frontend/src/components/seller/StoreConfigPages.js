@@ -216,7 +216,17 @@ export function DeliveryConfig() {
   const { storeConfig, refreshStoreConfig } = useApp();
   const [items, setItems] = useState([]);
   const [saving, setSaving] = useState(false);
-  useEffect(() => { setItems(storeConfig?.delivery_options || []); }, [storeConfig]);
+  useEffect(() => {
+    // Normalize: ensure is_pickup is EXPLICIT boolean (smart-detect for legacy data)
+    const raw = storeConfig?.delivery_options || [];
+    setItems(raw.map(d => ({
+      ...d,
+      is_pickup: d.is_pickup === true
+        || (d.id || '').toLowerCase() === 'pickup'
+        || /(ambil|sendiri|pickup)/i.test(d.name || ''),
+      active: d.active !== false,
+    })));
+  }, [storeConfig]);
   const add = () => setItems([...items, { id: 'opt-' + Date.now(), name: '', description: '', fee: 0, active: true, is_pickup: false }]);
   const update = (idx, k, v) => { const u = [...items]; u[idx] = { ...u[idx], [k]: v }; setItems(u); };
   const remove = (idx) => setItems(items.filter((_, i) => i !== idx));
@@ -291,11 +301,20 @@ export function PaymentsConfig() {
   const [paymentTexts, setPaymentTexts] = useState({});
   const [saving, setSaving] = useState(false);
   useEffect(() => {
-    setItems(storeConfig?.payment_methods || []);
+    // ✅ Normalize: ensure new availability flags are EXPLICIT booleans (not undefined).
+    // This way, when seller saves, the DB always has the fields set, and buyer-side
+    // filter works correctly. Old data defaults to "available for both" (backward-compat).
+    const raw = storeConfig?.payment_methods || [];
+    setItems(raw.map(p => ({
+      ...p,
+      available_for_delivery: p.available_for_delivery !== false,
+      available_for_pickup: p.available_for_pickup !== false,
+      active: p.active !== false,
+    })));
     setQrisImageUrl(storeConfig?.qris_image_url || '');
     setPaymentTexts(storeConfig?.payment_texts || {});
   }, [storeConfig]);
-  const add = () => setItems([...items, { id: 'pay-' + Date.now(), name: '', type: 'transfer', details: '', active: true }]);
+  const add = () => setItems([...items, { id: 'pay-' + Date.now(), name: '', type: 'transfer', details: '', active: true, available_for_delivery: true, available_for_pickup: true }]);
   const update = (idx, k, v) => { const u = [...items]; u[idx] = { ...u[idx], [k]: v }; setItems(u); };
   const remove = (idx) => setItems(items.filter((_, i) => i !== idx));
   const setText = (k, v) => setPaymentTexts(t => ({ ...t, [k]: v }));
@@ -375,6 +394,62 @@ export function PaymentsConfig() {
           );})}
         </div>
       </Section>
+
+      {/* Live Compatibility Matrix — visualize what buyer sees */}
+      {items.filter(it => it.active !== false).length > 0 && (
+        <Section title="🔗 Preview: Apa Yang Buyer Lihat" icon={CreditCard}>
+          <p className="text-xs text-[#9A3412] mb-3">
+            Tabel ini menunjukkan kombinasi <strong>opsi pengiriman</strong> × <strong>metode bayar</strong>. ✅ = buyer bisa pilih, ⛔ = tersembunyi. Atur centang di atas untuk lihat efek langsung.
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs border-collapse">
+              <thead>
+                <tr>
+                  <th className="text-left p-2 bg-[#FEF3C7] border border-[#FED7AA] font-bold text-[#7C2D12]">Opsi Pengiriman ↓ \ Bayar →</th>
+                  {items.filter(it => it.active !== false).map(p => (
+                    <th key={p.id} className="text-center p-2 bg-[#FEF3C7] border border-[#FED7AA] font-bold text-[#7C2D12]">
+                      {p.name || '(tanpa nama)'}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {(storeConfig?.delivery_options || []).filter(d => d.active !== false).map(d => {
+                  const dPickup = d.is_pickup === true
+                    || (d.id || '').toLowerCase() === 'pickup'
+                    || /(ambil|sendiri|pickup)/i.test(d.name || '');
+                  return (
+                    <tr key={d.id}>
+                      <td className="p-2 border border-[#FED7AA] bg-white font-semibold text-[#451A03]">
+                        {dPickup ? '🏠 ' : '🚚 '}{d.name}
+                        {dPickup && <span className="text-[10px] text-emerald-700 ml-1">(pickup)</span>}
+                      </td>
+                      {items.filter(it => it.active !== false).map(p => {
+                        const ok = dPickup ? (p.available_for_pickup !== false) : (p.available_for_delivery !== false);
+                        return (
+                          <td key={p.id} className={`p-2 border border-[#FED7AA] text-center font-bold ${ok ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                            {ok ? '✅ Tersedia' : '⛔ Hidden'}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+                {(storeConfig?.delivery_options || []).filter(d => d.active !== false).length === 0 && (
+                  <tr>
+                    <td colSpan={items.filter(it => it.active !== false).length + 1} className="p-4 text-center text-sm text-gray-500 italic border border-[#FED7AA] bg-white">
+                      Belum ada opsi pengiriman aktif. Set di menu <strong>Layanan Pengiriman</strong>.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-[10px] text-[#9A3412] italic mt-3">
+            ⚠️ Pastikan setiap opsi pengiriman punya minimal 1 metode bayar yang ✅, biar buyer ngga stuck di checkout.
+          </p>
+        </Section>
+      )}
 
       <Section title="QRIS — Upload Gambar QR" icon={ImageIcon}>
         <div className="space-y-3">
