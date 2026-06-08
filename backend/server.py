@@ -237,8 +237,8 @@ STATUS_DESC = {
 }
 STATUS_KEYS = ["menunggu", "diproses", "siap", "selesai", "dibatalkan"]
 
-def render_chat_template(tpl: str, order: dict, store_name: str = "Ciltarasa", app_url: str = "") -> str:
-    """Render auto-chat template dengan placeholder dari order. Mendukung: {order_id}, {customer_name}, {customer_phone}, {customer_address}, {delivery}, {items_detail}, {total}, {subtotal}, {notes}, {status}, {status_desc}, {status_emoji}, {store_name}, {timestamp}, {app_url}, {track_link}."""
+def render_chat_template(tpl: str, order: dict, store_name: str = "Ciltarasa", app_url: str = "", bank_accounts: list = None) -> str:
+    """Render auto-chat template dengan placeholder dari order. Mendukung: {order_id}, {customer_name}, {customer_phone}, {customer_address}, {delivery}, {items_detail}, {total}, {subtotal}, {notes}, {status}, {status_desc}, {status_emoji}, {store_name}, {timestamp}, {app_url}, {track_link}, {payment_method}, {payment_account}."""
     if not tpl:
         return ""
     items_lines = []
@@ -251,6 +251,33 @@ def render_chat_template(tpl: str, order: dict, store_name: str = "Ciltarasa", a
     ts = datetime.now(timezone(timedelta(hours=7))).strftime("%d %b %Y, %H:%M WIB")
     status = order.get("status", "menunggu")
     order_num = order.get("order_number", order.get("id", ""))
+
+    # ─── Resolve payment method label + account info ───
+    PAYMENT_LABELS = {
+        "transfer": "Transfer Bank",
+        "qris": "QRIS",
+        "cod": "COD (Bayar di Tempat)",
+        "cash": "Tunai",
+    }
+    pm_id = order.get("payment_method", "")
+    pm_label = PAYMENT_LABELS.get(pm_id, pm_id.upper() if pm_id else "-")
+
+    # Build payment_account: bank name + rekening number, or "-"
+    pm_bank_id = order.get("payment_method_id") or order.get("payment_bank_id") or ""
+    pm_account = "-"
+    if pm_id == "transfer" and pm_bank_id and bank_accounts:
+        for b in bank_accounts:
+            if b.get("id") == pm_bank_id:
+                bank_name = b.get("bank_name") or b.get("name") or "Bank"
+                acc_num = b.get("account_number") or b.get("number") or ""
+                acc_holder = b.get("account_holder") or b.get("holder") or ""
+                pm_account = f"{bank_name} {acc_num}" + (f" a.n. {acc_holder}" if acc_holder else "")
+                break
+    elif pm_id == "qris":
+        pm_account = "QRIS (scan)"
+    elif pm_id == "cod":
+        pm_account = "Bayar tunai saat ambil/terima"
+
     repl = {
         "{order_id}": str(order_num),
         "{customer_name}": order.get("customer_name", "-"),
@@ -268,6 +295,8 @@ def render_chat_template(tpl: str, order: dict, store_name: str = "Ciltarasa", a
         "{timestamp}": ts,
         "{app_url}": app_url or "",
         "{track_link}": f"{app_url}/#/buyer/track?order={order_num}" if app_url else f"/buyer/track?order={order_num}",
+        "{payment_method}": pm_label,
+        "{payment_account}": pm_account,
     }
     out = tpl
     for k, v in repl.items():
@@ -1212,6 +1241,7 @@ async def create_order(order: OrderCreate):
     cfg = await db.store_config.find_one({"_id": "main"}) or {}
     auto_chat = (cfg.get("auto_chat_config") or {}).get("menunggu", {})
     store_name = cfg.get("name") or "Ciltarasa"
+    bank_accounts = cfg.get("bank_accounts") or []
     token, seller_phone, enabled = await get_fonnte_config()
     wa_seller_sent = False
     wa_seller_reason = None
@@ -1221,7 +1251,7 @@ async def create_order(order: OrderCreate):
         # Seller notif
         if auto_chat.get("seller_enabled", True) and seller_phone:
             tpl = auto_chat.get("seller_template") or ""
-            msg = render_chat_template(tpl, doc, store_name, FRONTEND_URL) if tpl else build_seller_order_message(doc)
+            msg = render_chat_template(tpl, doc, store_name, FRONTEND_URL, bank_accounts) if tpl else build_seller_order_message(doc)
             res = await fonnte_send(seller_phone, msg)
             wa_seller_sent = res.get("ok", False)
             wa_seller_reason = res.get("reason") or res.get("error") or (res.get("response") or {}).get("reason")
@@ -1235,7 +1265,7 @@ async def create_order(order: OrderCreate):
         if auto_chat.get("buyer_enabled", False) and doc.get("customer_phone"):
             tpl_b = auto_chat.get("buyer_template") or ""
             if tpl_b:
-                msg_b = render_chat_template(tpl_b, doc, store_name, FRONTEND_URL)
+                msg_b = render_chat_template(tpl_b, doc, store_name, FRONTEND_URL, bank_accounts)
                 res_b = await fonnte_send(doc["customer_phone"], msg_b)
                 wa_buyer_sent = res_b.get("ok", False)
                 wa_buyer_reason = res_b.get("reason") or res_b.get("error") or (res_b.get("response") or {}).get("reason")
@@ -1384,6 +1414,7 @@ async def update_order_status(oid: str, update: OrderStatusUpdate, _auth: bool =
     cfg = await db.store_config.find_one({"_id": "main"}) or {}
     auto_chat = (cfg.get("auto_chat_config") or {}).get(new_status, {})
     store_name = cfg.get("name") or "Ciltarasa"
+    bank_accounts = cfg.get("bank_accounts") or []
     token, seller_phone, enabled = await get_fonnte_config()
     wa_buyer_sent = False
     wa_buyer_reason = None
@@ -1393,7 +1424,7 @@ async def update_order_status(oid: str, update: OrderStatusUpdate, _auth: bool =
         # Buyer notif
         if auto_chat.get("buyer_enabled", True) and doc.get("customer_phone"):
             tpl = auto_chat.get("buyer_template") or ""
-            msg = render_chat_template(tpl, doc, store_name, FRONTEND_URL) if tpl else build_buyer_status_message(doc, FRONTEND_URL)
+            msg = render_chat_template(tpl, doc, store_name, FRONTEND_URL, bank_accounts) if tpl else build_buyer_status_message(doc, FRONTEND_URL)
             res = await fonnte_send(doc["customer_phone"], msg)
             wa_buyer_sent = res.get("ok", False)
             wa_buyer_reason = res.get("reason") or res.get("error") or (res.get("response") or {}).get("reason")
@@ -1403,7 +1434,7 @@ async def update_order_status(oid: str, update: OrderStatusUpdate, _auth: bool =
         if auto_chat.get("seller_enabled", False) and seller_phone:
             tpl_s = auto_chat.get("seller_template") or ""
             if tpl_s:
-                msg_s = render_chat_template(tpl_s, doc, store_name, FRONTEND_URL)
+                msg_s = render_chat_template(tpl_s, doc, store_name, FRONTEND_URL, bank_accounts)
                 res_s = await fonnte_send(seller_phone, msg_s)
                 wa_seller_sent = res_s.get("ok", False)
                 wa_seller_reason = res_s.get("reason") or res_s.get("error") or (res_s.get("response") or {}).get("reason")
@@ -2473,20 +2504,36 @@ async def dashboard_sales(period: str = "30d", start: Optional[str] = None, end:
         pay[m]["revenue"] += o.get("total", 0)
     payment_breakdown = sorted(pay.values(), key=lambda x: -x["revenue"])
 
-    # Category sales — sync nama dari store_config.categories
+    # Category sales — sync nama dari store_config.categories.
+    # Orphan categories (not configured) di-group jadi "Lainnya" untuk konsistensi.
     cfg = await db.store_config.find_one({"_id": "main"}) or {}
     cat_list = cfg.get("categories") or []
-    cat_name_map = {}
+    valid_cat_keys = set()  # id + name of configured categories (lowercased)
+    cat_name_map = {}       # raw_value (lower) → display name
     for c in cat_list:
         if isinstance(c, dict):
-            cat_name_map[c.get("id", "")] = c.get("name", c.get("id", "Lainnya"))
-            cat_name_map[c.get("name", "")] = c.get("name", "")
+            cid = (c.get("id") or "").strip().lower()
+            cname = c.get("name") or c.get("id") or ""
+            if cid:
+                valid_cat_keys.add(cid)
+                cat_name_map[cid] = cname
+            if cname:
+                valid_cat_keys.add(cname.lower())
+                cat_name_map[cname.lower()] = cname
+        elif isinstance(c, str):
+            valid_cat_keys.add(c.lower())
+            cat_name_map[c.lower()] = c
     cat_sales = {}
     for o in valid:
         for it in o.get("items", []):
             p = pmap.get(it.get("product_id"))
-            raw_cat = (p.get("category") if p else None) or "Lainnya"
-            cat = cat_name_map.get(raw_cat, raw_cat)
+            raw_cat = (p.get("category") if p else None) or ""
+            raw_lower = raw_cat.strip().lower() if raw_cat else ""
+            # Only include if configured; orphans → "Lainnya"
+            if raw_lower and raw_lower in valid_cat_keys:
+                cat = cat_name_map.get(raw_lower, raw_cat)
+            else:
+                cat = "Lainnya"
             cat_sales.setdefault(cat, {"category": cat, "qty": 0, "revenue": 0})
             cat_sales[cat]["qty"] += it.get("quantity", 0)
             cat_sales[cat]["revenue"] += it.get("subtotal", 0)
@@ -2900,6 +2947,48 @@ async def media_get(mid: str):
 @api_router.get("/")
 async def root():
     return {"message": "Ciltarasa API is running", "version": SCHEMA_VERSION}
+
+# ─── Maintenance: scan & fix orphan product categories ───────────────────────
+@api_router.get("/admin/categories/orphans")
+async def list_orphan_categories(_auth: bool = Depends(require_seller)):
+    """List products whose category isn't defined in store_config.categories."""
+    cfg = await db.store_config.find_one({"_id": "main"}) or {}
+    cat_list = cfg.get("categories") or []
+    valid = set()
+    for c in cat_list:
+        if isinstance(c, dict):
+            if c.get("id"): valid.add(c["id"].strip().lower())
+            if c.get("name"): valid.add(c["name"].strip().lower())
+        elif isinstance(c, str):
+            valid.add(c.strip().lower())
+    products = await db.products.find({}, {"_id": 0, "id": 1, "name": 1, "category": 1}).to_list(1000)
+    orphans = []
+    for p in products:
+        raw = (p.get("category") or "").strip().lower()
+        if raw and raw not in valid:
+            orphans.append({"id": p.get("id"), "name": p.get("name"), "category": p.get("category")})
+    return {"orphans": orphans, "count": len(orphans), "valid_categories": sorted(valid)}
+
+@api_router.post("/admin/categories/fix-orphans")
+async def fix_orphan_categories(_auth: bool = Depends(require_seller)):
+    """Reset orphan-category products to 'Lainnya'."""
+    cfg = await db.store_config.find_one({"_id": "main"}) or {}
+    cat_list = cfg.get("categories") or []
+    valid = set()
+    for c in cat_list:
+        if isinstance(c, dict):
+            if c.get("id"): valid.add(c["id"].strip().lower())
+            if c.get("name"): valid.add(c["name"].strip().lower())
+        elif isinstance(c, str):
+            valid.add(c.strip().lower())
+    products = await db.products.find({}, {"_id": 0, "id": 1, "category": 1}).to_list(1000)
+    fixed = 0
+    for p in products:
+        raw = (p.get("category") or "").strip().lower()
+        if raw and raw not in valid:
+            await db.products.update_one({"id": p["id"]}, {"$set": {"category": "Lainnya"}})
+            fixed += 1
+    return {"fixed": fixed, "valid_categories": sorted(valid)}
 
 # ─── WebSocket ───────────────────────────────────────────────────────────────
 @app.websocket("/api/ws")
