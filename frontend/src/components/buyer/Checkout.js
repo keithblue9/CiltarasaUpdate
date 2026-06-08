@@ -319,12 +319,19 @@ export default function Checkout() {
     }));
   };
 
-  // ─── Filter payment methods by delivery context (is_pickup vs delivery) ───
-  // Each method may have `available_for_delivery: bool` and `available_for_pickup: bool` (default both true)
+  // ─── Filter payment methods by delivery context (per-option, with global fallback) ───
+  // Each method may have `by_delivery: { [opt_id]: { available, timing } }`.
+  // Falls back to global `available_for_delivery` / `available_for_pickup` if per-option not set.
   const activePayments = useMemo(() => {
     const list = (storeConfig?.payment_methods || []).filter(p => {
       if (p.active === false) return false;
-      const isPickup = currentDelivery?.is_pickup === true;
+      if (!currentDelivery) return true;
+      const cellConfig = p.by_delivery?.[currentDelivery.id];
+      if (cellConfig) {
+        return cellConfig.available !== false;
+      }
+      // Legacy fallback
+      const isPickup = currentDelivery.is_pickup === true;
       if (isPickup && p.available_for_pickup === false) return false;
       if (!isPickup && p.available_for_delivery === false) return false;
       return true;
@@ -342,10 +349,15 @@ export default function Checkout() {
 
   // ✅ Derive allowed timing for current (payment x delivery) context.
   // For COD type: always treat as 'later' (cash on delivery/pickup, no online prepay).
+  // Uses per-option config first, falls back to global delivery_timing/pickup_timing.
   const allowedTiming = useMemo(() => {
     if (!currentPayment) return 'both';
     if (currentPayment.type === 'cod') return 'later';
-    const isPickup = currentDelivery?.is_pickup === true;
+    if (!currentDelivery) return 'both';
+    const cellConfig = currentPayment.by_delivery?.[currentDelivery.id];
+    if (cellConfig?.timing) return cellConfig.timing;
+    // Legacy fallback
+    const isPickup = currentDelivery.is_pickup === true;
     if (isPickup) return currentPayment.pickup_timing || 'both';
     return currentPayment.delivery_timing || 'later';
   }, [currentPayment, currentDelivery]);
