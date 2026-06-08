@@ -1516,6 +1516,11 @@ async def get_store_config():
                     (d.get("id") or "").lower() == "pickup"
                     or bool(re.search(r"(ambil|sendiri|pickup)", (d.get("name") or ""), re.I))
                 )
+            # New fields (with smart defaults)
+            d.setdefault("requires_address", not d["is_pickup"])
+            d.setdefault("needs_ongkir_input", False)
+            d.setdefault("emoji", "🏠" if d["is_pickup"] else "🚚")
+            d.setdefault("free_label", "Gratis")
     # ─── Backfill per-option (payment × delivery) config ───
     # Each payment_method.by_delivery = { [delivery_option_id]: { available, timing } }
     # Backfill missing entries from old globals (available_for_delivery/pickup, delivery_timing/pickup_timing)
