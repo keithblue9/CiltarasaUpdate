@@ -575,14 +575,51 @@ Buat 5 fun facts random — bisa tentang:
         if mode == "local":
             data = _local_fun_facts(products)
 
+        # ─── Generate eye-catching AI image URLs for each fact ───
+        # Uses Pollinations.ai (free, no API key, AI-art generator).
+        # Prompt = food-keyword extracted from title + product context + photo style.
+        # Browser will lazy-load — first hit takes 5-15s, subsequent hits are CDN-cached.
+        import hashlib, urllib.parse, re
+
+        # Build food vocabulary from actual products (case-insensitive)
+        food_vocab = []
+        for p in products[:30]:
+            for w in re.findall(r'[A-Za-z]{4,}', (p.get('name') or '')):
+                if w.lower() not in ('homemade', 'premium', 'fresh', 'ungkep', 'isi', 'rasa'):
+                    food_vocab.append(w.lower())
+        food_vocab_set = set(food_vocab)
+
+        def _build_image_url(fact_title, fact_text):
+            # Extract food-relevant words from title (skip emoji/punctuation)
+            clean_title = re.sub(r'[^\w\s]', ' ', (fact_title or ''))
+            title_words = [w for w in clean_title.split() if w.isascii() and len(w) > 3]
+
+            # Pick food words that appear in our product catalog (higher relevance)
+            relevant = [w for w in title_words if w.lower() in food_vocab_set]
+            # If none match products, use first 2-3 ascii title words
+            if not relevant:
+                relevant = title_words[:3]
+
+            # Build a clear, photo-styled prompt
+            food_part = ' '.join(relevant[:4]) if relevant else 'Indonesian food'
+            prompt = f"{food_part}, Indonesian frozen food, vibrant food photography, warm natural lighting, top-down view, on rustic wooden plate, appetizing close-up, no text, no watermark, high detail, professional"
+
+            seed = int(hashlib.md5((fact_title or '').encode('utf-8')).hexdigest()[:8], 16)
+            encoded = urllib.parse.quote(prompt[:280])
+            return f"https://image.pollinations.ai/prompt/{encoded}?width=800&height=600&nologo=true&seed={seed}&model=flux"
+
         # Normalize: ensure each fact has id, title, text, image_url
         normalized = []
         for i, f in enumerate(data or []):
+            title = (f.get("title") or "")[:80]
+            text = (f.get("text") or "")[:300]
+            existing_img = (f.get("image_url") or "").strip()
+            img_url = existing_img or _build_image_url(title, text)
             normalized.append({
                 "id": f"ff-{int(datetime.now(timezone.utc).timestamp())}-{i}",
-                "title": (f.get("title") or "")[:80],
-                "text": (f.get("text") or "")[:300],
-                "image_url": "",
+                "title": title,
+                "text": text,
+                "image_url": img_url,
             })
 
         return {
