@@ -118,35 +118,88 @@ def gdrive_to_direct(url: str) -> str:
 FONNTE_URL = "https://api.fonnte.com/send"
 
 async def get_fonnte_config():
+    """Get Fonnte config with auto-heal from DEFAULT_STORE_CONFIG if missing/empty.
+
+    Root-cause fixes for "seller not getting WA":
+    1. If seller_notify_phone is missing/empty in DB → use default and PERSIST
+    2. If fonnte_token is missing/empty → use default and PERSIST
+    3. Always log warnings if config is invalid so it's visible in Render logs
+    """
     sc = await db.store_config.find_one({"_id": "main"}, {"_id": 0})
     if not sc:
-        return None, None, False
-    return sc.get("fonnte_token"), sc.get("seller_notify_phone"), sc.get("wa_notif_enabled", True)
+        logger.warning("[fonnte] store_config 'main' missing entirely — using defaults")
+        return DEFAULT_STORE_CONFIG.get("fonnte_token"), DEFAULT_STORE_CONFIG.get("seller_notify_phone"), True
+
+    token = (sc.get("fonnte_token") or "").strip()
+    phone_raw = (sc.get("seller_notify_phone") or "").strip()
+    phone = normalize_phone(phone_raw) if phone_raw else ""
+    enabled = sc.get("wa_notif_enabled", True)
+
+    # ─── AUTO-HEAL: persist defaults back if anything missing ───
+    heal_updates = {}
+    if not token:
+        token = DEFAULT_STORE_CONFIG.get("fonnte_token", "")
+        if token:
+            heal_updates["fonnte_token"] = token
+            logger.warning(f"[fonnte] token missing in DB, auto-healing with default")
+    if not phone or len(phone) < 10:
+        default_phone = DEFAULT_STORE_CONFIG.get("seller_notify_phone", "")
+        phone = normalize_phone(default_phone) if default_phone else ""
+        if phone:
+            heal_updates["seller_notify_phone"] = phone
+            logger.warning(f"[fonnte] seller_notify_phone invalid ({phone_raw!r}), auto-healing with default {phone}")
+    if "wa_notif_enabled" not in sc:
+        heal_updates["wa_notif_enabled"] = True
+    if heal_updates:
+        try:
+            await db.store_config.update_one({"_id": "main"}, {"$set": heal_updates}, upsert=True)
+            logger.info(f"[fonnte] auto-healed store_config: {list(heal_updates.keys())}")
+        except Exception as e:
+            logger.warning(f"[fonnte] auto-heal write failed: {e}")
+
+    return token, phone, enabled
 
 async def fonnte_send(target: str, message: str) -> Dict[str, Any]:
-    """Send WhatsApp message via Fonnte API. Returns {ok, status, response}."""
+    """Send WhatsApp message via Fonnte API. Returns {ok, status, response, reason}.
+    Adds detailed logging so Render logs show exactly why a send fails.
+    """
     token, _, enabled = await get_fonnte_config()
     if not enabled:
+        logger.info(f"[fonnte] skipped: WA notif disabled in store_config")
         return {"ok": False, "skipped": True, "reason": "WA notif disabled in config"}
     if not token:
+        logger.warning(f"[fonnte] skipped: token still empty even after auto-heal")
         return {"ok": False, "skipped": True, "reason": "Fonnte token not set"}
-    target = normalize_phone(target)
-    if not target or len(target) < 10:
-        return {"ok": False, "skipped": True, "reason": "Invalid target phone"}
+    target_norm = normalize_phone(target)
+    if not target_norm or len(target_norm) < 10:
+        logger.warning(f"[fonnte] skipped: invalid target phone {target!r} → normalized {target_norm!r}")
+        return {"ok": False, "skipped": True, "reason": f"Invalid target phone: {target!r}"}
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=15.0) as client:
             r = await client.post(
                 FONNTE_URL,
                 headers={"Authorization": token},
-                data={"target": target, "message": message, "countryCode": "62"},
+                data={"target": target_norm, "message": message, "countryCode": "62"},
             )
-            data = r.json() if r.headers.get("content-type", "").startswith("application/json") else {"raw": r.text}
+            try:
+                data = r.json() if r.headers.get("content-type", "").startswith("application/json") else {"raw": r.text}
+            except Exception:
+                data = {"raw": r.text[:500]}
             status_val = data.get("status", True)
             ok = r.status_code == 200 and status_val not in (False, "false", "False", 0, "0")
-            return {"ok": ok, "status": r.status_code, "response": data}
+            if not ok:
+                # Surface the actual Fonnte reason for debugging
+                fonnte_reason = data.get("reason") or data.get("message") or f"HTTP {r.status_code}"
+                logger.warning(f"[fonnte] send to {target_norm} returned not-ok: status={r.status_code}, reason={fonnte_reason}, full={str(data)[:300]}")
+                return {"ok": False, "status": r.status_code, "response": data, "reason": str(fonnte_reason)}
+            logger.info(f"[fonnte] sent to {target_norm}: id={data.get('id')}, quota={data.get('quota')}")
+            return {"ok": True, "status": r.status_code, "response": data}
+    except httpx.TimeoutException:
+        logger.warning(f"[fonnte] TIMEOUT after 15s sending to {target_norm}")
+        return {"ok": False, "error": "Timeout 15s — Fonnte API tidak respond", "reason": "Fonnte timeout"}
     except Exception as e:
-        logger.warning(f"Fonnte send failed to {target}: {e}")
-        return {"ok": False, "error": str(e)}
+        logger.warning(f"[fonnte] send failed to {target_norm}: {type(e).__name__}: {e}")
+        return {"ok": False, "error": str(e), "reason": f"{type(e).__name__}: {str(e)[:100]}"}
 
 def fmt_rp_id(n) -> str:
     return f"Rp {int(n):,}".replace(",", ".")
@@ -357,6 +410,7 @@ class StoreConfigUpdate(BaseModel):
     onboarding_texts: Optional[Dict[str, str]] = None
     hero_slides: Optional[List[Dict[str, Any]]] = None
     fun_facts: Optional[List[Dict[str, Any]]] = None
+    fun_facts_meta: Optional[Dict[str, Any]] = None
     how_to_order_steps: Optional[List[Dict[str, Any]]] = None
     fonnte_token: Optional[str] = None
     seller_notify_phone: Optional[str] = None
@@ -729,25 +783,57 @@ async def seed_database():
             logger.info(f"Backfilled store_config: {list(backfill.keys())}")
 
 
-        # ─── MIGRATION: Fix wrong hardcoded phone number ───
+        # ─── MIGRATION: Fix seller_notify_phone, fonnte_token, and wa_notif_enabled ───
+        # Multiple scenarios handled:
+        # 1. Wrong hardcoded phone from old code (WRONG_PHONE)
+        # 2. Empty/None/missing seller_notify_phone — auto-set from default
+        # 3. Empty/None/missing fonnte_token — auto-set from default
+        # 4. wa_notif_enabled missing — set to True
         WRONG_PHONE = "6285249682337"
-        CORRECT_PHONE = "6285190884129"
+        CORRECT_PHONE = DEFAULT_STORE_CONFIG.get("seller_notify_phone", "6285190884129")
+        DEFAULT_TOKEN = DEFAULT_STORE_CONFIG.get("fonnte_token", "")
         phone_fix = {}
+
+        # Fix wrong WhatsApp number in display config
         if existing.get("whatsapp") == WRONG_PHONE:
             phone_fix["whatsapp"] = CORRECT_PHONE
-        if existing.get("seller_notify_phone") == WRONG_PHONE:
+
+        # Fix seller_notify_phone — handle wrong, empty, None, or missing
+        current_seller_phone = (existing.get("seller_notify_phone") or "").strip()
+        if current_seller_phone == WRONG_PHONE or not current_seller_phone or len(current_seller_phone) < 10:
             phone_fix["seller_notify_phone"] = CORRECT_PHONE
+            logger.info(f"Migration: seller_notify_phone {current_seller_phone!r} → {CORRECT_PHONE}")
+
+        # Fix fonnte_token — handle empty/missing (token revocation needs manual update via UI)
+        current_token = (existing.get("fonnte_token") or "").strip()
+        if not current_token and DEFAULT_TOKEN:
+            phone_fix["fonnte_token"] = DEFAULT_TOKEN
+            logger.info(f"Migration: fonnte_token was empty, restored from default")
+
+        # Ensure wa_notif_enabled exists
+        if "wa_notif_enabled" not in existing:
+            phone_fix["wa_notif_enabled"] = True
+            logger.info("Migration: wa_notif_enabled missing → set True")
+
+        # Ensure auto_chat_config.menunggu.seller_enabled is True (most common cause of silent failure)
+        ac = existing.get("auto_chat_config") or {}
+        menunggu_cfg = ac.get("menunggu") or {}
+        if menunggu_cfg and menunggu_cfg.get("seller_enabled") is False:
+            phone_fix["auto_chat_config.menunggu.seller_enabled"] = True
+            logger.info("Migration: auto_chat_config.menunggu.seller_enabled was False → forced True")
+
         if phone_fix:
             await db.store_config.update_one({"_id": "main"}, {"$set": phone_fix})
-            logger.info(f"Migrated wrong phone numbers in store_config: {phone_fix}")
+            logger.info(f"Migrated store_config: {list(phone_fix.keys())}")
+
         existing_settings = await db.settings.find_one({"_id": "main"}) or {}
-        if existing_settings.get("seller_whatsapp") == WRONG_PHONE:
+        if existing_settings.get("seller_whatsapp") == WRONG_PHONE or not existing_settings.get("seller_whatsapp"):
             await db.settings.update_one(
                 {"_id": "main"},
                 {"$set": {"seller_whatsapp": CORRECT_PHONE}},
                 upsert=True,
             )
-            logger.info("Migrated wrong seller_whatsapp in settings collection")
+            logger.info("Migrated seller_whatsapp in settings collection")
 
     # ─── FASE 5: VAPID keys (Web Push) ───
     if WEBPUSH_AVAILABLE:
@@ -1173,6 +1259,8 @@ async def create_order(order: OrderCreate):
             "tag": f"order-{doc.get('id')}",
             "url": "/#/seller",
             "order_number": doc.get('order_number'),
+            "alert_type": "order",
+            "requireInteraction": True,  # keeps notification visible until tapped
         })
         doc["_push_sent"] = push_res.get("sent", 0)
     except Exception as e:
@@ -1237,6 +1325,23 @@ async def submit_payment_proof(oid: str, body: PaymentProofSubmit):
     doc["_wa_seller_sent"] = wa_sent
     if wa_reason:
         doc["_wa_seller_reason"] = wa_reason
+
+    # ─── Web Push: notify seller that payment proof was submitted ───
+    try:
+        push_res = await broadcast_push({
+            "title": f"💰 Bukti Bayar Masuk #{doc.get('order_number','')}",
+            "body": f"{doc.get('customer_name','-')} kirim bukti transfer. Total: {fmt_rp_id(doc.get('total', 0))}",
+            "tag": f"payment-{doc.get('id')}",
+            "url": "/#/seller",
+            "order_number": doc.get('order_number'),
+            "alert_type": "payment",
+            "requireInteraction": True,
+        })
+        doc["_push_sent"] = push_res.get("sent", 0)
+    except Exception as e:
+        logger.warning(f"Payment-proof push failed for {oid}: {e}")
+        doc["_push_sent"] = 0
+
     return doc
 
 
@@ -1395,6 +1500,107 @@ async def test_wa(req: TestWAReq, _auth: bool = Depends(require_seller)):
     msg = req.message or "🔔 Tes notifikasi dari dashboard Ciltarasa. Jika kamu menerima ini, integrasi Fonnte sukses! ✅"
     res = await fonnte_send(req.target, msg)
     return res
+
+@api_router.get("/admin/wa-diagnostic")
+async def wa_diagnostic(_auth: bool = Depends(require_seller)):
+    """One-shot diagnostic showing EVERYTHING that affects WhatsApp seller notifications.
+    Use this when notif tidak masuk — kasih tau exactly apa yang missing/salah.
+    """
+    sc = await db.store_config.find_one({"_id": "main"}, {"_id": 0}) or {}
+    token, seller_phone, enabled = await get_fonnte_config()
+
+    # Inspect auto_chat for menunggu (the new-order trigger)
+    ac = sc.get("auto_chat_config") or {}
+    menunggu = ac.get("menunggu") or {}
+
+    checks = {
+        "store_config_exists": bool(sc),
+        "fonnte_token_set": bool(token),
+        "fonnte_token_preview": (token[:6] + "..." + token[-4:]) if token and len(token) > 10 else None,
+        "seller_notify_phone_set": bool(seller_phone),
+        "seller_notify_phone": seller_phone,
+        "seller_notify_phone_raw_in_db": sc.get("seller_notify_phone"),
+        "wa_notif_enabled": enabled,
+        "auto_chat_menunggu_seller_enabled": menunggu.get("seller_enabled", True),
+        "auto_chat_menunggu_seller_template_set": bool(menunggu.get("seller_template")),
+        "default_seller_phone_const": DEFAULT_STORE_CONFIG.get("seller_notify_phone"),
+        "default_fonnte_token_set_in_code": bool(DEFAULT_STORE_CONFIG.get("fonnte_token")),
+    }
+
+    # Live device check
+    device_status = None
+    if token:
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                r = await client.post(
+                    "https://api.fonnte.com/device",
+                    headers={"Authorization": token},
+                )
+                try:
+                    device_status = r.json() if r.headers.get("content-type", "").startswith("application/json") else {"raw": r.text}
+                except Exception:
+                    device_status = {"raw": r.text[:300]}
+                device_status["_http_status"] = r.status_code
+        except Exception as e:
+            device_status = {"error": str(e)}
+
+    # Build diagnosis verdict
+    issues = []
+    if not checks["fonnte_token_set"]:
+        issues.append("❌ Fonnte token KOSONG. Buka Admin → Auto-Chat & isi token. Default seharusnya restore otomatis tapi gagal.")
+    if not checks["seller_notify_phone_set"]:
+        issues.append("❌ seller_notify_phone KOSONG. Isi di Admin → Auto-Chat WhatsApp.")
+    if not checks["wa_notif_enabled"]:
+        issues.append("⚠️ wa_notif_enabled OFF. Aktifkan di Admin → Auto-Chat.")
+    if not checks["auto_chat_menunggu_seller_enabled"]:
+        issues.append("⚠️ Auto-chat 'menunggu' untuk seller DIMATIKAN. Aktifkan di Admin → Auto-Chat WhatsApp.")
+    if device_status and isinstance(device_status, dict):
+        ds = str(device_status.get("status", "")).lower()
+        if ds in ("disconnect", "disconnected", ""):
+            issues.append(f"❌ Fonnte device DISCONNECTED ({ds!r}). Buka https://fonnte.com → Devices → scan QR ulang dari WhatsApp HP seller.")
+        elif device_status.get("quota") == 0 or device_status.get("quota") == "0":
+            issues.append("❌ Quota Fonnte HABIS. Top-up di fonnte.com.")
+
+    verdict = "✅ Konfigurasi OK — kemungkinan notif sampai." if not issues else "⚠️ Ditemukan " + str(len(issues)) + " masalah:"
+
+    return {
+        "verdict": verdict,
+        "issues": issues,
+        "checks": checks,
+        "fonnte_device_live_status": device_status,
+        "tip": "Setelah perbaiki issue, coba bikin order test dari sisi buyer. Cek Render logs untuk lihat '[fonnte] sent to ...' atau warning detail.",
+    }
+
+@api_router.post("/admin/wa-autoheal")
+async def wa_autoheal(_auth: bool = Depends(require_seller)):
+    """Manually trigger auto-heal of seller_notify_phone, fonnte_token, wa_notif_enabled
+    using DEFAULT_STORE_CONFIG values. Use this if migration didn't fire (e.g. fields
+    set to empty string instead of missing).
+    """
+    sc = await db.store_config.find_one({"_id": "main"}, {"_id": 0}) or {}
+    fixes = {}
+
+    current_phone = (sc.get("seller_notify_phone") or "").strip()
+    if not current_phone or len(current_phone) < 10:
+        fixes["seller_notify_phone"] = DEFAULT_STORE_CONFIG.get("seller_notify_phone")
+
+    if not (sc.get("fonnte_token") or "").strip():
+        fixes["fonnte_token"] = DEFAULT_STORE_CONFIG.get("fonnte_token")
+
+    if "wa_notif_enabled" not in sc or sc.get("wa_notif_enabled") is None:
+        fixes["wa_notif_enabled"] = True
+
+    # Force-enable auto_chat menunggu seller
+    ac = sc.get("auto_chat_config") or {}
+    menunggu = ac.get("menunggu") or {}
+    if not menunggu.get("seller_enabled", True):
+        fixes["auto_chat_config.menunggu.seller_enabled"] = True
+
+    if fixes:
+        await db.store_config.update_one({"_id": "main"}, {"$set": fixes}, upsert=True)
+        logger.info(f"[wa-autoheal] applied: {list(fixes.keys())}")
+
+    return {"ok": True, "applied": fixes, "no_changes_needed": not fixes}
 
 @api_router.get("/admin/fonnte-status")
 async def fonnte_device_status(_auth: bool = Depends(require_seller)):
