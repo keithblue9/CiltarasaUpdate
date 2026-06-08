@@ -13,6 +13,7 @@ import OnboardingModal from './OnboardingModal';
 import FlashSaleBanner from './FlashSaleBanner';
 import FunFactsPopup from './FunFactsPopup';
 import RecommendationsStrip from './RecommendationsStrip';
+import { detectEnv } from '../pwa/detectEnv';
 import OrderHistory from './OrderHistory';
 import PwaInstallHub from '../pwa/PwaInstallHub';
 import useTrackVisit from './useTrackVisit';
@@ -95,8 +96,24 @@ function BuyerHeader({ onCartClick }) {
   }, [cartCount]);
 
   return (
-    <header className="sticky top-0 z-40 backdrop-blur-xl bg-[#FDF8F0]/90 border-b border-[#FED7AA]" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
-      <div className="max-w-7xl mx-auto" style={{ paddingLeft: 'max(1rem, env(safe-area-inset-left))', paddingRight: 'max(1rem, env(safe-area-inset-right))' }}>
+    <>
+      {/* iOS safe-area top spacer — separate spacer for reliable rendering on iPhone Dynamic Island.
+          Fallback minHeight for iOS standalone in case env(safe-area-inset-top) returns 0. */}
+      <div
+        className="sticky top-0 z-40 bg-[#FDF8F0]"
+        style={{
+          height: 'env(safe-area-inset-top, 0px)',
+          minHeight: (detectEnv().os === 'ios' && detectEnv().isStandalone) ? 47 : 0,
+        }}
+        aria-hidden="true"
+      />
+      <header
+        className="sticky z-40 backdrop-blur-xl bg-[#FDF8F0]/90 border-b border-[#FED7AA]"
+        style={{
+          top: 'env(safe-area-inset-top, 0px)',
+        }}
+      >
+      <div className="max-w-7xl mx-auto" style={{ paddingLeft: 'max(1rem, env(safe-area-inset-left, 0px))', paddingRight: 'max(1rem, env(safe-area-inset-right, 0px))' }}>
         <div className="flex items-center justify-between h-14 sm:h-16">
           <button onClick={() => navigate('/buyer')} className="flex items-center">
             <LogoWithText size="sm" />
@@ -134,6 +151,7 @@ function BuyerHeader({ onCartClick }) {
         )}
       </div>
     </header>
+    </>
   );
 }
 
