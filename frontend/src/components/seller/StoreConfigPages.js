@@ -301,24 +301,38 @@ export function PaymentsConfig() {
   const [paymentTexts, setPaymentTexts] = useState({});
   const [saving, setSaving] = useState(false);
   useEffect(() => {
-    // ✅ Normalize: ensure new availability flags are EXPLICIT booleans (not undefined).
-    // This way, when seller saves, the DB always has the fields set, and buyer-side
-    // filter works correctly. Old data defaults to "available for both" (backward-compat).
+    // ✅ Per-option config: each (delivery_option × payment_method) combo is independent.
+    // Schema: payment_method.by_delivery = { [delivery_option_id]: { available, timing } }
+    // Backward-compat: if by_delivery is missing for some options, backfill from old global
+    // fields (available_for_delivery/pickup, delivery_timing/pickup_timing).
     const raw = storeConfig?.payment_methods || [];
-    setItems(raw.map(p => ({
-      ...p,
-      available_for_delivery: p.available_for_delivery !== false,
-      available_for_pickup: p.available_for_pickup !== false,
-      // Pay timing per delivery context: 'now' | 'later' | 'both'
-      // Defaults: delivery=later (ongkir belum diketahui), pickup=both
-      delivery_timing: p.delivery_timing || 'later',
-      pickup_timing: p.pickup_timing || 'both',
-      active: p.active !== false,
-    })));
+    const dOpts = storeConfig?.delivery_options || [];
+    setItems(raw.map(p => {
+      const byD = { ...(p.by_delivery || {}) };
+      for (const d of dOpts) {
+        if (byD[d.id]) continue; // already set, don't overwrite
+        const dPickup = d.is_pickup === true
+          || (d.id || '').toLowerCase() === 'pickup'
+          || /(ambil|sendiri|pickup)/i.test(d.name || '');
+        const fallbackAvail = dPickup ? (p.available_for_pickup !== false) : (p.available_for_delivery !== false);
+        const fallbackTiming = dPickup ? (p.pickup_timing || 'both') : (p.delivery_timing || 'later');
+        byD[d.id] = { available: fallbackAvail, timing: fallbackTiming };
+      }
+      return {
+        ...p,
+        // Keep global flags as "defaults for new delivery options added later"
+        available_for_delivery: p.available_for_delivery !== false,
+        available_for_pickup: p.available_for_pickup !== false,
+        delivery_timing: p.delivery_timing || 'later',
+        pickup_timing: p.pickup_timing || 'both',
+        by_delivery: byD,
+        active: p.active !== false,
+      };
+    }));
     setQrisImageUrl(storeConfig?.qris_image_url || '');
     setPaymentTexts(storeConfig?.payment_texts || {});
   }, [storeConfig]);
-  const add = () => setItems([...items, { id: 'pay-' + Date.now(), name: '', type: 'transfer', details: '', active: true, available_for_delivery: true, available_for_pickup: true, delivery_timing: 'later', pickup_timing: 'both' }]);
+  const add = () => setItems([...items, { id: 'pay-' + Date.now(), name: '', type: 'transfer', details: '', active: true, available_for_delivery: true, available_for_pickup: true, delivery_timing: 'later', pickup_timing: 'both', by_delivery: {} }]);
   const update = (idx, k, v) => { const u = [...items]; u[idx] = { ...u[idx], [k]: v }; setItems(u); };
   const remove = (idx) => setItems(items.filter((_, i) => i !== idx));
   const setText = (k, v) => setPaymentTexts(t => ({ ...t, [k]: v }));
@@ -344,8 +358,6 @@ export function PaymentsConfig() {
       <Section title="Opsi Pembayaran" icon={CreditCard} action={<button data-testid="add-payment-btn" onClick={add} className="flex items-center gap-1 text-xs font-bold text-[#EA580C] hover:underline"><Plus size={14} /> Tambah</button>}>
         <div className="space-y-3">
           {items.map((it, idx) => {
-            const availDelivery = it.available_for_delivery !== false; // default true
-            const availPickup = it.available_for_pickup !== false;     // default true
             return (
             <div key={it.id || `pay-${idx}`} className="p-3 rounded-xl bg-[#FFFBF5] border border-[#FED7AA] space-y-2">
               <div className="grid grid-cols-12 gap-2 items-end">
@@ -367,85 +379,19 @@ export function PaymentsConfig() {
                 </div>
                 <button onClick={() => remove(idx)} className="col-span-6 sm:col-span-1 p-2.5 rounded-xl bg-red-50 text-red-500 self-end"><Trash2 size={16} /></button>
               </div>
-              {/* Availability per delivery context */}
-              <div className="flex flex-wrap gap-3 pt-2 border-t border-[#FED7AA]/60 text-xs">
-                <span className="text-[#7C2D12] font-bold">Tersedia untuk:</span>
-                <label className="flex items-center gap-1 cursor-pointer font-semibold text-[#7C2D12]">
-                  <input
-                    data-testid={`payment-avail-delivery-${idx}`}
-                    type="checkbox"
-                    checked={availDelivery}
-                    onChange={e => update(idx, 'available_for_delivery', e.target.checked)}
-                    className="w-4 h-4 accent-blue-600"
-                  />
-                  🚚 Pengiriman
-                </label>
-                <label className="flex items-center gap-1 cursor-pointer font-semibold text-[#7C2D12]">
-                  <input
-                    data-testid={`payment-avail-pickup-${idx}`}
-                    type="checkbox"
-                    checked={availPickup}
-                    onChange={e => update(idx, 'available_for_pickup', e.target.checked)}
-                    className="w-4 h-4 accent-emerald-600"
-                  />
-                  🏠 Ambil Sendiri
-                </label>
-                <span className="text-[10px] text-[#9A3412] italic">
-                  💡 Mis: COD/Tunai mungkin hanya tersedia untuk Ambil Sendiri
-                </span>
-              </div>
-
-              {/* Pay timing (only for online payments — COD is always cash on delivery) */}
-              {it.type !== 'cod' && (availDelivery || availPickup) && (
-                <div className="pt-2 border-t border-[#FED7AA]/60 space-y-2">
-                  <p className="text-xs font-bold text-[#7C2D12]">⏰ Timing Bayar (Sekarang vs Nanti):</p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {availDelivery && (
-                      <div>
-                        <label className="text-[10px] font-bold text-[#7C2D12] block mb-1">🚚 Saat Pengiriman</label>
-                        <select
-                          data-testid={`payment-delivery-timing-${idx}`}
-                          value={it.delivery_timing || 'later'}
-                          onChange={e => update(idx, 'delivery_timing', e.target.value)}
-                          className={inputCls + ' text-xs py-1.5'}
-                        >
-                          <option value="later">🕒 Bayar Nanti saja (default, ongkir belum jelas)</option>
-                          <option value="now">⚡ Bayar Sekarang saja</option>
-                          <option value="both">✨ Keduanya (buyer pilih)</option>
-                        </select>
-                      </div>
-                    )}
-                    {availPickup && (
-                      <div>
-                        <label className="text-[10px] font-bold text-[#7C2D12] block mb-1">🏠 Saat Ambil Sendiri</label>
-                        <select
-                          data-testid={`payment-pickup-timing-${idx}`}
-                          value={it.pickup_timing || 'both'}
-                          onChange={e => update(idx, 'pickup_timing', e.target.value)}
-                          className={inputCls + ' text-xs py-1.5'}
-                        >
-                          <option value="both">✨ Keduanya (buyer pilih)</option>
-                          <option value="now">⚡ Bayar Sekarang saja</option>
-                          <option value="later">🕒 Bayar Nanti saja</option>
-                        </select>
-                      </div>
-                    )}
-                  </div>
-                  <p className="text-[10px] text-[#9A3412] italic">
-                    💡 <strong>Bayar Sekarang</strong> = buyer upload bukti transfer di checkout. <strong>Bayar Nanti</strong> = buyer transfer setelah seller konfirmasi total + ongkir.
-                  </p>
-                </div>
-              )}
+              <p className="text-[11px] text-[#9A3412] italic pt-1 border-t border-[#FED7AA]/60">
+                ✏️ Atur <strong>ketersediaan</strong> & <strong>timing bayar</strong> per kombinasi pengiriman di Preview Matrix bawah ↓
+              </p>
             </div>
           );})}
         </div>
       </Section>
 
-      {/* Live Compatibility Matrix — visualize what buyer sees */}
+      {/* Live Compatibility Matrix — visualize what buyer sees AND edit per (delivery×payment) cell */}
       {items.filter(it => it.active !== false).length > 0 && (
-        <Section title="🔗 Preview: Apa Yang Buyer Lihat" icon={CreditCard}>
+        <Section title="🔗 Setting per Kombinasi: Pengiriman × Pembayaran" icon={CreditCard}>
           <p className="text-xs text-[#9A3412] mb-3">
-            Tabel ini menunjukkan kombinasi <strong>opsi pengiriman</strong> × <strong>metode bayar</strong>. <strong>Klik cell untuk toggle</strong> tersedia/tidak. Pilih timing bayar via dropdown.
+            <strong>Setiap cell independen</strong> — atur ketersediaan & timing bayar untuk setiap kombinasi (Pengiriman × Metode Bayar). Ngubah satu cell <strong>ngga ngaruh</strong> cell lain.
           </p>
           <div className="overflow-x-auto">
             <table className="w-full text-xs border-collapse">
@@ -472,21 +418,28 @@ export function PaymentsConfig() {
                       </td>
                       {items.filter(it => it.active !== false).map(p => {
                         const idx = items.findIndex(i => i.id === p.id);
-                        const ok = dPickup ? (p.available_for_pickup !== false) : (p.available_for_delivery !== false);
-                        const timing = dPickup ? (p.pickup_timing || 'both') : (p.delivery_timing || 'later');
-                        const flagKey = dPickup ? 'available_for_pickup' : 'available_for_delivery';
-                        const timingKey = dPickup ? 'pickup_timing' : 'delivery_timing';
+                        // ✅ Per-option config — each cell independent
+                        const cellConfig = p.by_delivery?.[d.id] || { available: true, timing: dPickup ? 'both' : 'later' };
+                        const ok = cellConfig.available !== false;
+                        const timing = cellConfig.timing || (dPickup ? 'both' : 'later');
+                        const updateCell = (patch) => {
+                          const nextByDelivery = {
+                            ...(p.by_delivery || {}),
+                            [d.id]: { ...cellConfig, ...patch },
+                          };
+                          update(idx, 'by_delivery', nextByDelivery);
+                        };
                         const timingLabel = { now: '⚡ Bayar Sekarang', later: '🕒 Bayar Nanti', both: '✨ Buyer Pilih' };
                         const timingDescShort = { now: 'Wajib upload bukti', later: 'Setelah ongkir', both: 'Fleksibel' };
                         return (
                           <td
-                            key={p.id}
+                            key={`${d.id}-${p.id}`}
                             className={`p-2 border border-[#FED7AA] text-center align-middle transition-colors ${ok ? 'bg-green-50 hover:bg-green-100' : 'bg-red-50 hover:bg-red-100'}`}
                           >
                             <button
                               type="button"
                               data-testid={`matrix-toggle-${d.id}-${p.id}`}
-                              onClick={() => update(idx, flagKey, !ok)}
+                              onClick={() => updateCell({ available: !ok })}
                               className={`w-full text-[11px] font-bold mb-1.5 px-2 py-1 rounded-md transition-all ${ok ? 'bg-emerald-200/60 hover:bg-emerald-300 text-emerald-800' : 'bg-red-200/60 hover:bg-red-300 text-red-800'}`}
                             >
                               {ok ? '✅ Tersedia' : '⛔ Hidden'}
@@ -495,7 +448,7 @@ export function PaymentsConfig() {
                               <select
                                 data-testid={`matrix-timing-${d.id}-${p.id}`}
                                 value={timing}
-                                onChange={e => update(idx, timingKey, e.target.value)}
+                                onChange={e => updateCell({ timing: e.target.value })}
                                 className="w-full text-[10px] px-1 py-0.5 rounded border border-[#FED7AA] bg-white text-[#7C2D12] cursor-pointer"
                                 title={timingDescShort[timing]}
                               >
