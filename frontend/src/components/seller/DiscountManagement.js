@@ -318,25 +318,30 @@ export default function DiscountManagement() {
                   const marginColor = rec.projected_margin_pct >= 30 ? 'text-emerald-700 bg-emerald-50' : rec.projected_margin_pct >= 20 ? 'text-amber-700 bg-amber-50' : 'text-red-700 bg-red-50';
                   const confColor = rec.confidence === 'high' ? 'bg-emerald-100 text-emerald-700' : rec.confidence === 'medium' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-700';
                   return (
-                    <label
+                    <div
                       key={rec.product_id}
                       data-testid={`ai-rec-${rec.product_id}`}
+                      role="checkbox"
+                      aria-checked={selected}
+                      tabIndex={0}
                       onClick={() => toggleRec(rec.product_id)}
-                      className={`flex gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${
+                      onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); toggleRec(rec.product_id); } }}
+                      className={`flex gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all select-none ${
                         selected
                           ? 'border-purple-500 bg-purple-50/60'
                           : 'border-gray-200 bg-white hover:border-purple-300'
                       }`}
                     >
-                      <div className="flex-shrink-0 pt-0.5">
+                      <div className="flex-shrink-0 pt-0.5 pointer-events-none">
                         <input
                           type="checkbox"
                           checked={selected}
-                          onChange={() => {}}
-                          className="w-5 h-5 accent-purple-600 cursor-pointer pointer-events-none"
+                          readOnly
+                          tabIndex={-1}
+                          className="w-5 h-5 accent-purple-600"
                         />
                       </div>
-                      <SmartImage src={rec.image_url} alt="" className="w-14 h-14 rounded-lg object-cover flex-shrink-0" />
+                      <SmartImage src={rec.image_url} alt="" className="w-14 h-14 rounded-lg object-cover flex-shrink-0 pointer-events-none" />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-start justify-between gap-2 flex-wrap">
                           <p className="font-bold text-sm text-[#451A03] truncate flex-1 min-w-[120px]">{rec.product_name}</p>
@@ -364,7 +369,7 @@ export default function DiscountManagement() {
                           {rec.reasoning}
                         </p>
                       </div>
-                    </label>
+                    </div>
                   );
                 })}
               </div>

@@ -9,7 +9,9 @@ import {
 import {
   isSoundEnabled, setSoundEnabled,
   isVibrateEnabled, setVibrateEnabled,
-  triggerOrderAlert, triggerPaymentAlert, unlockAudio,
+  getVolume, setVolume,
+  getVibrateIntensity, setVibrateIntensity,
+  triggerOrderAlert, triggerPaymentAlert, unlockAudio, audioStatus,
 } from '../../lib/notificationAlert';
 
 const API = process.env.REACT_APP_BACKEND_URL;
@@ -25,6 +27,17 @@ export default function SellerPushSettings() {
   const [label, setLabel] = useState('');
   const [soundOn, setSoundOnState] = useState(isSoundEnabled());
   const [vibrateOn, setVibrateOnState] = useState(isVibrateEnabled());
+  const [volume, setVolumeState] = useState(getVolume());
+  const [vibIntensity, setVibIntensityState] = useState(getVibrateIntensity());
+  const [audioState, setAudioState] = useState('not_initialized');
+
+  // Poll audio state to show suspended/running banner
+  useEffect(() => {
+    const tick = () => setAudioState(audioStatus());
+    tick();
+    const id = setInterval(tick, 2000);
+    return () => clearInterval(id);
+  }, []);
 
   const toggleSound = () => {
     const v = !soundOn;
@@ -32,7 +45,6 @@ export default function SellerPushSettings() {
     setSoundEnabled(v);
     if (v) {
       unlockAudio();
-      // play a sample immediately so user can confirm it works
       setTimeout(() => triggerOrderAlert(), 100);
     }
     toast.success(`Suara notif ${v ? 'aktif' : 'mati'}`);
@@ -42,6 +54,37 @@ export default function SellerPushSettings() {
     setVibrateOnState(v);
     setVibrateEnabled(v);
     toast.success(`Getar notif ${v ? 'aktif' : 'mati'}`);
+  };
+
+  const handleVolumeChange = (e) => {
+    const v = Number(e.target.value);
+    setVolumeState(v);
+    setVolume(v);
+  };
+  const handleVolumeCommit = () => {
+    // Play test sound at the new volume after user releases slider
+    unlockAudio();
+    triggerOrderAlert();
+  };
+
+  const handleIntensityChange = (intensity) => {
+    setVibIntensityState(intensity);
+    setVibrateIntensity(intensity);
+    // Trigger vibrate so user feels new pattern
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      const patterns = { light: [120, 80, 120], normal: [200, 100, 200, 100, 400], strong: [400, 100, 400, 100, 400, 100, 600] };
+      try { navigator.vibrate(patterns[intensity] || patterns.normal); } catch {}
+    }
+    toast.success(`Getaran: ${intensity === 'light' ? 'Lembut' : intensity === 'strong' ? 'Kuat' : 'Normal'}`);
+  };
+
+  const handleUnlockAudio = () => {
+    unlockAudio();
+    setTimeout(() => {
+      setAudioState(audioStatus());
+      triggerOrderAlert();
+    }, 100);
+    toast.success('🔓 Audio di-unlock — sekarang notif bisa bunyi');
   };
   const testSoundOnly = () => {
     unlockAudio();
@@ -242,12 +285,44 @@ export default function SellerPushSettings() {
             />
           </label>
 
+          {/* Volume slider — fixes "suara kecil banget" */}
+          {soundOn && (
+            <div className="p-3 rounded-xl bg-white border border-amber-200">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-bold text-[#7C2D12] flex items-center gap-2">
+                  <Volume2 size={14} /> Volume Suara
+                </p>
+                <span className="text-sm font-bold text-amber-700 tabular-nums">{volume}%</span>
+              </div>
+              <input
+                data-testid="alert-volume-slider"
+                type="range"
+                min="0"
+                max="100"
+                step="5"
+                value={volume}
+                onChange={handleVolumeChange}
+                onMouseUp={handleVolumeCommit}
+                onTouchEnd={handleVolumeCommit}
+                className="w-full accent-amber-600"
+              />
+              <div className="flex justify-between text-[9px] text-gray-500 mt-1">
+                <span>Pelan</span>
+                <span>Sedang</span>
+                <span>🔊 Keras</span>
+              </div>
+              <p className="text-[10px] text-[#9A3412] mt-1 italic">
+                Geser slider, lepas → otomatis tes suara di volume baru.
+              </p>
+            </div>
+          )}
+
           <label className="flex items-center justify-between p-3 rounded-xl bg-white border border-amber-200 cursor-pointer">
             <div className="flex items-center gap-3">
               <Vibrate size={18} className={vibrateOn ? 'text-green-600' : 'text-gray-400'} />
               <div>
                 <p className="font-bold text-sm text-[#7C2D12]">Getarkan HP</p>
-                <p className="text-[10px] text-[#9A3412]">Pattern kuat: getar-jeda-getar-jeda-long. Android only (iOS limited).</p>
+                <p className="text-[10px] text-[#9A3412]">Pattern getar saat notif. Android only (iOS limited).</p>
               </div>
             </div>
             <input
@@ -258,7 +333,59 @@ export default function SellerPushSettings() {
               className="w-12 h-6 accent-amber-600"
             />
           </label>
+
+          {/* Vibration intensity selector */}
+          {vibrateOn && (
+            <div className="p-3 rounded-xl bg-white border border-amber-200">
+              <p className="text-xs font-bold text-[#7C2D12] flex items-center gap-2 mb-2">
+                <Vibrate size={14} /> Intensitas Getaran
+              </p>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { id: 'light', label: 'Lembut', desc: 'Singkat' },
+                  { id: 'normal', label: 'Normal', desc: 'Default' },
+                  { id: 'strong', label: 'Kuat', desc: 'Hard-to-miss' },
+                ].map(opt => (
+                  <button
+                    key={opt.id}
+                    data-testid={`alert-vib-intensity-${opt.id}`}
+                    onClick={() => handleIntensityChange(opt.id)}
+                    className={`p-2 rounded-lg border-2 transition-all text-xs font-bold ${
+                      vibIntensity === opt.id
+                        ? 'border-amber-600 bg-amber-50 text-amber-800'
+                        : 'border-gray-200 bg-white text-gray-600 hover:border-amber-400'
+                    }`}
+                  >
+                    {opt.label}
+                    <span className="block text-[9px] font-normal text-gray-500 mt-0.5">{opt.desc}</span>
+                  </button>
+                ))}
+              </div>
+              <p className="text-[10px] text-[#9A3412] mt-1 italic">
+                Tap untuk pilih → otomatis tes getaran di intensitas baru.
+              </p>
+            </div>
+          )}
         </div>
+
+        {/* Audio context status — banner if suspended */}
+        {soundOn && audioState !== 'running' && audioState !== 'not_initialized' && (
+          <div className="mb-3 p-3 rounded-xl bg-red-50 border-2 border-red-300">
+            <p className="text-xs font-bold text-red-700 mb-2">
+              🔇 Audio Suspended — Notif bunyi mungkin gagal
+            </p>
+            <p className="text-[11px] text-red-600 mb-2">
+              Browser auto-suspend Web Audio kalau page idle. Klik tombol di bawah untuk unlock lagi.
+            </p>
+            <button
+              data-testid="alert-unlock-audio-btn"
+              onClick={handleUnlockAudio}
+              className="bg-red-600 hover:bg-red-700 text-white text-xs font-bold px-3 py-1.5 rounded-full"
+            >
+              🔓 Aktifkan Audio Lagi
+            </button>
+          </div>
+        )}
 
         <div className="flex flex-wrap gap-2">
           <button
