@@ -648,13 +648,30 @@ export default function Checkout() {
             <div className="flex justify-between text-sm text-[#451A03]">
               <span>Ongkir{currentDelivery ? ` (${currentDelivery.name})` : ''}</span>
               <span className="font-semibold">
-                {Number(form.delivery_fee) > 0 ? formatRp(form.delivery_fee) : <span className="text-emerald-700">Gratis</span>}
+                {currentDelivery?.needs_ongkir_input ? (
+                  <span className="text-amber-700">📋 Diisi seller</span>
+                ) : Number(form.delivery_fee) > 0 ? (
+                  formatRp(form.delivery_fee)
+                ) : (
+                  <span className="text-emerald-700">{currentDelivery?.free_label || 'Gratis'}</span>
+                )}
               </span>
             </div>
             <div className="flex justify-between pt-2 border-t border-[#FED7AA]/60">
               <span className="font-bold text-[#78350F]">Total</span>
-              <span className="font-bold text-[#D97706] text-lg">{formatRp(cartTotal + (Number(form.delivery_fee) || 0))}</span>
+              <span className="font-bold text-[#D97706] text-lg">
+                {currentDelivery?.needs_ongkir_input ? (
+                  <>{formatRp(cartTotal)} <span className="text-xs font-normal text-amber-700">+ ongkir</span></>
+                ) : (
+                  formatRp(cartTotal + (Number(form.delivery_fee) || 0))
+                )}
+              </span>
             </div>
+            {currentDelivery?.needs_ongkir_input && (
+              <p className="text-[10px] text-amber-700 italic pt-1">
+                💡 Ongkir akan ditambahkan oleh seller pas <strong>siap kirim</strong>. Total final via WhatsApp.
+              </p>
+            )}
           </div>
         </div>
 
