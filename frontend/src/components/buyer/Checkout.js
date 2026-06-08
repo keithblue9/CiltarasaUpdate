@@ -265,18 +265,24 @@ export default function Checkout() {
     if (raw.length === 0) {
       // Backward-compat fallback
       return [
-        { id: 'pickup', name: 'Ambil Sendiri', description: 'Ambil langsung di toko, gratis ongkir', fee: 0, is_pickup: true },
-        { id: 'delivery', name: 'Pengiriman', description: 'Kirim ke alamat', fee: 0, is_pickup: false },
+        { id: 'pickup', name: 'Ambil Sendiri', description: 'Ambil langsung di toko, gratis ongkir', fee: 0, is_pickup: true, requires_address: false, emoji: '🏠', free_label: 'Gratis' },
+        { id: 'delivery', name: 'Pengiriman', description: 'Kirim ke alamat', fee: 0, is_pickup: false, requires_address: true, emoji: '🚚', free_label: 'Gratis' },
       ];
     }
-    return raw.map(d => ({
-      ...d,
-      // Detect pickup: explicit flag OR known id OR name contains "ambil"/"pickup"/"sendiri"
-      is_pickup: d.is_pickup === true
+    return raw.map(d => {
+      const detectedPickup = d.is_pickup === true
         || d.id === 'pickup'
-        || /(ambil|sendiri|pickup)/i.test(d.name || ''),
-      emoji: d.emoji || DELIVERY_EMOJI[d.id] || '🚚',
-    }));
+        || /(ambil|sendiri|pickup)/i.test(d.name || '');
+      return {
+        ...d,
+        is_pickup: detectedPickup,
+        // requires_address: if explicitly set use it, otherwise default to NOT pickup
+        requires_address: d.requires_address !== undefined ? d.requires_address : !detectedPickup,
+        needs_ongkir_input: d.needs_ongkir_input === true,
+        emoji: d.emoji || DELIVERY_EMOJI[d.id] || (detectedPickup ? '🏠' : '🚚'),
+        free_label: d.free_label || 'Gratis',
+      };
+    });
   }, [storeConfig]);
 
   const [form, setForm] = useState(() => ({
@@ -306,6 +312,9 @@ export default function Checkout() {
   }, [deliveryOptions, form.delivery_option_id]);
 
   const currentDelivery = deliveryOptions.find(d => d.id === form.delivery_option_id);
+  // ✅ Use requires_address from config (not just is_pickup) — gives seller full control
+  const requiresAddress = currentDelivery ? currentDelivery.requires_address === true : false;
+  // Keep isDelivery for backward-compat naming in BankTransferFlow etc. (means "non-pickup")
   const isDelivery = currentDelivery ? !currentDelivery.is_pickup : (form.delivery_method === 'delivery');
 
   const setDelivery = (opt) => {
@@ -314,14 +323,16 @@ export default function Checkout() {
       delivery_option_id: opt.id,
       delivery_method: opt.is_pickup ? 'pickup' : 'delivery',
       delivery_fee: Number(opt.fee) || 0,
-      // Clear address kalau switch ke pickup
-      customer_address: opt.is_pickup ? '' : f.customer_address,
+      // Clear address kalau opt ngga butuh alamat
+      customer_address: opt.requires_address ? f.customer_address : '',
     }));
   };
 
   // ─── Filter payment methods by delivery context (per-option, with global fallback) ───
   // Each method may have `by_delivery: { [opt_id]: { available, timing } }`.
   // Falls back to global `available_for_delivery` / `available_for_pickup` if per-option not set.
+  // CRITICAL: NO DEFAULT_PAYMENTS fallback when empty — empty array triggers "Bayar Nanti" panel
+  // (otherwise QRIS/etc phantom-appears when seller hasn't configured them).
   const activePayments = useMemo(() => {
     const list = (storeConfig?.payment_methods || []).filter(p => {
       if (p.active === false) return false;
@@ -336,9 +347,11 @@ export default function Checkout() {
       if (!isPickup && p.available_for_delivery === false) return false;
       return true;
     });
-    if (list.length === 0) return DEFAULT_PAYMENTS;
     return list.map(p => ({ ...p, emoji: p.emoji || PAYMENT_EMOJI[p.type] || PAYMENT_EMOJI[p.id] || '💳' }));
   }, [storeConfig, currentDelivery]);
+
+  // ─── No payment available for this delivery — Bayar Nanti panel ───
+  const isPayLaterFallback = activePayments.length === 0;
 
   const banks = useMemo(() => storeConfig?.bank_accounts || [], [storeConfig]);
   const qrisImageUrl = storeConfig?.qris_image_url || '';
@@ -362,16 +375,22 @@ export default function Checkout() {
     return currentPayment.delivery_timing || 'later';
   }, [currentPayment, currentDelivery]);
 
+  // ─── Auto-set payment_method to 'pay_later' when in fallback mode ───
   useEffect(() => {
-    if (activePayments.length > 0 && !activePayments.find(p => p.id === form.payment_method)) {
+    if (isPayLaterFallback) {
+      setForm(f => ({ ...f, payment_method: 'pay_later', payment_bank_id: '', payment_type: 'later', payment_proof_url: '' }));
+    } else if (activePayments.length > 0 && !activePayments.find(p => p.id === form.payment_method)) {
       setForm(f => ({ ...f, payment_method: activePayments[0].id }));
     }
-  }, [activePayments, form.payment_method]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activePayments, isPayLaterFallback]);
 
-  // Reset payment sub-state ketika method berubah
+  // Reset payment sub-state ketika method berubah (skip in fallback)
   useEffect(() => {
+    if (isPayLaterFallback) return;
     setForm(f => ({ ...f, payment_bank_id: '', payment_type: '', payment_proof_url: '' }));
     setQrisStage('pending');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.payment_method]);
 
   useEffect(() => {
@@ -388,6 +407,8 @@ export default function Checkout() {
 
   // Validasi: tombol submit hanya enabled jika payment flow lengkap (config-driven)
   const paymentReady = useMemo(() => {
+    // Bayar Nanti fallback — no payment validation needed
+    if (isPayLaterFallback) return true;
     const allowNow = allowedTiming === 'now' || allowedTiming === 'both';
     const allowLater = allowedTiming === 'later' || allowedTiming === 'both';
     if (currentPaymentType === 'transfer') {
@@ -399,20 +420,19 @@ export default function Checkout() {
       return true;
     }
     if (currentPaymentType === 'qris') {
-      // If only 'later' allowed → no need to scan/confirm now
       if (!allowNow) return true;
       if (qrisStage !== 'paid') return false;
       if (!form.payment_proof_url) return false;
       return true;
     }
     return true;
-  }, [currentPaymentType, form.payment_bank_id, form.payment_type, form.payment_proof_url, qrisStage, allowedTiming]);
+  }, [isPayLaterFallback, currentPaymentType, form.payment_bank_id, form.payment_type, form.payment_proof_url, qrisStage, allowedTiming]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (cart.length === 0) { toast.error('Keranjang kosong!'); return; }
     if (!form.customer_name || !form.customer_phone) { toast.error('Nama dan nomor HP wajib diisi!'); return; }
-    if (isDelivery && !form.customer_address) { toast.error('Alamat wajib diisi untuk pengiriman!'); return; }
+    if (requiresAddress && !form.customer_address) { toast.error('Alamat wajib diisi untuk opsi pengiriman ini!'); return; }
     if (!paymentReady) {
       if (currentPaymentType === 'transfer' && !form.payment_bank_id) { toast.error('Pilih bank tujuan transfer dulu'); return; }
       if (currentPaymentType === 'transfer' && !form.payment_type) { toast.error('Pilih cara bayar (Sekarang/Nanti)'); return; }
@@ -505,12 +525,14 @@ export default function Checkout() {
                       : 'border-[#FED7AA] text-[#92400E] hover:border-[#D97706]'
                   }`}
                 >
-                  <span className="text-2xl">{opt.emoji}</span>
+                  <span className="text-2xl">{opt.emoji || '🚚'}</span>
                   <span className="leading-tight">{opt.name}</span>
-                  {Number(opt.fee) > 0 ? (
+                  {opt.needs_ongkir_input ? (
+                    <span className="text-[10px] font-bold text-[#9333EA] mt-0.5">💰 Ongkir nanti</span>
+                  ) : Number(opt.fee) > 0 ? (
                     <span className="text-[10px] font-bold text-[#EA580C] mt-0.5">+{formatRp(opt.fee)}</span>
                   ) : (
-                    <span className="text-[10px] font-normal text-emerald-700 mt-0.5">Gratis</span>
+                    <span className="text-[10px] font-normal text-emerald-700 mt-0.5">{opt.free_label || 'Gratis'}</span>
                   )}
                 </button>
               ))}
@@ -519,7 +541,7 @@ export default function Checkout() {
           {currentDelivery?.description && (
             <p className="text-[11px] text-[#9A3412] italic mb-3">💡 {currentDelivery.description}</p>
           )}
-          {isDelivery && (
+          {requiresAddress && (
             <div>
               <label className="block text-sm font-semibold text-[#78350F] mb-1">Alamat Lengkap *</label>
               <textarea data-testid="checkout-address-input" required value={form.customer_address} onChange={e => set('customer_address', e.target.value)}
@@ -527,13 +549,33 @@ export default function Checkout() {
                 className="w-full px-4 py-3 rounded-xl border border-[#FED7AA] focus:outline-none focus:ring-2 focus:ring-[#D97706] font-body text-[#451A03] resize-none" />
             </div>
           )}
+          {currentDelivery?.needs_ongkir_input && (
+            <div className="mt-2 p-2 rounded-lg bg-amber-50 border border-amber-200">
+              <p className="text-[11px] text-amber-800">
+                ⚠️ Ongkir untuk opsi ini <strong>belum final</strong> — seller akan info total + ongkir lewat WhatsApp setelah pesanan dikonfirmasi.
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Payment */}
         <div className="bg-white rounded-2xl border border-[#FED7AA] p-6">
           <h3 className="font-heading font-bold text-[#78350F] text-lg mb-4">Metode Pembayaran</h3>
-          {activePayments.length === 0 ? (
-            <p className="text-sm text-[#92400E]">Tidak ada metode pembayaran aktif. Silakan hubungi seller.</p>
+          {isPayLaterFallback ? (
+            // ─── Bayar Nanti panel — seller hasn't enabled any payment for this delivery context ───
+            <div className="p-5 rounded-xl bg-gradient-to-br from-blue-50 to-amber-50 border-2 border-amber-300">
+              <div className="flex items-start gap-3">
+                <span className="text-3xl">🕒</span>
+                <div className="flex-1">
+                  <p className="font-heading font-bold text-[#78350F] text-base mb-1">
+                    {texts.pay_later_fallback_label || 'Bayar Nanti'}
+                  </p>
+                  <p className="text-xs text-[#92400E] leading-relaxed">
+                    {texts.pay_later_fallback_desc || 'Seller akan kirim info pembayaran (no rekening / link / cash on delivery) via WhatsApp setelah pesanan dikonfirmasi. Kamu tinggal submit order ini, sisanya seller bantu lewat chat.'}
+                  </p>
+                </div>
+              </div>
+            </div>
           ) : (
             <div className={`grid gap-3 ${activePayments.length === 1 ? 'grid-cols-1' : activePayments.length === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
               {activePayments.map(p => (
@@ -546,8 +588,8 @@ export default function Checkout() {
             </div>
           )}
 
-          {/* Sub-flows per payment type */}
-          {currentPaymentType === 'transfer' && (
+          {/* Sub-flows per payment type — only when a payment method is selected (not in Bayar Nanti fallback) */}
+          {!isPayLaterFallback && currentPaymentType === 'transfer' && (
             <BankTransferFlow
               banks={banks}
               texts={texts}
@@ -561,7 +603,7 @@ export default function Checkout() {
               allowedTiming={allowedTiming}
             />
           )}
-          {currentPaymentType === 'qris' && (
+          {!isPayLaterFallback && currentPaymentType === 'qris' && (
             <QrisFlow
               qrisImageUrl={qrisImageUrl}
               texts={texts}
