@@ -58,7 +58,7 @@ export default function AboutSection() {
                 <Phone size={14} className="text-white" />
               </div>
               <div>
-                <p className="font-bold text-[#7C2D12]">+{sc.whatsapp || '6281912853950'}</p>
+                <p className="font-bold text-[#7C2D12]">{sc.whatsapp ? `+${sc.whatsapp.replace(/^\+?/, '')}` : '—'}</p>
                 <p className="text-xs text-[#9A3412]">WhatsApp Bisnis</p>
               </div>
             </div>
@@ -67,7 +67,7 @@ export default function AboutSection() {
                 <MapPin size={14} className="text-white" />
               </div>
               <div>
-                <p className="font-bold text-[#7C2D12]">{sc.address || 'Malang, Jawa Timur'}</p>
+                <p className="font-bold text-[#7C2D12]">{sc.address || '—'}</p>
                 <p className="text-xs text-[#9A3412]">Alamat Toko</p>
               </div>
             </div>

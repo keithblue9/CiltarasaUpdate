@@ -30,8 +30,8 @@ const DEFAULTS = {
 };
 
 const SEO_DEFAULTS = {
-  title: 'Ciltarasa - Premium Frozen Food & Bebek Pawon Ayu khas Malang',
-  description: 'Frozen food premium dari Malang. Pesan online, kirim cepat.',
+  title: 'Ciltarasa - Homemade Premium Frozen Food',
+  description: 'Frozen food premium homemade. Bekal dan camilan praktis berkualitas.',
   og_image_url: '',
 };
 

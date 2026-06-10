@@ -163,47 +163,56 @@ function BuyerHeader({ onCartClick }) {
 function BuyerFooter() {
   const { storeConfig } = useApp();
   const sc = storeConfig || {};
+  const phone = (sc.whatsapp || '').replace(/^\+?/, '');
   return (
     <footer className="bg-[#78350F] text-white mt-16">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           <div>
             <h3 className="font-heading text-xl font-bold mb-3 text-[#FED7AA]">{sc.name || 'Ciltarasa'}</h3>
-            <p className="text-sm text-orange-200 font-body leading-relaxed">
-              {sc.tagline || 'Frozen snack premium dan Bebek Pawon Ayu khas Malang.'}
-            </p>
+            {sc.tagline && (
+              <p className="text-sm text-orange-200 font-body leading-relaxed">
+                {sc.tagline}
+              </p>
+            )}
           </div>
           <div>
             <h4 className="font-heading font-semibold mb-3 text-[#FED7AA]">Kontak</h4>
             <div className="space-y-2 text-sm text-orange-200">
-              <div className="flex items-center gap-2">
-                <Phone size={14} />
-                <span>+{sc.whatsapp || '6281912853950'}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <MapPin size={14} />
-                <span>{sc.address || 'Malang, Jawa Timur'}</span>
-              </div>
+              {phone && (
+                <div className="flex items-center gap-2">
+                  <Phone size={14} />
+                  <span>+{phone}</span>
+                </div>
+              )}
+              {sc.address && (
+                <div className="flex items-center gap-2">
+                  <MapPin size={14} />
+                  <span>{sc.address}</span>
+                </div>
+              )}
               {sc.social_links?.instagram && (
                 <div className="flex items-center gap-2">
                   <Instagram size={14} />
-                  <span>@ciltarasa</span>
+                  <span>{sc.social_links.instagram}</span>
                 </div>
               )}
             </div>
           </div>
-          <div>
-            <h4 className="font-heading font-semibold mb-3 text-[#FED7AA]">Jam Operasional</h4>
-            <div className="space-y-1 text-sm text-orange-200">
-              <div className="flex items-center gap-2">
-                <Clock size={14} />
-                <span>{sc.operating_hours || 'Setiap Hari • 08.00 - 21.00 WIB'}</span>
+          {sc.operating_hours && (
+            <div>
+              <h4 className="font-heading font-semibold mb-3 text-[#FED7AA]">Jam Operasional</h4>
+              <div className="space-y-1 text-sm text-orange-200">
+                <div className="flex items-center gap-2">
+                  <Clock size={14} />
+                  <span>{sc.operating_hours}</span>
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
         <div className="border-t border-amber-700 mt-8 pt-6 text-center text-xs text-orange-300">
-          © 2026 Ciltarasa. Premium Frozen Snacks & Bebek Pawon Ayu.
+          © {new Date().getFullYear()} {sc.name || 'Ciltarasa'}.{sc.tagline ? ' ' + sc.tagline : ''}
         </div>
       </div>
     </footer>

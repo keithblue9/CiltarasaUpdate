@@ -7,19 +7,19 @@ import SmartImage from '../shared/SmartImage';
 const DEFAULT_SLIDE = 'https://static.prod-images.emergentagent.com/jobs/fa7f3ba8-8537-4e4d-b681-0c7370599acf/images/3fd09d3c0fc14b6148e6065a022d94002c52a9aafb799d7dda170d7445053fd9.png';
 
 const defaultTexts = {
-  viral_pill: 'Lagi Viral di Malang 🔥',
+  viral_pill: 'Lagi Viral 🔥',
   hero_title_1: 'Cemilan Frozen',
   hero_title_2: 'Yang Bikin Nagih',
-  hero_subtitle: 'Frozen snack premium & Bebek Pawon Ayu khas Malang. Tinggal goreng, anak-anak langsung suka! ✨',
+  hero_subtitle: 'Frozen snack premium homemade. Tinggal goreng, anak-anak langsung suka! ✨',
   hero_cta_primary: 'Belanja Sekarang',
   hero_cta_secondary: 'Lacak Pesananku',
-  social_proof_text: '1.200+ keluarga di Malang sudah berlangganan',
+  social_proof_text: 'Sudah dipercaya banyak keluarga',
   how_to_order_title: 'Cara Pesan',
   how_to_order_subtitle: 'Mudah, cepat, dan praktis',
 };
 
 const defaultSteps = [
-  { id: 's1', icon: '🛒', title: 'Pilih Produk', desc: 'Pilih frozen snack atau bebek favoritmu dari katalog kami.' },
+  { id: 's1', icon: '🛒', title: 'Pilih Produk', desc: 'Pilih frozen snack favoritmu dari katalog kami.' },
   { id: 's2', icon: '📝', title: 'Isi Data Pesanan', desc: 'Lengkapi nama, nomor HP, dan alamat pengiriman.' },
   { id: 's3', icon: '🎉', title: 'Pesanan Dikirim', desc: 'Kami proses dan kirim langsung ke pintumu!' },
 ];
