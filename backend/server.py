@@ -1552,8 +1552,8 @@ async def get_store_config():
 
     # ─── Backfill SEO + Theme defaults ───
     s.setdefault("seo", {})
-    s["seo"].setdefault("title", "Ciltarasa - Premium Frozen Food & Bebek Pawon Ayu khas Malang")
-    s["seo"].setdefault("description", "Frozen food premium dari Malang. Pesan online, kirim cepat.")
+    s["seo"].setdefault("title", "Ciltarasa - Homemade Premium Frozen Food")
+    s["seo"].setdefault("description", "Frozen food premium homemade. Bekal dan camilan praktis berkualitas.")
     s["seo"].setdefault("og_image_url", "")
     s["seo"].setdefault("theme_color", "#D97706")
     s.setdefault("theme", {})
