@@ -455,6 +455,8 @@ class StoreConfigUpdate(BaseModel):
     pwa_install: Optional[Dict[str, Any]] = None
     dashboard_config: Optional[Dict[str, Any]] = None
     maintenance_mode: Optional[Dict[str, Any]] = None
+    seo: Optional[Dict[str, Any]] = None
+    theme: Optional[Dict[str, Any]] = None
 
 class PurchaseItem(BaseModel):
     product_id: str
@@ -1547,6 +1549,24 @@ async def get_store_config():
                 fallback_timing = pm["pickup_timing"] if d_pickup else pm["delivery_timing"]
                 by_d[d_id] = {"available": fallback_avail, "timing": fallback_timing}
             pm["by_delivery"] = by_d
+
+    # ─── Backfill SEO + Theme defaults ───
+    s.setdefault("seo", {})
+    s["seo"].setdefault("title", "Ciltarasa - Premium Frozen Food & Bebek Pawon Ayu khas Malang")
+    s["seo"].setdefault("description", "Frozen food premium dari Malang. Pesan online, kirim cepat.")
+    s["seo"].setdefault("og_image_url", "")
+    s["seo"].setdefault("theme_color", "#D97706")
+    s.setdefault("theme", {})
+    t = s["theme"]
+    t.setdefault("primary_color", "#D97706")
+    t.setdefault("primary_hover", "#B45309")
+    t.setdefault("secondary_color", "#F97316")
+    t.setdefault("bg_color", "#FDF8F0")
+    t.setdefault("text_color", "#451A03")
+    t.setdefault("heading_color", "#78350F")
+    t.setdefault("accent_color", "#FED7AA")
+    t.setdefault("font_family", "system")
+    t.setdefault("font_size_base", 16)
     return s
 
 @api_router.put("/store-config")
