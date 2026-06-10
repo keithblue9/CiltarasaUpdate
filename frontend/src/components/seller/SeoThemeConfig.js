@@ -38,8 +38,8 @@ const FONT_FAMILIES = [
 
 const DEFAULT_THEME = PRESETS[0];
 const DEFAULT_SEO = {
-  title: 'Ciltarasa - Premium Frozen Food & Bebek Pawon Ayu khas Malang',
-  description: 'Frozen food premium dari Malang. Pesan online, kirim cepat ke seluruh Indonesia.',
+  title: 'Ciltarasa - Homemade Premium Frozen Food',
+  description: 'Frozen food premium homemade. Bekal dan camilan praktis berkualitas.',
   og_image_url: '',
   theme_color: '#D97706',
 };
