@@ -9,6 +9,7 @@ import IncomingOrders from './IncomingOrders';
 import SalesReport from './SalesReport';
 import FinancialReport from './FinancialReport';
 import { StoreProfile, StoreCerita, CategoriesConfig, DeliveryConfig, PaymentsConfig, HomepageTextsConfig, HeroSlideshowConfig, FunFactsConfig, OnboardingTextsConfig } from './StoreConfigPages';
+import SeoThemeConfig from './SeoThemeConfig';
 import DiscountManagement from './DiscountManagement';
 import PurchaseManagement from './PurchaseManagement';
 import { FonnteConfig, HowToOrderConfig, ResetCustomersConfig, ChangePinConfig, TrafficStats, AutoChatConfig, InvoiceConfig, DashboardWidgetsConfig, MaintenanceConfig, PwaInstallConfig } from './AdminPages';
@@ -119,6 +120,7 @@ export default function SellerApp() {
     whatsapp: <FonnteConfig />,
     'change-pin': <ChangePinConfig onPinChanged={() => handleLogout()} />,
     'reset-customers': <ResetCustomersConfig />,
+    'seo-theme': <SeoThemeConfig />,
   };
 
   return (
