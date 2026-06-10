@@ -13,6 +13,7 @@ import OnboardingModal from './OnboardingModal';
 import FlashSaleBanner from './FlashSaleBanner';
 import FunFactsPopup from './FunFactsPopup';
 import RecommendationsStrip from './RecommendationsStrip';
+import BuyerThemeProvider from './BuyerThemeProvider';
 import { detectEnv } from '../pwa/detectEnv';
 import OrderHistory from './OrderHistory';
 import PwaInstallHub from '../pwa/PwaInstallHub';
@@ -244,19 +245,21 @@ export default function BuyerApp() {
   }
 
   return (
-    <div className="min-h-screen bg-[#FDF8F0] font-body">
-      <OnboardingModal />
-      <FunFactsPopup />
-      <BuyerHeader onCartClick={() => setCartOpen(true)} />
-      <CartDrawer open={cartOpen} onClose={() => setCartOpen(false)} />
-      <Routes>
-        <Route index element={<BuyerHome />} />
-        <Route path="checkout" element={<Checkout />} />
-        <Route path="track" element={<OrderTracking />} />
-        <Route path="orders" element={<OrderHistory />} />
-      </Routes>
-      <BuyerFooter />
-      <PwaInstallHub />
-    </div>
+    <BuyerThemeProvider>
+      <div className="min-h-screen bg-[#FDF8F0] font-body">
+        <OnboardingModal />
+        <FunFactsPopup />
+        <BuyerHeader onCartClick={() => setCartOpen(true)} />
+        <CartDrawer open={cartOpen} onClose={() => setCartOpen(false)} />
+        <Routes>
+          <Route index element={<BuyerHome />} />
+          <Route path="checkout" element={<Checkout />} />
+          <Route path="track" element={<OrderTracking />} />
+          <Route path="orders" element={<OrderHistory />} />
+        </Routes>
+        <BuyerFooter />
+        <PwaInstallHub />
+      </div>
+    </BuyerThemeProvider>
   );
 }
