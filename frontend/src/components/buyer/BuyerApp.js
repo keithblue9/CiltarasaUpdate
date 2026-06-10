@@ -82,11 +82,15 @@ function ProfileMenu() {
 }
 
 function BuyerHeader({ onCartClick }) {
-  const { cartCount } = useApp();
+  const { cartCount, authUser } = useApp();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
   const [prevCount, setPrevCount] = useState(0);
   const [bounce, setBounce] = useState(false);
+
+  // Smart routing — logged-in users go to history; guests go to track-by-id form
+  const goToTrack = () => navigate(authUser ? '/buyer/orders' : '/buyer/track');
+  const trackLabel = authUser ? 'Pesananku' : 'Lacak Pesanan';
 
   React.useEffect(() => {
     if (cartCount > prevCount) {
@@ -122,7 +126,7 @@ function BuyerHeader({ onCartClick }) {
           <nav className="hidden md:flex items-center gap-6">
             <button onClick={() => navigate('/buyer')} className="text-[#78350F] hover:text-[#D97706] font-body font-semibold text-sm transition-colors">Beranda</button>
             <button onClick={() => navigate('/buyer')} className="text-[#78350F] hover:text-[#D97706] font-body font-semibold text-sm transition-colors">Menu</button>
-            <button onClick={() => navigate('/buyer/track')} className="text-[#78350F] hover:text-[#D97706] font-body font-semibold text-sm transition-colors">Lacak Pesanan</button>
+            <button onClick={goToTrack} className="text-[#78350F] hover:text-[#D97706] font-body font-semibold text-sm transition-colors">{trackLabel}</button>
           </nav>
           <div className="flex items-center gap-1 sm:gap-3">
             <ProfileMenu />
@@ -147,7 +151,7 @@ function BuyerHeader({ onCartClick }) {
           <div className="md:hidden pb-4 flex flex-col gap-3 border-t border-[#FED7AA] pt-3">
             <button onClick={() => { navigate('/buyer'); setMenuOpen(false); }} className="text-left text-[#78350F] font-semibold py-2">Beranda</button>
             <button onClick={() => { navigate('/buyer'); setMenuOpen(false); }} className="text-left text-[#78350F] font-semibold py-2">Menu</button>
-            <button onClick={() => { navigate('/buyer/track'); setMenuOpen(false); }} className="text-left text-[#78350F] font-semibold py-2">Lacak Pesanan</button>
+            <button onClick={() => { goToTrack(); setMenuOpen(false); }} className="text-left text-[#78350F] font-semibold py-2">{trackLabel}</button>
           </div>
         )}
       </div>
