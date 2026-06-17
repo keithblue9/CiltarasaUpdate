@@ -4,7 +4,7 @@ import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Toolti
 import axios from 'axios';
 
 const API = process.env.REACT_APP_BACKEND_URL;
-const formatRp = (n) => `Rp ${Number(n).toLocaleString('id-ID')}`;
+const formatRp = (n) => `Rp ${Math.round(Number(n) || 0).toLocaleString('id-ID')}`;
 const COLORS = ['#D97706', '#B45309', '#78350F', '#92400E', '#FED7AA', '#F59E0B', '#FEF3C7', '#451A03'];
 
 export default function SalesReport() {
