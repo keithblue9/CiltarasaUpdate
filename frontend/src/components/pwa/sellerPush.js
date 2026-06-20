@@ -62,8 +62,36 @@ export async function requestSubscribe(pin, label) {
       label: label || 'Device ' + (navigator.platform || 'Web'),
     }),
   });
-  if (!resp.ok) throw new Error('Gagal subscribe ke server');
+  if (!resp.ok) {
+    let detail = '';
+    try { detail = (await resp.json()).detail || ''; } catch {}
+    if (resp.status === 401) throw new Error('PIN seller salah/expired di device ini — logout lalu login lagi, baru subscribe.');
+    throw new Error(`Gagal simpan ke server (${resp.status})${detail ? ': ' + detail : ''}`);
+  }
   return await resp.json();
+}
+
+// Re-save the current browser subscription to the server.
+// Self-heals the desync where the browser shows SUBSCRIBED but the server
+// lost the record (e.g. an earlier save failed). Idempotent (upsert by endpoint).
+export async function syncSubscription(pin, label) {
+  if (!('serviceWorker' in navigator)) return { ok: false, reason: 'no_sw' };
+  const reg = await navigator.serviceWorker.ready;
+  const sub = await reg.pushManager.getSubscription();
+  if (!sub) return { ok: false, reason: 'no_local_sub' };
+  const subJson = sub.toJSON();
+  const resp = await fetch(`${API}/api/push/subscribe`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Seller-PIN': pin },
+    body: JSON.stringify({
+      endpoint: subJson.endpoint,
+      keys: subJson.keys,
+      user_agent: navigator.userAgent,
+      label: label || 'Device ' + (navigator.platform || 'Web'),
+    }),
+  });
+  if (!resp.ok) return { ok: false, reason: `http_${resp.status}` };
+  return { ok: true, synced: true, endpoint: subJson.endpoint };
 }
 
 export async function unsubscribe(pin) {
