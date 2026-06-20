@@ -17,6 +17,7 @@ export default function BuyerChatWidget() {
   const [phase, setPhase] = useState('idle');
   const [cart, setCart] = useState([]);             // {product, qty}
   const [picking, setPicking] = useState(null);     // product awaiting qty
+  const [selectedCat, setSelectedCat] = useState(null);
   const [form, setForm] = useState({
     customer_name: '', customer_phone: '', customer_address: '',
     delivery_method: '', delivery_option_id: '', delivery_fee: 0,
@@ -56,7 +57,7 @@ export default function BuyerChatWidget() {
         if (r.data && r.data.reply) greet = r.data.reply;
       } catch { /* keep fallback */ }
       say('acil', greet);
-      setPhase('shopping');
+      setPhase('welcome');
     } catch {
       say('acil', 'Maaf ya, lagi ada gangguan ambil data toko. Coba refresh halaman sebentar 🙏');
       setPhase('idle');
@@ -72,6 +73,20 @@ export default function BuyerChatWidget() {
   };
 
   // ─── Order flow ───
+  const startOrdering = () => {
+    say('buyer', 'Mau pesan 🛍️');
+    say('acil', 'Asik! Mau lihat kategori yang mana dulu? 😊');
+    setSelectedCat(null);
+    setPhase('category');
+  };
+
+  const chooseCategory = (cat) => {
+    setSelectedCat(cat);
+    say('buyer', `${cat.icon || ''} ${cat.name}`.trim());
+    say('acil', `Ini pilihan di ${cat.name} 👇 Klik yang mau dipesan ya.`);
+    setPhase('products');
+  };
+
   const pickProduct = (p) => {
     setPicking(p);
     say('buyer', p.name);
@@ -95,7 +110,7 @@ export default function BuyerChatWidget() {
   const cartTotal = cart.reduce((s, { product, qty }) => s + (product.final_price || product.price) * qty, 0);
 
   const goContact = () => {
-    if (cart.length === 0) { say('acil', 'Keranjangnya masih kosong, pilih produk dulu ya 😊'); setPhase('shopping'); return; }
+    if (cart.length === 0) { say('acil', 'Keranjangnya masih kosong, pilih produk dulu ya 😊'); setPhase('category'); return; }
     say('acil', 'Asik! Boleh tahu nama kamu siapa? ✍️');
     setPhase('name');
   };
@@ -229,12 +244,15 @@ export default function BuyerChatWidget() {
   const restart = () => {
     setCart([]); setDoneOrder(null);
     setForm({ customer_name: '', customer_phone: '', customer_address: '', delivery_method: '', delivery_option_id: '', delivery_fee: 0, payment_method: '', payment_bank_id: '', payment_type: '' });
-    say('acil', 'Mau pesan lagi? Pilih produknya ya 😊');
-    setPhase('shopping');
+    say('acil', 'Mau pesan lagi? Pilih kategorinya ya 😊');
+    setSelectedCat(null);
+    setPhase('category');
   };
 
   // ─── Derived option lists ───
   const deliveryOpts = (config?.delivery_options || []).filter((d) => d.active !== false);
+  const catProducts = (catId) => products.filter((p) => p.category === catId || (p.categories || []).includes(catId));
+  const cats = (config?.categories || []).filter((c) => catProducts(c.id).length > 0);
   const paymentOpts = (config?.payment_methods || []).filter((p) => p.active !== false);
   const banks = config?.bank_accounts || [];
 
@@ -253,11 +271,36 @@ export default function BuyerChatWidget() {
   const ActionPanel = () => {
     if (busy && phase !== 'review') return <div className="text-xs text-[#9A3412] italic px-1">Acil lagi ngetik…</div>;
     switch (phase) {
-      case 'shopping':
+      case 'welcome':
+        return (
+          <div className="space-y-1.5">
+            <Btn tone="filled" onClick={startOrdering}>🛍️ Mau pesan sekarang</Btn>
+            <p className="text-[10px] text-[#9A3412] px-1">Atau ketik pertanyaan ke Acil Tata di bawah 👇</p>
+          </div>
+        );
+      case 'category':
+        return (
+          <div className="grid grid-cols-2 gap-1.5">
+            {cats.length === 0 && <p className="text-xs text-[#9A3412] col-span-2">Belum ada produk tersedia.</p>}
+            {cats.map((c) => (
+              <Btn key={c.id} onClick={() => chooseCategory(c)}>
+                <span className="font-semibold">{c.icon ? `${c.icon} ` : ''}{c.name}</span>
+                <span className="block text-[10px] text-[#9A3412]">{catProducts(c.id).length} produk</span>
+              </Btn>
+            ))}
+            {cart.length > 0 && (
+              <Btn tone="filled" onClick={() => setPhase('cart_review')}>🛒 Keranjang ({cart.length})</Btn>
+            )}
+          </div>
+        );
+      case 'products':
         return (
           <div className="grid grid-cols-1 gap-1.5">
-            {products.length === 0 && <p className="text-xs text-[#9A3412]">Belum ada produk tersedia.</p>}
-            {products.slice(0, 30).map((p) => (
+            <button onClick={() => setPhase('category')} disabled={busy}
+              className="flex items-center gap-1 text-xs text-[#9A3412] hover:text-[#D97706] mb-0.5">
+              <ChevronLeft size={14} /> Kategori lain
+            </button>
+            {selectedCat && catProducts(selectedCat.id).map((p) => (
               <Btn key={p.id} onClick={() => pickProduct(p)}>
                 <span className="flex justify-between gap-2">
                   <span className="font-semibold">{p.name}</span>
@@ -295,7 +338,7 @@ export default function BuyerChatWidget() {
               </div>
             </div>
             <div className="flex gap-1.5">
-              <Btn onClick={() => setPhase('shopping')}>➕ Tambah produk</Btn>
+              <Btn onClick={() => setPhase('category')}>➕ Tambah produk</Btn>
               <Btn tone="filled" onClick={goContact}>Lanjut checkout →</Btn>
             </div>
           </div>
@@ -383,7 +426,7 @@ export default function BuyerChatWidget() {
     }
   };
 
-  const showTextInput = ['name', 'phone', 'address', 'shopping', 'cart_review'].includes(phase);
+  const showTextInput = ['name', 'phone', 'address', 'welcome', 'category', 'products', 'cart_review'].includes(phase);
   const textPlaceholder = phase === 'name' ? 'Ketik nama kamu…'
     : phase === 'phone' ? 'Ketik nomor WhatsApp…'
     : phase === 'address' ? 'Ketik alamat lengkap…'
@@ -405,7 +448,7 @@ export default function BuyerChatWidget() {
 
       {/* Chat panel */}
       {open && (
-        <div className="fixed bottom-0 right-0 sm:bottom-5 sm:right-5 z-[60] w-full sm:w-[380px] h-[85vh] sm:h-[560px] bg-[#FFFBF5] sm:rounded-3xl shadow-2xl border border-[#FED7AA] flex flex-col overflow-hidden">
+        <div className="fixed z-[60] inset-x-0 bottom-0 h-[100dvh] sm:inset-x-auto sm:left-auto sm:right-5 sm:bottom-5 sm:w-[380px] sm:h-[560px] sm:max-h-[85vh] bg-[#FFFBF5] sm:rounded-3xl shadow-2xl sm:border border-[#FED7AA] flex flex-col overflow-hidden">
           {/* Header */}
           <div className="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-[#D97706] to-[#B45309] text-white">
             <div className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center text-lg">🧕</div>
@@ -417,7 +460,7 @@ export default function BuyerChatWidget() {
           </div>
 
           {/* Messages */}
-          <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-3 space-y-2">
+          <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto px-3 py-3 space-y-2">
             {messages.map((m, i) => (
               <div key={i} className={`flex ${m.from === 'buyer' ? 'justify-end' : 'justify-start'}`}>
                 <div className={`max-w-[80%] px-3 py-2 rounded-2xl text-sm ${
