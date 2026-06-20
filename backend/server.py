@@ -899,7 +899,7 @@ async def seed_database():
                     "private_pem": priv_pem,
                     "public_pem": pub_pem,
                     "public_b64": pub_b64,
-                    "subject": os.environ.get("VAPID_SUBJECT", "mailto:admin@ciltarasa.local"),
+                    "subject": os.environ.get("VAPID_SUBJECT", "mailto:admin@ciltarasa.online"),
                     "created_at": now_iso(),
                 })
                 logger.info("Generated VAPID keys (Web Push enabled)")
@@ -912,6 +912,14 @@ async def seed_database():
                     os.unlink(pub_path)
                 except OSError:
                     pass
+
+        # ─── MIGRATION: fix invalid VAPID subject ('.local' is rejected by Apple/iOS Web Push) ───
+        good_subject = os.environ.get("VAPID_SUBJECT") or "mailto:admin@ciltarasa.online"
+        cur_vapid = await db.auth_config.find_one({"_id": "vapid"}, {"subject": 1})
+        cur_subject = (cur_vapid or {}).get("subject", "")
+        if (not cur_subject) or (".local" in cur_subject):
+            await db.auth_config.update_one({"_id": "vapid"}, {"$set": {"subject": good_subject}})
+            logger.info(f"Migrated VAPID subject {cur_subject!r} -> {good_subject}")
 
     # Discounts
     if await db.discounts.count_documents({}) == 0:
@@ -2315,13 +2323,15 @@ async def broadcast_push(payload: dict):
     sent = 0
     failed = 0
     stale = []
+    first_error = None
+    vapid_sub = v.get("subject") or "mailto:admin@ciltarasa.online"
     for sub in subs:
         try:
             webpush(
                 subscription_info={"endpoint": sub["endpoint"], "keys": sub["keys"]},
                 data=json.dumps(payload),
                 vapid_private_key=v["private_pem"],
-                vapid_claims={"sub": v.get("subject", "mailto:admin@ciltarasa.local")},
+                vapid_claims={"sub": vapid_sub},
                 ttl=60 * 60 * 24,
             )
             sent += 1
@@ -2330,14 +2340,21 @@ async def broadcast_push(payload: dict):
             if code in (404, 410):
                 stale.append(sub["endpoint"])
             failed += 1
+            if first_error is None:
+                first_error = f"code={code}: {str(e)[:200]}"
             logger.warning(f"Push fail {sub.get('label')} (code={code}): {e}")
         except Exception as e:
             failed += 1
+            if first_error is None:
+                first_error = f"{type(e).__name__}: {str(e)[:200]}"
             logger.warning(f"Push error: {e}")
     if stale:
         await db.push_subscriptions.delete_many({"endpoint": {"$in": stale}})
         logger.info(f"Removed {len(stale)} stale push subscriptions")
-    return {"sent": sent, "failed": failed, "stale_cleaned": len(stale), "total": len(subs)}
+    result = {"sent": sent, "failed": failed, "stale_cleaned": len(stale), "total": len(subs)}
+    if first_error:
+        result["first_error"] = first_error
+    return result
 
 
 # ─── FASE 4: Dashboard Analytics (4 tabs) ────────────────────────────────
