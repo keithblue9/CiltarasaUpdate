@@ -19,6 +19,7 @@ import OrderHistory from './OrderHistory';
 import PwaInstallHub from '../pwa/PwaInstallHub';
 import useTrackVisit from './useTrackVisit';
 import MaintenanceScreen from './MaintenanceScreen';
+import BuyerChatWidget from './BuyerChatWidget';
 
 function ProfileMenu() {
   const { authUser, logout, setAuthMode } = useApp();
@@ -272,6 +273,7 @@ export default function BuyerApp() {
         </Routes>
         <BuyerFooter />
         <PwaInstallHub />
+        <BuyerChatWidget />
       </div>
     </BuyerThemeProvider>
   );
