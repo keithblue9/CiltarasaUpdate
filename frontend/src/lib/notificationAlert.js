@@ -19,6 +19,8 @@ const LS_SOUND = 'ciltarasa_seller_alert_sound';
 const LS_VIBRATE = 'ciltarasa_seller_alert_vibrate';
 const LS_VOLUME = 'ciltarasa_seller_alert_volume';
 const LS_VIBE_INTENSITY = 'ciltarasa_seller_alert_vibe_intens';
+const LS_SOUND_PRESET = 'ciltarasa_seller_alert_preset';   // which built-in chime
+const LS_CUSTOM_SOUND = 'ciltarasa_seller_alert_customsnd'; // dataURL of uploaded clip
 
 // ─── Preference getters/setters ─────────────────────────────────────
 export function isSoundEnabled() {
@@ -72,6 +74,102 @@ const VIBE_PAYMENT_PATTERNS = {
   normal: [100, 50, 100, 50, 100],
   strong: [150, 80, 150, 80, 200],
 };
+
+// ─── Built-in sound presets (Web Audio, no file needed) ───────────────
+// Each is a list of envelopes compatible with _scheduleChime().
+const SOUND_PRESETS = {
+  dingdong: {
+    label: 'Ding-Dong',
+    envelopes: [
+      { type: 'sine',     freq: 783.99, start: 0,    peak: 0.55, duration: 0.30 },
+      { type: 'sine',     freq: 1046.5, start: 0.18, peak: 0.60, duration: 0.45 },
+      { type: 'triangle', freq: 880,    start: 0.50, peak: 0.40, duration: 0.40 },
+    ],
+  },
+  bell: {
+    label: 'Bel Toko',
+    envelopes: [
+      { type: 'sine', freq: 1318.5, start: 0, peak: 0.60, duration: 0.60 },
+      { type: 'sine', freq: 1979,   start: 0, peak: 0.25, duration: 0.50 },
+      { type: 'sine', freq: 2637,   start: 0, peak: 0.12, duration: 0.40 },
+    ],
+  },
+  triple: {
+    label: 'Triple Beep',
+    envelopes: [
+      { type: 'square', freq: 988, start: 0.00, peak: 0.40, duration: 0.12 },
+      { type: 'square', freq: 988, start: 0.20, peak: 0.40, duration: 0.12 },
+      { type: 'square', freq: 988, start: 0.40, peak: 0.45, duration: 0.18 },
+    ],
+  },
+  rising: {
+    label: 'Naik (Alert)',
+    envelopes: [
+      { type: 'sine', freq: 660,  start: 0.00, peak: 0.50, duration: 0.18 },
+      { type: 'sine', freq: 880,  start: 0.16, peak: 0.50, duration: 0.18 },
+      { type: 'sine', freq: 1175, start: 0.32, peak: 0.55, duration: 0.30 },
+    ],
+  },
+  siren: {
+    label: 'Sirine',
+    envelopes: [
+      { type: 'sawtooth', freq: 700, start: 0.00, peak: 0.40, duration: 0.25 },
+      { type: 'sawtooth', freq: 950, start: 0.22, peak: 0.40, duration: 0.25 },
+      { type: 'sawtooth', freq: 700, start: 0.44, peak: 0.40, duration: 0.25 },
+      { type: 'sawtooth', freq: 950, start: 0.66, peak: 0.45, duration: 0.30 },
+    ],
+  },
+};
+
+export function listSoundPresets() {
+  return Object.entries(SOUND_PRESETS).map(([id, v]) => ({ id, label: v.label }));
+}
+export function getSoundPreset() {
+  try {
+    const v = localStorage.getItem(LS_SOUND_PRESET);
+    return (v && SOUND_PRESETS[v]) ? v : 'dingdong';
+  } catch { return 'dingdong'; }
+}
+export function setSoundPreset(id) {
+  try { if (SOUND_PRESETS[id]) localStorage.setItem(LS_SOUND_PRESET, id); } catch {}
+}
+
+// ─── Custom uploaded sound (stored as dataURL in localStorage) ─────────
+export function getCustomSound() {
+  try { return localStorage.getItem(LS_CUSTOM_SOUND) || ''; } catch { return ''; }
+}
+export function setCustomSound(dataUrl) {
+  try { if (dataUrl) localStorage.setItem(LS_CUSTOM_SOUND, dataUrl); } catch {}
+}
+export function clearCustomSound() {
+  try { localStorage.removeItem(LS_CUSTOM_SOUND); } catch {}
+}
+
+let _customAudioEl = null;
+async function _playAudioUrl(url) {
+  try {
+    if (!_customAudioEl) _customAudioEl = new Audio();
+    _customAudioEl.src = url;
+    _customAudioEl.volume = Math.max(0, Math.min(1, getVolume() / 100));
+    _customAudioEl.currentTime = 0;
+    await _customAudioEl.play();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, reason: 'audio_play_failed', error: String(e) };
+  }
+}
+
+// Preview a sound from the settings UI. presetId === '_custom' plays the upload.
+export async function previewSound(presetId) {
+  unlockAudio();
+  if (presetId === '_custom') {
+    const c = getCustomSound();
+    if (!c) return { ok: false, reason: 'no_custom' };
+    return _playAudioUrl(c);
+  }
+  const p = SOUND_PRESETS[presetId] || SOUND_PRESETS.dingdong;
+  return _scheduleChime(p.envelopes);
+}
 
 // ─── Shared AudioContext ───────────────────────────────────────
 let _audioCtx = null;
@@ -168,11 +266,15 @@ async function _scheduleChime(envelopes) {
 export async function triggerOrderAlert() {
   let soundResult = { ok: false, reason: 'disabled' };
   if (isSoundEnabled()) {
-    soundResult = await _scheduleChime([
-      { type: 'sine',     freq: 783.99, start: 0,    peak: 0.55, duration: 0.30 },
-      { type: 'sine',     freq: 1046.5, start: 0.18, peak: 0.60, duration: 0.45 },
-      { type: 'triangle', freq: 880,    start: 0.50, peak: 0.40, duration: 0.40 },
-    ]);
+    const custom = getCustomSound();
+    if (custom) {
+      // Seller uploaded their own clip → play that
+      soundResult = await _playAudioUrl(custom);
+    } else {
+      // Otherwise play the chosen built-in chime
+      const preset = SOUND_PRESETS[getSoundPreset()] || SOUND_PRESETS.dingdong;
+      soundResult = await _scheduleChime(preset.envelopes);
+    }
   }
   const vibrateOk = vibrateAlert(VIBE_PATTERNS[getVibrateIntensity()]);
   return { soundOk: soundResult.ok, vibrateOk, soundReason: soundResult.reason };
