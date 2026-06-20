@@ -3247,8 +3247,10 @@ async def websocket_endpoint(websocket: WebSocket):
 # ─── Modular routes (FASE 6) — register endpoints sebelum app.include_router ───
 from routes import maintenance as maintenance_route
 from routes import ai_insights as ai_insights_route
+from routes import buyer_chat as buyer_chat_route
 maintenance_route.setup(api_router, db, require_seller, manager)
 ai_insights_route.setup(api_router, db, require_seller)
+buyer_chat_route.setup(api_router)
 
 app.include_router(api_router)
 app.add_middleware(
