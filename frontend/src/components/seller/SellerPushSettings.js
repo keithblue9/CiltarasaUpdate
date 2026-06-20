@@ -4,7 +4,7 @@ import axios from 'axios';
 import { toast } from 'sonner';
 import {
   getCurrentPermission, getExistingSubscription,
-  requestSubscribe, unsubscribe, sendTestPush,
+  requestSubscribe, unsubscribe, sendTestPush, syncSubscription,
 } from '../pwa/sellerPush';
 import {
   isSoundEnabled, setSoundEnabled,
@@ -164,13 +164,28 @@ export default function SellerPushSettings() {
     setPermission(await getCurrentPermission());
     const sub = await getExistingSubscription();
     setSubscribed(!!sub);
+    let serverSubs = [];
     try {
       const r = await axios.get(`${API}/api/push/subscriptions`);
-      setSubscriptions(r.data.subscriptions || []);
+      serverSubs = r.data.subscriptions || [];
     } catch (e) {
       console.warn('Push subscriptions fetch failed (likely PIN not yet set):', e?.message);
     }
-  }, []);
+    // Self-heal: browser is SUBSCRIBED but server lost the record → re-save it
+    if (sub && sub.endpoint && pin && !serverSubs.some(s => s.endpoint === sub.endpoint)) {
+      try {
+        const res = await syncSubscription(pin, undefined);
+        if (res.ok) {
+          const r2 = await axios.get(`${API}/api/push/subscriptions`);
+          serverSubs = r2.data.subscriptions || [];
+          toast.success('🔄 Langganan disinkronkan ke server');
+        }
+      } catch (e) {
+        console.warn('Resync failed:', e?.message);
+      }
+    }
+    setSubscriptions(serverSubs);
+  }, [pin]);
 
   useEffect(() => { refresh(); }, [refresh]);
 
@@ -205,11 +220,18 @@ export default function SellerPushSettings() {
     setLoading(true);
     try {
       const res = await sendTestPush(pin);
-      if (res.sent > 0) toast.success(`✅ Test push terkirim ke ${res.sent} device!`);
-      else toast.error(`Gagal: ${res.reason || 'tidak ada subscriber'}`);
+      if (res.sent > 0) {
+        toast.success(`✅ Test push terkirim ke ${res.sent} device!`);
+      } else if (!res.total) {
+        toast.error('Belum ada device tersimpan di server. Klik "Matikan" lalu "Aktifkan" lagi di device ini.', { duration: 8000 });
+      } else if (res.first_error) {
+        toast.error(`Device ada (${res.total}) tapi gagal kirim. Penyebab: ${res.first_error}`, { duration: 10000 });
+      } else {
+        toast.error(`Gagal kirim ke ${res.total} device (${res.failed} gagal).`, { duration: 8000 });
+      }
       await refresh();
     } catch {
-      toast.error('Error koneksi');
+      toast.error('Error koneksi / PIN. Coba logout lalu login lagi di device ini.');
     } finally {
       setLoading(false);
     }
