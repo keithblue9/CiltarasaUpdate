@@ -47,6 +47,10 @@ APP_URL = os.environ.get("APP_URL", "")          # Legacy fallback
 FRONTEND_URL = os.environ.get("FRONTEND_URL") or APP_URL or "https://ciltarasa.online"
 BACKEND_URL  = os.environ.get("BACKEND_URL") or os.environ.get("RENDER_EXTERNAL_URL") or APP_URL or ""
 
+# Fonnte WhatsApp token — dibaca dari Environment Variable (rahasia, JANGAN hardcode di repo).
+# Set di Render → Environment → FONNTE_TOKEN = <token dari fonnte.com>
+FONNTE_TOKEN_DEFAULT = os.environ.get("FONNTE_TOKEN", "")
+
 async def get_active_pin() -> str:
     """Return current seller PIN — DB override if set, else env default."""
     doc = await db.auth_config.find_one({"_id": "main"})
@@ -607,7 +611,7 @@ DEFAULT_STORE_CONFIG = {
         "otp_hint": "📱 Cek WhatsApp kamu untuk lihat kode OTP yang dikirim",
         "phone_hint": "💡 Pastikan nomor WhatsApp aktif untuk terima kode OTP",
     },
-    "fonnte_token": "QyMJ55FmqmLQGUxmwsBw",
+    "fonnte_token": FONNTE_TOKEN_DEFAULT,
     "seller_notify_phone": "6285190884129",
     "wa_notif_enabled": True,
     "low_stock_threshold": 10,
