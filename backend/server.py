@@ -2312,6 +2312,30 @@ async def push_test(_auth: bool = Depends(require_seller)):
     return r
 
 
+def _vapid_send_key(v: dict):
+    """pywebpush cannot reliably load a PEM *string* as vapid_private_key
+    (raises 'Could not deserialize key data'). Convert the stored PEM to the
+    raw base64url scalar, which pywebpush accepts. Works for keys already
+    saved as PEM, so existing subscriptions stay valid (no re-subscribe needed)."""
+    if not v:
+        return None
+    raw = v.get("private_raw_b64")
+    if raw:
+        return raw
+    pem = v.get("private_pem")
+    if not pem:
+        return None
+    try:
+        import base64
+        from cryptography.hazmat.primitives import serialization
+        key = serialization.load_pem_private_key(pem.encode(), password=None)
+        val = key.private_numbers().private_value
+        return base64.urlsafe_b64encode(val.to_bytes(32, "big")).decode().rstrip("=")
+    except Exception as e:
+        logger.warning(f"[push] cannot derive VAPID send key from PEM: {e}")
+        return None
+
+
 async def broadcast_push(payload: dict):
     """Send push ke SEMUA active subscriptions. Auto-clean stale 410/404 subs."""
     if not WEBPUSH_AVAILABLE:
@@ -2325,12 +2349,16 @@ async def broadcast_push(payload: dict):
     stale = []
     first_error = None
     vapid_sub = v.get("subject") or "mailto:admin@ciltarasa.online"
+    send_key = _vapid_send_key(v)
+    if not send_key:
+        return {"sent": 0, "failed": len(subs), "total": len(subs),
+                "first_error": "VAPID private key tidak bisa dimuat dari DB"}
     for sub in subs:
         try:
             webpush(
                 subscription_info={"endpoint": sub["endpoint"], "keys": sub["keys"]},
                 data=json.dumps(payload),
-                vapid_private_key=v["private_pem"],
+                vapid_private_key=send_key,
                 vapid_claims={"sub": vapid_sub},
                 ttl=60 * 60 * 24,
             )
