@@ -693,6 +693,7 @@ const PLACEHOLDERS = [
   { tag: '{customer_phone}', desc: 'No HP pelanggan' },
   { tag: '{customer_address}', desc: 'Alamat pelanggan' },
   { tag: '{delivery}', desc: 'Metode pengiriman' },
+  { tag: '{ongkir}', desc: 'Biaya ongkir (Gratis / nominal / nunggu seller)' },
   { tag: '{items_detail}', desc: 'List detail item' },
   { tag: '{total}', desc: 'Total bayar' },
   { tag: '{subtotal}', desc: 'Subtotal' },
