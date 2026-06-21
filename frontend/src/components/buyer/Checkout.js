@@ -404,6 +404,7 @@ export default function Checkout() {
   }, [authUser]);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const [completeModal, setCompleteModal] = useState(false);
 
   // Validasi: tombol submit hanya enabled jika payment flow lengkap (config-driven)
   const paymentReady = useMemo(() => {
@@ -428,20 +429,29 @@ export default function Checkout() {
     return true;
   }, [isPayLaterFallback, currentPaymentType, form.payment_bank_id, form.payment_type, form.payment_proof_url, qrisStage, allowedTiming]);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (cart.length === 0) { toast.error('Keranjang kosong!'); return; }
-    if (!form.customer_name || !form.customer_phone) { toast.error('Nama dan nomor HP wajib diisi!'); return; }
-    if (requiresAddress && !form.customer_address) { toast.error('Alamat wajib diisi untuk opsi pengiriman ini!'); return; }
-    if (!paymentReady) {
-      if (currentPaymentType === 'transfer' && !form.payment_bank_id) { toast.error('Pilih bank tujuan transfer dulu'); return; }
-      if (currentPaymentType === 'transfer' && !form.payment_type) { toast.error('Pilih cara bayar (Sekarang/Nanti)'); return; }
-      if (currentPaymentType === 'transfer' && form.payment_type === 'now') { toast.error('Upload bukti transfer dulu ya'); return; }
-      if (currentPaymentType === 'qris' && qrisStage !== 'paid') { toast.error('Klik "Telah Bayar" setelah transfer QRIS'); return; }
-      if (currentPaymentType === 'qris') { toast.error('Upload bukti pembayaran QRIS dulu'); return; }
-      return;
-    }
+  const allowNowG = allowedTiming === 'now' || allowedTiming === 'both';
+  const allowLaterG = allowedTiming === 'later' || allowedTiming === 'both';
 
+  // Which required choices are still missing? Drives the "Lengkapi Pesanan" popup.
+  const getMissingSteps = () => {
+    const m = [];
+    if (!form.customer_name) m.push('name');
+    if (!form.customer_phone) m.push('phone');
+    if (requiresAddress && !form.customer_address) m.push('address');
+    if (!isPayLaterFallback) {
+      if (currentPaymentType === 'transfer') {
+        if (!form.payment_bank_id) m.push('bank');
+        if (!form.payment_type) m.push('timing');
+        else if (form.payment_type === 'now' && !form.payment_proof_url) m.push('proof');
+      } else if (currentPaymentType === 'qris' && allowNowG) {
+        if (qrisStage !== 'paid') m.push('qris');
+        else if (!form.payment_proof_url) m.push('proof');
+      }
+    }
+    return m;
+  };
+
+  const doSubmit = async () => {
     setLoading(true);
     try {
       const items = cart.map(({ product, qty }) => {
@@ -458,8 +468,6 @@ export default function Checkout() {
       });
       const newOrder = res.data;
       clearCart();
-
-      // No more auto-WA popup. Buyer can click "Hubungi Seller" button on tracking page if needed.
       toast.success(`Pesanan ${newOrder.order_number} berhasil dibuat! 🎉`);
       navigate(`/buyer/track?order=${newOrder.order_number}`);
     } catch (err) {
@@ -467,6 +475,14 @@ export default function Checkout() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSubmit = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (cart.length === 0) { toast.error('Keranjang kosong!'); return; }
+    const missing = getMissingSteps();
+    if (missing.length > 0) { setCompleteModal(true); return; }
+    await doSubmit();
   };
 
   if (cart.length === 0) {
@@ -675,14 +691,98 @@ export default function Checkout() {
           </div>
         </div>
 
-        <button data-testid="submit-order-btn" type="submit" disabled={loading || !paymentReady}
+        <button data-testid="submit-order-btn" type="submit" disabled={loading}
           className="w-full bg-[#D97706] text-white font-bold py-4 rounded-full hover:bg-[#B45309] transition-all transform hover:-translate-y-0.5 shadow-md text-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
           {loading ? 'Memproses...' : <><MessageCircle size={20} /> Buat Pesanan</>}
         </button>
         {!paymentReady && !loading && (
-          <p className="text-xs text-center text-[#92400E]">Lengkapi pilihan pembayaran di atas untuk lanjut</p>
+          <p className="text-xs text-center text-[#92400E]">Klik "Buat Pesanan" — nanti kami bantu lengkapi pilihan yang kurang 😊</p>
         )}
       </form>
+
+      {completeModal && (() => {
+        const missing = getMissingSteps();
+        return (
+          <div className="fixed inset-0 z-[70] bg-black/50 flex items-end sm:items-center justify-center p-3" onClick={() => setCompleteModal(false)}>
+            <div className="bg-white rounded-3xl w-full sm:max-w-sm p-5 max-h-[88vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-1">
+                <h3 className="font-bold text-lg text-[#7C2D12]">Sedikit lagi! 🎉</h3>
+                <button type="button" onClick={() => setCompleteModal(false)} className="text-[#92400E]"><X size={20} /></button>
+              </div>
+              {missing.length === 0
+                ? <p className="text-sm text-green-700 mb-4">Semua sudah lengkap! Klik tombol di bawah untuk membuat pesanan.</p>
+                : <p className="text-xs text-[#92400E] mb-4">Tinggal lengkapi ini biar pesananmu langsung jadi:</p>}
+
+              <div className="space-y-4">
+                {missing.includes('name') && (
+                  <div>
+                    <label className="text-xs font-bold text-[#7C2D12]">Nama kamu</label>
+                    <input value={form.customer_name} onChange={(e) => set('customer_name', e.target.value)} placeholder="Nama lengkap"
+                      className="w-full mt-1 px-3 py-2 rounded-xl border border-[#FED7AA] text-sm" />
+                  </div>
+                )}
+                {missing.includes('phone') && (
+                  <div>
+                    <label className="text-xs font-bold text-[#7C2D12]">No. WhatsApp</label>
+                    <input value={form.customer_phone} onChange={(e) => set('customer_phone', e.target.value)} placeholder="08xxxx" type="tel"
+                      className="w-full mt-1 px-3 py-2 rounded-xl border border-[#FED7AA] text-sm" />
+                  </div>
+                )}
+                {missing.includes('address') && (
+                  <div>
+                    <label className="text-xs font-bold text-[#7C2D12]">Alamat pengiriman</label>
+                    <textarea value={form.customer_address} onChange={(e) => set('customer_address', e.target.value)} placeholder="Alamat lengkap" rows={2}
+                      className="w-full mt-1 px-3 py-2 rounded-xl border border-[#FED7AA] text-sm" />
+                  </div>
+                )}
+                {missing.includes('bank') && (
+                  <div>
+                    <label className="text-xs font-bold text-[#7C2D12]">Transfer ke rekening</label>
+                    <div className="mt-1 space-y-1.5">
+                      {banks.map((b) => (
+                        <button key={b.id} type="button" onClick={() => set('payment_bank_id', b.id)}
+                          className={`w-full text-left px-3 py-2 rounded-xl border text-sm ${form.payment_bank_id === b.id ? 'border-[#D97706] bg-[#FEF3C7]' : 'border-[#FED7AA]'}`}>
+                          <span className="font-semibold">{b.bank}</span> · {b.number} <span className="text-[10px] text-[#9A3412]">a.n. {b.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {missing.includes('timing') && (
+                  <div>
+                    <label className="text-xs font-bold text-[#7C2D12]">Mau bayar kapan?</label>
+                    <div className="mt-1 flex gap-2">
+                      {allowNowG && <button type="button" onClick={() => set('payment_type', 'now')} className={`flex-1 px-3 py-2 rounded-xl border text-sm font-semibold ${form.payment_type === 'now' ? 'border-[#D97706] bg-[#FEF3C7]' : 'border-[#FED7AA]'}`}>💳 Sekarang</button>}
+                      {allowLaterG && <button type="button" onClick={() => { set('payment_type', 'later'); set('payment_proof_url', ''); }} className={`flex-1 px-3 py-2 rounded-xl border text-sm font-semibold ${form.payment_type === 'later' ? 'border-[#D97706] bg-[#FEF3C7]' : 'border-[#FED7AA]'}`}>🕒 Nanti</button>}
+                    </div>
+                  </div>
+                )}
+                {missing.includes('proof') && (
+                  <div className="bg-[#FEF3C7] rounded-xl p-3">
+                    <p className="text-xs text-[#78350F] mb-2">Untuk <b>bayar sekarang</b> perlu upload bukti transfer dulu. Paling gampang:</p>
+                    <div className="flex flex-col gap-1.5">
+                      {allowLaterG && <button type="button" onClick={() => { set('payment_type', 'later'); set('payment_proof_url', ''); }} className="px-3 py-2 rounded-xl bg-[#D97706] text-white text-sm font-bold">🕒 Pilih Bayar Nanti aja</button>}
+                      <button type="button" onClick={() => setCompleteModal(false)} className="px-3 py-2 rounded-xl border border-[#FED7AA] text-sm text-[#7C2D12]">⬆️ Tutup & upload bukti di halaman</button>
+                    </div>
+                  </div>
+                )}
+                {missing.includes('qris') && (
+                  <div className="bg-[#FEF3C7] rounded-xl p-3 text-xs text-[#78350F]">
+                    Untuk QRIS, scan & klik <b>"Telah Bayar"</b> lalu upload bukti di halaman ya.
+                    <button type="button" onClick={() => setCompleteModal(false)} className="block mt-2 px-3 py-2 rounded-xl bg-[#D97706] text-white font-bold">Oke, ke QRIS</button>
+                  </div>
+                )}
+              </div>
+
+              <button type="button" disabled={loading}
+                onClick={() => { const m = getMissingSteps(); if (m.length === 0) { setCompleteModal(false); doSubmit(); } else { toast.error('Masih ada yang perlu dipilih ya 😊'); } }}
+                className="w-full mt-5 bg-[#D97706] text-white font-bold py-3 rounded-full disabled:opacity-50">
+                {loading ? 'Memproses…' : 'Buat Pesanan'}
+              </button>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
