@@ -223,7 +223,10 @@ function BuyerFooter() {
 function BuyerHome() {
   return (
     <>
-      <Hero />
+      {/* Hero "home text" hanya tampil di desktop. Di mobile/PWA langsung ke katalog (search + produk). */}
+      <div className="hidden sm:block">
+        <Hero />
+      </div>
       <FlashSaleBanner />
       <RecommendationsStrip />
       <Catalog />
