@@ -439,7 +439,8 @@ export default function BuyerChatWidget() {
         <button
           onClick={toggle}
           aria-label="Chat dengan Acil Tata"
-          className="fixed bottom-5 right-5 z-[60] w-14 h-14 rounded-full bg-gradient-to-br from-[#F97316] to-[#D97706] text-white shadow-lg flex items-center justify-center hover:scale-105 transition-transform"
+          style={{ bottom: 'calc(1.25rem + env(safe-area-inset-bottom))', right: 'calc(1.25rem + env(safe-area-inset-right))' }}
+          className="fixed z-[60] w-14 h-14 rounded-full bg-gradient-to-br from-[#F97316] to-[#D97706] text-white shadow-lg flex items-center justify-center hover:scale-105 transition-transform"
         >
           <MessageCircle size={26} />
           <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500 border-2 border-white" />
@@ -450,7 +451,7 @@ export default function BuyerChatWidget() {
       {open && (
         <div className="fixed z-[60] inset-x-0 bottom-0 h-[100dvh] sm:inset-x-auto sm:left-auto sm:right-5 sm:bottom-5 sm:w-[380px] sm:h-[560px] sm:max-h-[85vh] bg-[#FFFBF5] sm:rounded-3xl shadow-2xl sm:border border-[#FED7AA] flex flex-col overflow-hidden">
           {/* Header */}
-          <div className="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-[#D97706] to-[#B45309] text-white">
+          <div style={{ paddingTop: 'calc(0.75rem + env(safe-area-inset-top))' }} className="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-[#D97706] to-[#B45309] text-white">
             <div className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center text-lg">🧕</div>
             <div className="flex-1">
               <p className="font-bold leading-tight">Acil Tata</p>
@@ -478,7 +479,7 @@ export default function BuyerChatWidget() {
 
           {/* Text input */}
           {showTextInput && (
-            <div className="border-t border-[#FED7AA] p-2 flex gap-2 bg-white">
+            <div style={{ paddingBottom: 'calc(0.5rem + env(safe-area-inset-bottom))' }} className="border-t border-[#FED7AA] p-2 flex gap-2 bg-white">
               <input
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
