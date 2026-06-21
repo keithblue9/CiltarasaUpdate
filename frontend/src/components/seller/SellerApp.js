@@ -16,6 +16,7 @@ import { FonnteConfig, HowToOrderConfig, ResetCustomersConfig, ChangePinConfig, 
 import SellerPushSettings from './SellerPushSettings';
 import SellerPwaInstallBanner from './SellerPwaInstallBanner';
 import PendingOrdersAlert from './PendingOrdersAlert';
+import SellerChatWidget from './SellerChatWidget';
 import { setSellerManifest, restoreBuyerManifest } from '../pwa/sellerPush';
 import { Smartphone } from 'lucide-react';
 import { detectEnv } from '../pwa/detectEnv';
@@ -179,6 +180,7 @@ export default function SellerApp() {
       {activeTab !== 'orders' && (
         <PendingOrdersAlert onNavigateOrders={() => setActiveTab('orders')} />
       )}
+      <SellerChatWidget />
     </div>
   );
 }
