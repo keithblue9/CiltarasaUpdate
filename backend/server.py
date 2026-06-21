@@ -283,12 +283,26 @@ def render_chat_template(tpl: str, order: dict, store_name: str = "Ciltarasa", a
     elif pm_id == "cod":
         pm_account = "Bayar tunai saat ambil/terima"
 
+    # ─── Resolve ongkir (delivery fee) ───
+    ongkir_raw = order.get("delivery_fee")
+    try:
+        ongkir_num = float(ongkir_raw) if ongkir_raw is not None else 0.0
+    except (TypeError, ValueError):
+        ongkir_num = 0.0
+    if ongkir_raw is None:
+        ongkir_str = "Menunggu konfirmasi seller"
+    elif ongkir_num <= 0:
+        ongkir_str = "Gratis"
+    else:
+        ongkir_str = fmt_rp_id(ongkir_num)
+
     repl = {
         "{order_id}": str(order_num),
         "{customer_name}": order.get("customer_name", "-"),
         "{customer_phone}": "+" + str(order.get("customer_phone", "-")),
         "{customer_address}": order.get("customer_address", "-") or "Ambil Sendiri",
         "{delivery}": delivery,
+        "{ongkir}": ongkir_str,
         "{items_detail}": items_text,
         "{total}": fmt_rp_id(order.get("total", 0)),
         "{subtotal}": fmt_rp_id(order.get("subtotal", 0)),
