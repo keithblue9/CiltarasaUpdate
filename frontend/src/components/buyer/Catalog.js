@@ -136,6 +136,10 @@ export default function Catalog() {
     .filter(p => category === 'all' || p.category === category || (p.categories || []).includes(category))
     .filter(p => p.name.toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => {
+      // Stok habis selalu di bawah (apapun sortirnya) — biar buyer ga scroll lewat yang sold out
+      const aOut = a.stock === 0 ? 1 : 0;
+      const bOut = b.stock === 0 ? 1 : 0;
+      if (aOut !== bOut) return aOut - bOut;
       if (sort === 'price-asc') return (a.final_price || a.price) - (b.final_price || b.price);
       if (sort === 'price-desc') return (b.final_price || b.price) - (a.final_price || a.price);
       if (sort === 'name') return a.name.localeCompare(b.name);
