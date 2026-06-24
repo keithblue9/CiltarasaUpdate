@@ -161,10 +161,12 @@ export function StoreCerita() {
   const { storeConfig, refreshStoreConfig } = useApp();
   const [cerita, setCerita] = useState('');
   const [stats, setStats] = useState(DEFAULT_ABOUT_STATS);
+  const [aboutEnabled, setAboutEnabled] = useState(true);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     setCerita(storeConfig?.cerita || '');
+    setAboutEnabled(storeConfig?.about_tab_enabled !== false);
     const s = (Array.isArray(storeConfig?.about_stats) && storeConfig.about_stats.length > 0)
       ? storeConfig.about_stats : DEFAULT_ABOUT_STATS;
     setStats([0, 1, 2].map(i => ({
@@ -179,7 +181,7 @@ export function StoreCerita() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await axios.put(`${API}/api/store-config`, { cerita, about_stats: stats });
+      await axios.put(`${API}/api/store-config`, { cerita, about_stats: stats, about_tab_enabled: aboutEnabled });
       await refreshStoreConfig();
       toast.success('Tersimpan!');
     } catch { toast.error('Gagal simpan'); } finally { setSaving(false); }
@@ -190,6 +192,17 @@ export function StoreCerita() {
       <div className="flex items-center justify-between">
         <h1 className="font-heading text-2xl font-bold text-[#7C2D12]">Cerita Perjalanan</h1>
         <button data-testid="save-cerita-btn" onClick={handleSave} disabled={saving} className="flex items-center gap-2 bg-gradient-to-r from-[#F97316] to-[#EA580C] text-white font-bold px-5 py-2.5 rounded-full shadow"><Save size={16} /> {saving ? 'Menyimpan...' : 'Simpan'}</button>
+      </div>
+
+      <div className={`flex items-center justify-between gap-3 rounded-2xl border p-4 ${aboutEnabled ? 'border-[#FED7AA] bg-[#FFFBF5]' : 'border-gray-200 bg-gray-50'}`}>
+        <div>
+          <p className="font-bold text-[#7C2D12]">Tampilkan tab "Tentang Kami" di buyer</p>
+          <p className="text-xs text-gray-500 mt-0.5">{aboutEnabled ? 'Tab Tentang Kami tampil di app buyer.' : 'Tab disembunyikan — buyer cuma lihat menu/produk.'}</p>
+        </div>
+        <button type="button" onClick={() => setAboutEnabled(v => !v)} role="switch" aria-checked={aboutEnabled}
+          className={`relative w-12 h-7 rounded-full transition-colors flex-shrink-0 ${aboutEnabled ? 'bg-[#EA580C]' : 'bg-gray-300'}`}>
+          <span className={`absolute top-1 left-1 w-5 h-5 bg-white rounded-full transition-transform ${aboutEnabled ? 'translate-x-5' : ''}`} />
+        </button>
       </div>
 
       <Section title="Statistik Toko (Tentang Kami)" icon={Sparkles}>
