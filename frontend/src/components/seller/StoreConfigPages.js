@@ -141,19 +141,47 @@ export function StoreProfile() {
 }
 
 // ─── CERITA PERJALANAN ───────────────────────────────────────────
+const STAT_ICON_OPTIONS = [
+  { v: 'users', t: '👥 Pelanggan' },
+  { v: 'award', t: '🏅 Penghargaan' },
+  { v: 'heart', t: '❤️ Hati' },
+  { v: 'star', t: '⭐ Bintang' },
+  { v: 'truck', t: '🚚 Pengiriman' },
+  { v: 'clock', t: '🕒 Waktu' },
+  { v: 'shopping', t: '🛍️ Belanja' },
+  { v: 'thumbs', t: '👍 Jempol' },
+];
+const DEFAULT_ABOUT_STATS = [
+  { icon: 'users', num: '1.200+', label: 'Pelanggan Setia' },
+  { icon: 'award', num: '4.9★', label: 'Rating Google' },
+  { icon: 'heart', num: '5+ thn', label: 'Pengalaman' },
+];
+
 export function StoreCerita() {
   const { storeConfig, refreshStoreConfig } = useApp();
   const [cerita, setCerita] = useState('');
+  const [stats, setStats] = useState(DEFAULT_ABOUT_STATS);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => { setCerita(storeConfig?.cerita || ''); }, [storeConfig]);
+  useEffect(() => {
+    setCerita(storeConfig?.cerita || '');
+    const s = (Array.isArray(storeConfig?.about_stats) && storeConfig.about_stats.length > 0)
+      ? storeConfig.about_stats : DEFAULT_ABOUT_STATS;
+    setStats([0, 1, 2].map(i => ({
+      icon: s[i]?.icon || DEFAULT_ABOUT_STATS[i].icon,
+      num: s[i]?.num ?? '',
+      label: s[i]?.label ?? '',
+    })));
+  }, [storeConfig]);
+
+  const setStat = (i, k, v) => setStats(prev => prev.map((s, idx) => idx === i ? { ...s, [k]: v } : s));
 
   const handleSave = async () => {
     setSaving(true);
     try {
-      await axios.put(`${API}/api/store-config`, { cerita });
+      await axios.put(`${API}/api/store-config`, { cerita, about_stats: stats });
       await refreshStoreConfig();
-      toast.success('Cerita perjalanan tersimpan!');
+      toast.success('Tersimpan!');
     } catch { toast.error('Gagal simpan'); } finally { setSaving(false); }
   };
 
@@ -163,6 +191,23 @@ export function StoreCerita() {
         <h1 className="font-heading text-2xl font-bold text-[#7C2D12]">Cerita Perjalanan</h1>
         <button data-testid="save-cerita-btn" onClick={handleSave} disabled={saving} className="flex items-center gap-2 bg-gradient-to-r from-[#F97316] to-[#EA580C] text-white font-bold px-5 py-2.5 rounded-full shadow"><Save size={16} /> {saving ? 'Menyimpan...' : 'Simpan'}</button>
       </div>
+
+      <Section title="Statistik Toko (Tentang Kami)" icon={Sparkles}>
+        <p className="text-xs text-gray-500 mb-3">3 kartu angka yang tampil di tab "Tentang Kami" buyer. Atur ikon, angka, & keterangannya. Kosongkan angka kalau mau sembunyikan kartu.</p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {stats.map((s, i) => (
+            <div key={`stat-edit-${i}`} className="border border-[#FED7AA] rounded-xl p-3 space-y-2 bg-[#FFFBF5]">
+              <div className="text-[10px] font-bold text-[#9A3412] uppercase tracking-wide">Kartu {i + 1}</div>
+              <select className={inputCls} value={s.icon} onChange={e => setStat(i, 'icon', e.target.value)}>
+                {STAT_ICON_OPTIONS.map(o => <option key={o.v} value={o.v}>{o.t}</option>)}
+              </select>
+              <input className={inputCls} value={s.num} onChange={e => setStat(i, 'num', e.target.value)} placeholder="cth: 1.200+" />
+              <input className={inputCls} value={s.label} onChange={e => setStat(i, 'label', e.target.value)} placeholder="cth: Pelanggan Setia" />
+            </div>
+          ))}
+        </div>
+      </Section>
+
       <Section title="Tentang Toko Kami" icon={BookOpen}>
         <p className="text-xs text-gray-500 mb-2">Tulis cerita perjalanan toko, akan tampil di tab "Tentang" di buyer app. Gunakan baris baru untuk paragraf.</p>
         <textarea data-testid="cerita-textarea" rows={14} className={inputCls + ' resize-none'} value={cerita} onChange={e => setCerita(e.target.value)} placeholder="Toko kami berdiri sejak..." />
