@@ -1,5 +1,5 @@
 import React from 'react';
-import { MapPin, Phone, Clock, Instagram, Music2, Heart, Sparkles, Award, Users } from 'lucide-react';
+import { MapPin, Phone, Clock, Instagram, Music2, Heart, Sparkles, Award, Users, Star, Truck, ShoppingBag, ThumbsUp } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 
 export default function AboutSection() {
@@ -21,19 +21,23 @@ export default function AboutSection() {
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-3 mb-10">
-        {[
-          { icon: Users, num: '1.200+', label: 'Pelanggan Setia' },
-          { icon: Award, num: '4.9★', label: 'Rating Google' },
-          { icon: Heart, num: '5+ thn', label: 'Pengalaman' },
-        ].map((s) => (
-          <div key={`stat-${s.label}`} className="bg-white rounded-2xl border border-[#FED7AA] p-4 sm:p-5 text-center hover:shadow-lg transition-all">
+        {(Array.isArray(sc.about_stats) && sc.about_stats.length > 0 ? sc.about_stats : [
+          { icon: 'users', num: '1.200+', label: 'Pelanggan Setia' },
+          { icon: 'award', num: '4.9★', label: 'Rating Google' },
+          { icon: 'heart', num: '5+ thn', label: 'Pengalaman' },
+        ]).filter(s => (s.num || '').toString().trim()).map((s, i) => {
+          const ICONS = { users: Users, award: Award, heart: Heart, star: Star, truck: Truck, clock: Clock, shopping: ShoppingBag, thumbs: ThumbsUp };
+          const Ico = ICONS[s.icon] || [Users, Award, Heart][i % 3] || Users;
+          return (
+          <div key={`stat-${i}-${s.label}`} className="bg-white rounded-2xl border border-[#FED7AA] p-4 sm:p-5 text-center hover:shadow-lg transition-all">
             <div className="w-10 h-10 mx-auto mb-2 rounded-xl bg-gradient-to-br from-[#F97316] to-[#EA580C] flex items-center justify-center text-white">
-              <s.icon size={18} />
+              <Ico size={18} />
             </div>
             <div className="font-heading text-xl sm:text-2xl font-extrabold text-[#7C2D12]">{s.num}</div>
             <div className="text-[10px] sm:text-xs text-[#9A3412] font-semibold uppercase tracking-wide">{s.label}</div>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Cerita */}
