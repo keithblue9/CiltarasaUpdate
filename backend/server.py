@@ -448,6 +448,7 @@ class StoreConfigUpdate(BaseModel):
     address: Optional[str] = None
     operating_hours: Optional[str] = None
     cerita: Optional[str] = None
+    about_stats: Optional[List[Dict[str, Any]]] = None
     gmaps_review_url: Optional[str] = None
     bank_accounts: Optional[List[Dict[str, Any]]] = None
     categories: Optional[List[Dict[str, Any]]] = None
@@ -550,6 +551,11 @@ DEFAULT_STORE_CONFIG = {
     "operating_hours": "Setiap Hari • 08.00 - 21.00 WIB",
     "cerita": "Ciltarasa lahir dari dapur kecil di Malang tahun 2020. Bermula dari pesanan tetangga yang suka risoles homemade buatan Bunda, kini kami sudah melayani ribuan keluarga di seluruh Malang Raya.\n\nKami percaya makanan beku berkualitas itu bukan instant—tiap produk dibuat fresh tiap hari, dibekukan dengan blast freezer, dan dikirim langsung ke rumah Anda. Tanpa pengawet, tanpa MSG berlebih, hanya rasa autentik yang bikin keluarga ketagihan.\n\nSpesialisasi kami: aneka frozen snack (risoles, lumpia, pastel, cireng) dan Bebek Asap Pawon Ayu—signature dish dengan bumbu rempah Jawa yang sudah turun-temurun.",
     "gmaps_review_url": "https://maps.app.goo.gl/W8noqRWBkVsMESbHA",
+    "about_stats": [
+        {"icon": "users", "num": "1.200+", "label": "Pelanggan Setia"},
+        {"icon": "award", "num": "4.9★", "label": "Rating Google"},
+        {"icon": "heart", "num": "5+ thn", "label": "Pengalaman"},
+    ],
     "bank_accounts": [
         {"id": str(uuid.uuid4()), "bank": "BCA", "name": "Ciltarasa Malang", "number": "1234567890"},
         {"id": str(uuid.uuid4()), "bank": "Mandiri", "name": "Ciltarasa Malang", "number": "9876543210"},
@@ -828,6 +834,9 @@ async def seed_database():
             for k, v in DEFAULT_STORE_CONFIG.get("maintenance_mode", {}).items():
                 if k not in existing["maintenance_mode"]:
                     backfill[f"maintenance_mode.{k}"] = v
+        # About stats (Tentang Kami) backfill
+        if "about_stats" not in existing or not existing.get("about_stats"):
+            backfill["about_stats"] = DEFAULT_STORE_CONFIG.get("about_stats", [])
         if backfill:
             await db.store_config.update_one({"_id": "main"}, {"$set": backfill})
             logger.info(f"Backfilled store_config: {list(backfill.keys())}")
