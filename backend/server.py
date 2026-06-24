@@ -449,6 +449,7 @@ class StoreConfigUpdate(BaseModel):
     operating_hours: Optional[str] = None
     cerita: Optional[str] = None
     about_stats: Optional[List[Dict[str, Any]]] = None
+    about_tab_enabled: Optional[bool] = None
     gmaps_review_url: Optional[str] = None
     bank_accounts: Optional[List[Dict[str, Any]]] = None
     categories: Optional[List[Dict[str, Any]]] = None
@@ -556,6 +557,7 @@ DEFAULT_STORE_CONFIG = {
         {"icon": "award", "num": "4.9★", "label": "Rating Google"},
         {"icon": "heart", "num": "5+ thn", "label": "Pengalaman"},
     ],
+    "about_tab_enabled": True,
     "bank_accounts": [
         {"id": str(uuid.uuid4()), "bank": "BCA", "name": "Ciltarasa Malang", "number": "1234567890"},
         {"id": str(uuid.uuid4()), "bank": "Mandiri", "name": "Ciltarasa Malang", "number": "9876543210"},
@@ -837,6 +839,8 @@ async def seed_database():
         # About stats (Tentang Kami) backfill
         if "about_stats" not in existing or not existing.get("about_stats"):
             backfill["about_stats"] = DEFAULT_STORE_CONFIG.get("about_stats", [])
+        if "about_tab_enabled" not in existing:
+            backfill["about_tab_enabled"] = True
         if backfill:
             await db.store_config.update_one({"_id": "main"}, {"$set": backfill})
             logger.info(f"Backfilled store_config: {list(backfill.keys())}")
