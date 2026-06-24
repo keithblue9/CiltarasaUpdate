@@ -117,6 +117,7 @@ export default function Catalog() {
   const [sort, setSort] = useState('terlaris');
   const [detailProduct, setDetailProduct] = useState(null);
   const txt = storeConfig?.homepage_texts || {};
+  const aboutEnabled = storeConfig?.about_tab_enabled !== false; // default tampil
 
   useEffect(() => {
     const handler = (e) => { setActiveTab('menu'); setCategory(e.detail); };
@@ -162,6 +163,7 @@ export default function Catalog() {
             🍽️ {txt.tab_menu_label?.replace(/^[^\w]+/, '') || 'Menu Kami'}
             {activeTab === 'menu' && <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-[#F97316] to-[#EA580C] rounded-t-full" />}
           </button>
+          {aboutEnabled && (
           <button
             data-testid="tab-tentang"
             onClick={() => setActiveTab('tentang')}
@@ -170,9 +172,10 @@ export default function Catalog() {
             ✨ {txt.tab_about_label?.replace(/^[^\w]+/, '') || 'Tentang Kami'}
             {activeTab === 'tentang' && <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-[#F97316] to-[#EA580C] rounded-t-full" />}
           </button>
+          )}
         </div>
 
-        {activeTab === 'tentang' ? (
+        {activeTab === 'tentang' && aboutEnabled ? (
           <AboutSection />
         ) : (
           <>
