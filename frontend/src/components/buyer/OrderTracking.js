@@ -41,7 +41,7 @@ function ConfirmReceivedBanner({ order, onRefresh }) {
         toast.success('Terima kasih sudah konfirmasi! Yuk kasih review 💝');
         setReviewOpen(true);
       } else {
-        // No more auto-WA popup. Backend will send WA notif to seller (via Fonnte).
+        // Backend mengirim notifikasi ke seller via Web Push.
         toast.success('Kami catat. Seller akan dikabari otomatis via WhatsApp. 📞');
       }
       onRefresh?.();

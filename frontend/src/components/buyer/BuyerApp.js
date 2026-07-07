@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Routes, Route, useNavigate } from 'react-router-dom';
-import { ShoppingCart, MapPin, Phone, Clock, Instagram, Menu, X, User, LogOut, Package, ChevronDown } from 'lucide-react';
+import { ShoppingCart, MapPin, Phone, Clock, Instagram, Menu, X, User, LogOut, Package, ChevronDown, Settings } from 'lucide-react';
 import axios from 'axios';
 import { useApp } from '../../context/AppContext';
 import { LogoWithText } from '../shared/Logo';
@@ -10,6 +10,7 @@ import CartDrawer from './CartDrawer';
 import Checkout from './Checkout';
 import OrderTracking from './OrderTracking';
 import OnboardingModal from './OnboardingModal';
+import BuyerProfileModal from './BuyerProfileModal';
 import FlashSaleBanner from './FlashSaleBanner';
 import FunFactsPopup from './FunFactsPopup';
 import RecommendationsStrip from './RecommendationsStrip';
@@ -24,6 +25,7 @@ import BuyerChatWidget from './BuyerChatWidget';
 function ProfileMenu() {
   const { authUser, logout, setAuthMode } = useApp();
   const [open, setOpen] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const navigate = useNavigate();
 
   if (!authUser) {
@@ -68,6 +70,14 @@ function ProfileMenu() {
               <span className="text-sm font-semibold text-[#7C2D12]">Pesananku</span>
             </button>
             <button
+              data-testid="profile-settings-btn"
+              onClick={() => { setShowSettings(true); setOpen(false); }}
+              className="w-full px-4 py-3 flex items-center gap-3 hover:bg-[#FFF7ED] text-left transition-colors border-t border-[#FED7AA]"
+            >
+              <Settings size={16} className="text-[#EA580C]" />
+              <span className="text-sm font-semibold text-[#7C2D12]">Pengaturan Akun</span>
+            </button>
+            <button
               data-testid="logout-btn"
               onClick={() => { logout(); setOpen(false); }}
               className="w-full px-4 py-3 flex items-center gap-3 hover:bg-red-50 text-left transition-colors border-t border-[#FED7AA]"
@@ -78,6 +88,7 @@ function ProfileMenu() {
           </div>
         </>
       )}
+      <BuyerProfileModal open={showSettings} onClose={() => setShowSettings(false)} />
     </div>
   );
 }
