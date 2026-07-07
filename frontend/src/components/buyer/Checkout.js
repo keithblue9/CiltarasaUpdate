@@ -477,6 +477,7 @@ export default function Checkout() {
       const orderTotal = cartTotal + (Number(form.delivery_fee) || 0);
       const res = await axios.post(`${API}/api/orders`, {
         ...form,
+        delivery_option_name: currentDelivery?.name || (form.delivery_method === 'delivery' ? 'Pengiriman' : 'Ambil Sendiri'),
         items,
         subtotal: cartTotal,
         total: orderTotal,
