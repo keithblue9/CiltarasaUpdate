@@ -394,6 +394,7 @@ class StoreConfigUpdate(BaseModel):
     wa_notif_enabled: Optional[bool] = None
     low_stock_threshold: Optional[int] = None
     restock_safety_days: Optional[int] = None
+    checkout_mode: Optional[str] = None
     qris_image_url: Optional[str] = None
     payment_texts: Optional[Dict[str, str]] = None
     auto_chat_config: Optional[Dict[str, Any]] = None
@@ -563,6 +564,7 @@ DEFAULT_STORE_CONFIG = {
     "seller_notify_phone": "6285190884129",
     "wa_notif_enabled": True,
     "low_stock_threshold": 10,
+    "checkout_mode": "single",  # "single" (satu halaman) | "wizard" (step-by-step)
     "pwa_install": {
         "buyer_enabled": True,
         "buyer_delay_seconds": 30,
@@ -726,6 +728,8 @@ async def seed_database():
         # Backfill new fields (FASE 2 - payment_texts & qris_image_url) without wiping existing config
         existing = await db.store_config.find_one({"_id": "main"}) or {}
         backfill = {}
+        if "checkout_mode" not in existing:
+            backfill["checkout_mode"] = DEFAULT_STORE_CONFIG.get("checkout_mode", "single")
         if "qris_image_url" not in existing:
             backfill["qris_image_url"] = DEFAULT_STORE_CONFIG.get("qris_image_url", "")
         if "payment_texts" not in existing or not existing.get("payment_texts"):
