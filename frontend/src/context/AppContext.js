@@ -186,18 +186,39 @@ export function AppProvider({ children }) {
     return () => { active = false; };
   }, []);
 
-  // Auth actions
-  const requestOtp = async (phone, name) => {
-    const r = await axios.post(`${API}/api/auth/request-otp`, { phone, name });
-    return r.data;
-  };
-  const verifyOtp = async (phone, otp, name) => {
-    const r = await axios.post(`${API}/api/auth/verify-otp`, { phone, otp, name });
-    setAuthUser(r.data.user);
-    setAuthToken(r.data.token);
-    localStorage.setItem('ciltarasa_token', r.data.token);
+  // Auth actions (passcode-based)
+  const applyAuth = (data) => {
+    setAuthUser(data.user);
+    setAuthToken(data.token);
+    localStorage.setItem('ciltarasa_token', data.token);
     localStorage.removeItem('ciltarasa_guest');
     setAuthMode(null);
+  };
+  const checkPhone = async (phone, name) => {
+    const r = await axios.post(`${API}/api/auth/check-phone`, { phone, name });
+    return r.data;
+  };
+  const setPasscode = async (phone, passcode, name) => {
+    const r = await axios.post(`${API}/api/auth/set-passcode`, { phone, passcode, name });
+    applyAuth(r.data);
+    return r.data;
+  };
+  const login = async (phone, passcode) => {
+    const r = await axios.post(`${API}/api/auth/login`, { phone, passcode });
+    applyAuth(r.data);
+    return r.data;
+  };
+  const changePasscode = async (oldPasscode, newPasscode) => {
+    const t = authToken || localStorage.getItem('ciltarasa_token');
+    const r = await axios.post(`${API}/api/auth/change-passcode`, {
+      token: t, old_passcode: oldPasscode, new_passcode: newPasscode,
+    });
+    return r.data;
+  };
+  const updateProfile = async (patch) => {
+    const t = authToken || localStorage.getItem('ciltarasa_token');
+    const r = await axios.post(`${API}/api/auth/profile`, { token: t, ...patch });
+    if (r.data?.user) setAuthUser(r.data.user);
     return r.data;
   };
   const logout = () => {
@@ -247,8 +268,11 @@ export function AppProvider({ children }) {
     authToken,
     authMode,
     setAuthMode,
-    requestOtp,
-    verifyOtp,
+    checkPhone,
+    setPasscode,
+    login,
+    changePasscode,
+    updateProfile,
     logout,
     continueAsGuest,
     isAuthed: !!authUser,
