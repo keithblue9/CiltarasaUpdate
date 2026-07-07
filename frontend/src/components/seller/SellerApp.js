@@ -12,7 +12,7 @@ import { StoreProfile, StoreCerita, CategoriesConfig, DeliveryConfig, PaymentsCo
 import SeoThemeConfig from './SeoThemeConfig';
 import DiscountManagement from './DiscountManagement';
 import PurchaseManagement from './PurchaseManagement';
-import { HowToOrderConfig, ResetCustomersConfig, ChangePinConfig, TrafficStats, InvoiceConfig, DashboardWidgetsConfig, MaintenanceConfig, PwaInstallConfig, CustomersConfig } from './AdminPages';
+import { HowToOrderConfig, ResetCustomersConfig, ChangePinConfig, TrafficStats, InvoiceConfig, DashboardWidgetsConfig, MaintenanceConfig, PwaInstallConfig, CustomersConfig, CheckoutModeConfig } from './AdminPages';
 import SellerPushSettings from './SellerPushSettings';
 import SellerPwaInstallBanner from './SellerPwaInstallBanner';
 import PendingOrdersAlert from './PendingOrdersAlert';
@@ -118,6 +118,7 @@ export default function SellerApp() {
     'pwa-install': <PwaInstallConfig />,
     discounts: <DiscountManagement />,
     customers: <CustomersConfig />,
+    'checkout-mode': <CheckoutModeConfig />,
     'change-pin': <ChangePinConfig onPinChanged={() => handleLogout()} />,
     'reset-customers': <ResetCustomersConfig />,
     'seo-theme': <SeoThemeConfig />,

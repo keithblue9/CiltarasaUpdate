@@ -1193,3 +1193,91 @@ export function CustomersConfig() {
     </div>
   );
 }
+
+
+// ─── CHECKOUT MODE (single vs step-by-step wizard) ──────────────────────────────
+export function CheckoutModeConfig() {
+  const { storeConfig, refreshStoreConfig } = useApp();
+  const [mode, setMode] = useState('single');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setMode(storeConfig?.checkout_mode === 'wizard' ? 'wizard' : 'single');
+  }, [storeConfig]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await axios.put(`${API}/api/store-config`, { checkout_mode: mode });
+      await refreshStoreConfig();
+      toast.success('Mode checkout tersimpan! ✅');
+    } catch {
+      toast.error('Gagal menyimpan');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const Option = ({ value, emoji, title, desc, points }) => (
+    <button
+      type="button"
+      onClick={() => setMode(value)}
+      className={`w-full text-left p-4 rounded-2xl border-2 transition-all ${mode === value ? 'border-[#EA580C] bg-[#FFF7ED]' : 'border-[#FED7AA] bg-white hover:border-[#F97316]'}`}
+    >
+      <div className="flex items-start gap-3">
+        <span className="text-3xl">{emoji}</span>
+        <div className="flex-1">
+          <div className="flex items-center gap-2">
+            <p className="font-heading font-bold text-[#7C2D12]">{title}</p>
+            {mode === value && <span className="text-[10px] font-bold bg-[#EA580C] text-white px-2 py-0.5 rounded-full">DIPILIH</span>}
+          </div>
+          <p className="text-xs text-[#9A3412] mt-0.5">{desc}</p>
+          <ul className="list-disc list-inside text-[11px] text-[#78350F] mt-2 space-y-0.5">
+            {points.map((p, i) => <li key={i}>{p}</li>)}
+          </ul>
+        </div>
+      </div>
+    </button>
+  );
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="font-heading text-2xl font-bold text-[#7C2D12]">Mode Checkout</h1>
+          <p className="text-xs text-[#9A3412] mt-0.5">Pilih tampilan halaman checkout untuk buyer. Bisa diganti kapan saja.</p>
+        </div>
+        <button onClick={handleSave} disabled={saving} className="flex items-center gap-2 bg-gradient-to-r from-[#F97316] to-[#EA580C] text-white font-bold px-5 py-2.5 rounded-full shadow disabled:opacity-60">
+          <Save size={16} /> {saving ? 'Menyimpan...' : 'Simpan'}
+        </button>
+      </div>
+
+      <Section title="Pilih Tampilan Checkout" icon={ListOrdered}>
+        <div className="space-y-3">
+          <Option
+            value="single"
+            emoji="📄"
+            title="Satu Halaman (default)"
+            desc="Semua bagian tampil sekaligus dalam satu halaman scroll."
+            points={['Cepat untuk yang sudah terbiasa', 'Semua terlihat langsung']}
+          />
+          <Option
+            value="wizard"
+            emoji="🔢"
+            title="Step-by-Step (1 → 2 → 3 → 4)"
+            desc="Buyer dituntun per langkah: Data → Pengiriman → Pembayaran → Konfirmasi. Tiap langkah wajib diisi sebelum lanjut."
+            points={['Cocok untuk yang kurang paham / gaptek', 'Mengurangi bagian yang kelewat belum diisi', 'Ada tombol Lanjut & Kembali']}
+          />
+        </div>
+      </Section>
+
+      <div className="rounded-xl bg-blue-50 border border-blue-200 p-4 text-xs text-blue-900">
+        <p className="font-bold mb-1">ℹ️ Catatan:</p>
+        <ul className="list-disc list-inside space-y-1 text-[11px]">
+          <li>Isi form, opsi pengiriman, dan pembayaran <strong>sama persis</strong> di kedua mode — cuma cara tampilnya beda.</li>
+          <li>Perubahan langsung berlaku untuk semua buyer setelah disimpan.</li>
+        </ul>
+      </div>
+    </div>
+  );
+}

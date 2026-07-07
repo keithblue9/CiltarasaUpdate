@@ -25,6 +25,7 @@ const configTabs = [
   { id: 'categories', label: 'Kategori Produk', icon: FolderTree },
   { id: 'delivery', label: 'Layanan Pengiriman', icon: Truck },
   { id: 'payments', label: 'Metode Pembayaran', icon: CreditCard },
+  { id: 'checkout-mode', label: 'Mode Checkout', icon: ListOrdered },
   { id: 'push-notif', label: 'Push Notification', icon: Bell },
   { id: 'maintenance', label: 'Mode Libur / Tutup', icon: Power },
   { id: 'pwa-install', label: 'Popup Install App', icon: Smartphone },
