@@ -327,6 +327,7 @@ class OrderCreate(BaseModel):
     customer_address: str = ""
     delivery_method: str
     delivery_option_id: Optional[str] = None
+    delivery_option_name: Optional[str] = None
     delivery_fee: float = 0
     items: List[OrderItemModel]
     subtotal: float
