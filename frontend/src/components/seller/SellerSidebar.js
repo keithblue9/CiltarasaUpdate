@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Package, ShoppingBag, BarChart2, DollarSign, MessageCircle, LogOut, X, Wifi, WifiOff, Store, BookOpen, FolderTree, Truck, CreditCard, Tag, Settings, Type, ImagePlus, Sparkles, ShoppingCart, ListOrdered, ShieldAlert, LogIn, KeyRound, TrendingUp, MessagesSquare, FileText, BarChart3, Bell, Power, Smartphone, Palette } from 'lucide-react';
+import { LayoutDashboard, Package, ShoppingBag, BarChart2, DollarSign, LogOut, X, Wifi, WifiOff, Store, BookOpen, FolderTree, Truck, CreditCard, Tag, Settings, Type, ImagePlus, Sparkles, ShoppingCart, ListOrdered, ShieldAlert, LogIn, KeyRound, TrendingUp, FileText, BarChart3, Bell, Power, Smartphone, Palette , Users } from 'lucide-react';
 import { LogoWithText } from '../shared/Logo';
 import { useApp } from '../../context/AppContext';
 
@@ -25,14 +25,13 @@ const configTabs = [
   { id: 'categories', label: 'Kategori Produk', icon: FolderTree },
   { id: 'delivery', label: 'Layanan Pengiriman', icon: Truck },
   { id: 'payments', label: 'Metode Pembayaran', icon: CreditCard },
-  { id: 'auto-chat', label: 'Auto-Chat WhatsApp', icon: MessagesSquare },
   { id: 'push-notif', label: 'Push Notification', icon: Bell },
   { id: 'maintenance', label: 'Mode Libur / Tutup', icon: Power },
   { id: 'pwa-install', label: 'Popup Install App', icon: Smartphone },
   { id: 'invoice', label: 'Wording Invoice & Resi', icon: FileText },
   { id: 'dashboard-widgets', label: 'Widget Dashboard', icon: BarChart3 },
   { id: 'discounts', label: 'Diskon Produk', icon: Tag },
-  { id: 'whatsapp', label: 'WhatsApp (Fonnte)', icon: MessageCircle },
+  { id: 'customers', label: 'Customer & Passcode', icon: Users },
   { id: 'change-pin', label: 'Ubah PIN Akses', icon: KeyRound },
   { id: 'reset-customers', label: 'Reset Pelanggan', icon: ShieldAlert },
 ];

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Save, Send, AlertTriangle, MessageCircle, ListOrdered, Trash2, Plus, RotateCcw, ShieldAlert, KeyRound, Eye, EyeOff, Lock, TrendingUp, Users, Smartphone, Globe, Monitor, RefreshCw, Target, MessagesSquare, FileText, ChevronDown, ChevronUp, Copy, Check, Type, ImagePlus } from 'lucide-react';
+import { Save, AlertTriangle, ListOrdered, Trash2, Plus, RotateCcw, ShieldAlert, KeyRound, Eye, EyeOff, Lock, TrendingUp, Users, Smartphone, Globe, Monitor, RefreshCw, Target, FileText, Type, ImagePlus } from 'lucide-react';
 import SmartImage from '../shared/SmartImage';
 import ImageUrlInput from '../shared/ImageUrlInput';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
@@ -23,171 +23,6 @@ function Section({ title, icon: Icon, children, action }) {
         {action}
       </div>
       <div className="p-5">{children}</div>
-    </div>
-  );
-}
-
-// ─── FONNTE WHATSAPP CONFIG ──────────────────────────────────────
-export function FonnteConfig() {
-  const { storeConfig, refreshStoreConfig } = useApp();
-  const [form, setForm] = useState({ fonnte_token: '', seller_notify_phone: '', wa_notif_enabled: true });
-  const [saving, setSaving] = useState(false);
-  const [testing, setTesting] = useState(false);
-  const [testTarget, setTestTarget] = useState('');
-  const [deviceStatus, setDeviceStatus] = useState(null);
-  const [checkingStatus, setCheckingStatus] = useState(false);
-
-  useEffect(() => {
-    if (storeConfig) {
-      setForm({
-        fonnte_token: storeConfig.fonnte_token || '',
-        seller_notify_phone: storeConfig.seller_notify_phone || '',
-        wa_notif_enabled: storeConfig.wa_notif_enabled !== false,
-      });
-      setTestTarget(storeConfig.seller_notify_phone || '');
-    }
-  }, [storeConfig]);
-
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
-
-  const checkDeviceStatus = async () => {
-    setCheckingStatus(true);
-    try {
-      const r = await axios.get(`${API}/api/admin/fonnte-status`);
-      setDeviceStatus(r.data);
-    } catch (e) {
-      setDeviceStatus({ ok: false, connected: false, reason: 'Klik Cek Status untuk update' });
-    } finally {
-      setCheckingStatus(false);
-    }
-  };
-
-  const handleSave = async () => {
-    setSaving(true);
-    try {
-      await axios.put(`${API}/api/store-config`, form);
-      await refreshStoreConfig();
-      toast.success('Konfigurasi WhatsApp tersimpan! 📱');
-      // Auto-check device status setelah simpan token baru
-      setTimeout(() => checkDeviceStatus(), 500);
-    } catch { toast.error('Gagal simpan'); } finally { setSaving(false); }
-  };
-
-  const handleTest = async () => {
-    if (!testTarget) { toast.error('Masukkan nomor target dulu'); return; }
-    setTesting(true);
-    try {
-      const r = await axios.post(`${API}/api/admin/test-wa`, { target: testTarget });
-      if (r.data?.ok) {
-        toast.success('✅ Notif WA terkirim! Cek WhatsApp tujuan.');
-      } else if (r.data?.skipped) {
-        toast.error(`Skipped: ${r.data.reason}`);
-      } else {
-        const reason = r.data?.response?.reason || r.data?.error || 'Unknown error';
-        toast.error(`Gagal: ${reason}`, { duration: 6000 });
-      }
-    } catch (e) {
-      toast.error('Error koneksi ke server');
-    } finally {
-      setTesting(false);
-    }
-  };
-
-  // Auto-check status saat mount jika token sudah ada
-  useEffect(() => {
-    if (storeConfig?.fonnte_token) {
-      checkDeviceStatus();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storeConfig?.fonnte_token]);
-
-  return (
-    <div className="space-y-5">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="font-heading text-2xl font-bold text-[#7C2D12]">WhatsApp Settings (Fonnte API)</h1>
-          <p className="text-xs text-[#9A3412] mt-0.5">Konfigurasi Fonnte API untuk kirim OTP login + notif pesanan otomatis ke seller & buyer.</p>
-        </div>
-        <button data-testid="save-fonnte-btn" onClick={handleSave} disabled={saving} className="flex items-center gap-2 bg-gradient-to-r from-[#F97316] to-[#EA580C] text-white font-bold px-5 py-2.5 rounded-full shadow"><Save size={16} /> {saving ? 'Menyimpan...' : 'Simpan'}</button>
-      </div>
-
-      {/* Real-time Device Status Badge */}
-      <div data-testid="fonnte-device-status" className={`rounded-2xl border-2 p-4 flex items-center justify-between gap-3 flex-wrap ${
-        deviceStatus?.connected ? 'border-green-300 bg-green-50' :
-        deviceStatus && !deviceStatus.connected ? 'border-red-300 bg-red-50' :
-        'border-[#FED7AA] bg-[#FFF7ED]'
-      }`}>
-        <div className="flex items-center gap-3">
-          <div className={`w-3 h-3 rounded-full ${
-            deviceStatus?.connected ? 'bg-green-500 animate-pulse' :
-            deviceStatus && !deviceStatus.connected ? 'bg-red-500' : 'bg-gray-400'
-          }`} />
-          <div>
-            <p className="font-bold text-[#7C2D12] text-sm">
-              Status Device Fonnte:&nbsp;
-              {checkingStatus ? <span className="text-gray-500">Mengecek...</span> :
-                deviceStatus?.connected ? <span className="text-green-700">Terhubung ✅</span> :
-                deviceStatus ? <span className="text-red-700">Terputus ❌</span> :
-                <span className="text-gray-500">Belum dicek</span>
-              }
-            </p>
-            {deviceStatus && (
-              <p className="text-xs text-[#9A3412] mt-0.5">
-                {deviceStatus.connected ?
-                  <>Device: <strong>{deviceStatus.device}</strong> · Quota: <strong>{deviceStatus.quota ?? '—'}</strong> · Sent: <strong>{deviceStatus.messages ?? '—'}</strong></> :
-                  <>{deviceStatus.reason || 'Device disconnected. Scan ulang QR di fonnte.com'}</>
-                }
-              </p>
-            )}
-          </div>
-        </div>
-        <button data-testid="check-fonnte-status-btn" onClick={checkDeviceStatus} disabled={checkingStatus || !form.fonnte_token} className="flex items-center gap-2 bg-white border border-[#FED7AA] text-[#7C2D12] font-bold px-4 py-2 rounded-xl hover:bg-[#FFF7ED] disabled:opacity-50 text-sm">
-          <RefreshCw size={14} className={checkingStatus ? 'animate-spin' : ''} /> Cek Status
-        </button>
-      </div>
-
-      <Section title="Kredensial Fonnte" icon={MessageCircle}>
-        <div className="space-y-4">
-          <label className="flex items-center gap-3 p-3 rounded-xl border-2 border-[#FED7AA] bg-[#FFF7ED] cursor-pointer">
-            <input type="checkbox" checked={form.wa_notif_enabled} onChange={e => set('wa_notif_enabled', e.target.checked)} className="w-5 h-5 accent-[#EA580C]" />
-            <div>
-              <p className="font-bold text-[#7C2D12] text-sm">Aktifkan Notifikasi WhatsApp</p>
-              <p className="text-xs text-[#9A3412]">Jika nonaktif, OTP akan kembali ke mode simulasi (kode 123456) & notif pesanan tidak terkirim.</p>
-            </div>
-          </label>
-
-          <div>
-            <label className="block text-xs font-bold text-[#7C2D12] mb-1.5 uppercase tracking-wide">Fonnte API Token</label>
-            <input data-testid="fonnte-token-input" type="password" className={inputCls} value={form.fonnte_token} onChange={e => set('fonnte_token', e.target.value)} placeholder="Token dari fonnte.com → Device → Token" />
-            <p className="text-[11px] text-gray-500 mt-1">Dapatkan dari dashboard <a href="https://fonnte.com" target="_blank" rel="noopener noreferrer" className="text-[#EA580C] font-bold hover:underline">fonnte.com</a> → klik Device → Token. Pastikan device sudah scan QR.</p>
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-[#7C2D12] mb-1.5 uppercase tracking-wide">Nomor WhatsApp Penerima Notif Seller</label>
-            <input data-testid="seller-notify-phone-input" className={inputCls} value={form.seller_notify_phone} onChange={e => set('seller_notify_phone', e.target.value)} placeholder="6285249682337" />
-            <p className="text-[11px] text-gray-500 mt-1">Format: 62xxx (tanpa +). Notif pesanan baru akan dikirim ke nomor ini.</p>
-          </div>
-
-          <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-3 flex items-start gap-2">
-            <AlertTriangle size={16} className="text-yellow-600 flex-shrink-0 mt-0.5" />
-            <div className="text-xs text-yellow-900">
-              <strong>Setup Fonnte:</strong> Login di fonnte.com → Buat Device → Scan QR pakai HP WhatsApp toko → Copy Token ke sini. Pastikan HP tetap online untuk kirim pesan.
-            </div>
-          </div>
-        </div>
-      </Section>
-
-      <Section title="Tes Kirim WhatsApp" icon={Send}>
-        <div className="space-y-3">
-          <p className="text-xs text-[#9A3412]">Tes apakah token & device sudah terkonfigurasi dengan benar. Pesan tes akan dikirim ke nomor di bawah.</p>
-          <div className="flex gap-2">
-            <input data-testid="test-target-input" className={inputCls + ' flex-1'} value={testTarget} onChange={e => setTestTarget(e.target.value)} placeholder="6285249682337" />
-            <button data-testid="send-test-wa-btn" onClick={handleTest} disabled={testing || !form.fonnte_token} className="flex items-center gap-2 bg-green-500 text-white font-bold px-4 py-2.5 rounded-xl shadow hover:bg-green-600 disabled:opacity-50">
-              <Send size={14} /> {testing ? 'Mengirim...' : 'Kirim Test'}
-            </button>
-          </div>
-        </div>
-      </Section>
     </div>
   );
 }
@@ -677,197 +512,6 @@ export function TrafficStats() {
   );
 }
 
-
-// ─── AUTO-CHAT CONFIG (FASE 3) ────────────────────────────────────
-const STAGE_META = [
-  { key: 'menunggu', label: 'Pesanan Diterima (Menunggu)', icon: '📋', desc: 'Saat order baru dibuat buyer. Notif untuk seller (default ON) & opsional buyer.' },
-  { key: 'diproses', label: 'Diproses', icon: '👨‍🍳', desc: 'Saat seller mengubah status ke "Diproses".' },
-  { key: 'siap', label: 'Siap Diambil/Dikirim', icon: '📦', desc: 'Saat pesanan siap diambil atau dikirim.' },
-  { key: 'selesai', label: 'Selesai', icon: '🎉', desc: 'Saat pesanan sudah sampai/selesai.' },
-  { key: 'dibatalkan', label: 'Dibatalkan', icon: '❌', desc: 'Saat pesanan dibatalkan.' },
-];
-
-const PLACEHOLDERS = [
-  { tag: '{order_id}', desc: 'Nomor pesanan' },
-  { tag: '{customer_name}', desc: 'Nama pelanggan' },
-  { tag: '{customer_phone}', desc: 'No HP pelanggan' },
-  { tag: '{customer_address}', desc: 'Alamat pelanggan' },
-  { tag: '{delivery}', desc: 'Metode pengiriman' },
-  { tag: '{ongkir}', desc: 'Biaya ongkir (Gratis / nominal / nunggu seller)' },
-  { tag: '{items_detail}', desc: 'List detail item' },
-  { tag: '{total}', desc: 'Total bayar' },
-  { tag: '{subtotal}', desc: 'Subtotal' },
-  { tag: '{payment_method}', desc: 'Metode bayar (Transfer/QRIS/COD)' },
-  { tag: '{payment_account}', desc: 'Bank + No rekening yang dipilih buyer' },
-  { tag: '{notes}', desc: 'Catatan pelanggan' },
-  { tag: '{status}', desc: 'Label status' },
-  { tag: '{status_desc}', desc: 'Deskripsi status' },
-  { tag: '{status_emoji}', desc: 'Emoji status' },
-  { tag: '{store_name}', desc: 'Nama toko' },
-  { tag: '{timestamp}', desc: 'Waktu order' },
-  { tag: '{track_link}', desc: 'Link tracking buyer' },
-];
-
-function PlaceholderHelper({ onInsert }) {
-  return (
-    <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4">
-      <p className="text-xs font-bold text-amber-900 mb-2">💡 Placeholder tersedia (klik untuk salin):</p>
-      <div className="flex flex-wrap gap-1.5">
-        {PLACEHOLDERS.map(p => (
-          <button
-            key={p.tag}
-            type="button"
-            onClick={() => {
-              navigator.clipboard.writeText(p.tag);
-              toast.success(`${p.tag} disalin!`);
-              if (onInsert) onInsert(p.tag);
-            }}
-            title={p.desc}
-            className="text-[10px] font-mono px-2 py-1 rounded-md bg-white border border-amber-300 text-amber-800 hover:bg-amber-200 transition-all"
-          >
-            {p.tag}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function StageCard({ stage, cfg, onUpdate }) {
-  const [open, setOpen] = useState(false);
-  const update = (k, v) => onUpdate(stage.key, { ...cfg, [k]: v });
-  return (
-    <div className="bg-white rounded-2xl border border-[#FED7AA] overflow-hidden">
-      <button
-        type="button"
-        data-testid={`stage-toggle-${stage.key}`}
-        onClick={() => setOpen(!open)}
-        className="w-full px-4 py-3.5 flex items-center justify-between hover:bg-amber-50 transition-all"
-      >
-        <div className="flex items-center gap-3 text-left">
-          <div className="text-2xl">{stage.icon}</div>
-          <div>
-            <p className="font-heading font-bold text-[#7C2D12] text-sm">{stage.label}</p>
-            <p className="text-[10px] text-[#9A3412]">{stage.desc}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          {cfg.seller_enabled && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">SELLER ✓</span>}
-          {cfg.buyer_enabled && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-green-100 text-green-700">BUYER ✓</span>}
-          {open ? <ChevronUp size={16} className="text-[#9A3412]" /> : <ChevronDown size={16} className="text-[#9A3412]" />}
-        </div>
-      </button>
-      {open && (
-        <div className="p-4 border-t border-amber-200 space-y-4 bg-[#FFFBF5]">
-          {/* Seller */}
-          <div className="rounded-xl bg-white border border-blue-200 p-3">
-            <label className="flex items-center justify-between mb-2">
-              <span className="text-xs font-bold text-blue-900 flex items-center gap-1.5">📤 Kirim ke Seller</span>
-              <input
-                type="checkbox"
-                data-testid={`stage-${stage.key}-seller-toggle`}
-                checked={cfg.seller_enabled || false}
-                onChange={e => update('seller_enabled', e.target.checked)}
-                className="w-4 h-4 accent-blue-600"
-              />
-            </label>
-            {cfg.seller_enabled && (
-              <textarea
-                data-testid={`stage-${stage.key}-seller-template`}
-                rows={6}
-                value={cfg.seller_template || ''}
-                onChange={e => update('seller_template', e.target.value)}
-                placeholder="Template pesan untuk seller..."
-                className="w-full px-3 py-2 rounded-lg border border-blue-200 text-xs font-mono resize-y text-[#451A03]"
-              />
-            )}
-          </div>
-          {/* Buyer */}
-          <div className="rounded-xl bg-white border border-green-200 p-3">
-            <label className="flex items-center justify-between mb-2">
-              <span className="text-xs font-bold text-green-900 flex items-center gap-1.5">📥 Kirim ke Buyer</span>
-              <input
-                type="checkbox"
-                data-testid={`stage-${stage.key}-buyer-toggle`}
-                checked={cfg.buyer_enabled || false}
-                onChange={e => update('buyer_enabled', e.target.checked)}
-                className="w-4 h-4 accent-green-600"
-              />
-            </label>
-            {cfg.buyer_enabled && (
-              <textarea
-                data-testid={`stage-${stage.key}-buyer-template`}
-                rows={6}
-                value={cfg.buyer_template || ''}
-                onChange={e => update('buyer_template', e.target.value)}
-                placeholder="Template pesan untuk buyer..."
-                className="w-full px-3 py-2 rounded-lg border border-green-200 text-xs font-mono resize-y text-[#451A03]"
-              />
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-export function AutoChatConfig() {
-  const { storeConfig, refreshStoreConfig } = useApp();
-  const [config, setConfig] = useState({});
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    setConfig(storeConfig?.auto_chat_config || {});
-  }, [storeConfig]);
-
-  const updateStage = (key, val) => setConfig(c => ({ ...c, [key]: val }));
-
-  const handleSave = async () => {
-    setSaving(true);
-    try {
-      await axios.put(`${API}/api/store-config`, { auto_chat_config: config });
-      await refreshStoreConfig();
-      toast.success('Auto-chat tersimpan! 💬');
-    } catch { toast.error('Gagal simpan'); } finally { setSaving(false); }
-  };
-
-  return (
-    <div className="space-y-5">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="font-heading text-2xl font-bold text-[#7C2D12]">Auto-Chat WhatsApp</h1>
-          <p className="text-xs text-[#9A3412] mt-0.5">Toggle on/off & edit wording WA otomatis per stage pesanan — untuk seller & buyer terpisah.</p>
-        </div>
-        <button data-testid="save-auto-chat-btn" onClick={handleSave} disabled={saving} className="flex items-center gap-2 bg-gradient-to-r from-[#F97316] to-[#EA580C] text-white font-bold px-5 py-2.5 rounded-full shadow">
-          <Save size={16} /> {saving ? 'Menyimpan...' : 'Simpan Semua'}
-        </button>
-      </div>
-
-      <PlaceholderHelper />
-
-      <div className="space-y-3">
-        {STAGE_META.map(stage => (
-          <StageCard
-            key={stage.key}
-            stage={stage}
-            cfg={config[stage.key] || {}}
-            onUpdate={updateStage}
-          />
-        ))}
-      </div>
-
-      <div className="rounded-xl bg-blue-50 border border-blue-200 p-4 text-xs text-blue-900">
-        <p className="font-bold mb-1">ℹ️ Catatan:</p>
-        <ul className="list-disc list-inside space-y-1 text-[11px]">
-          <li>WA akan terkirim aktual via Fonnte token yang diset di tab "WhatsApp (Fonnte)". Pastikan device aktif.</li>
-          <li>Pesan ke <strong>seller</strong> dikirim ke nomor di <code>seller_notify_phone</code>.</li>
-          <li>Pesan ke <strong>buyer</strong> dikirim ke nomor HP yang buyer isi saat checkout.</li>
-          <li>Template pakai placeholder seperti <code className="bg-white px-1 rounded">{'{order_id}'}</code> — klik tag di atas untuk salin.</li>
-        </ul>
-      </div>
-    </div>
-  );
-}
 
 // ─── INVOICE WORDING CONFIG (FASE 3) ──────────────────────────────
 const INVOICE_TEXT_FIELDS = [
@@ -1443,6 +1087,107 @@ export function MaintenanceConfig() {
           <li>Dashboard seller TETAP bisa diakses meski mode libur aktif.</li>
           <li>Buyer yang sedang checkout SAAT mode libur diaktifkan masih bisa selesaikan order — efek hanya saat masuk fresh.</li>
           <li>Gunakan emoji di judul untuk kesan ramah (mis: 🧡 ☕ 🍱 🏖️).</li>
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+
+// ─── CUSTOMER & RESET PASSCODE ───────────────────────────────────────────
+export function CustomersConfig() {
+  const [customers, setCustomers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [q, setQ] = useState('');
+  const [resetting, setResetting] = useState('');
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const r = await axios.get(`${API}/api/admin/customers`);
+      setCustomers(r.data.customers || []);
+    } catch {
+      toast.error('Gagal memuat data customer');
+    } finally {
+      setLoading(false);
+    }
+  };
+  useEffect(() => { load(); }, []);
+
+  const handleReset = async (c) => {
+    if (!window.confirm(`Reset passcode untuk ${c.name || c.phone}?\n\nCustomer akan diminta membuat passcode baru saat login berikutnya.`)) return;
+    setResetting(c.phone);
+    try {
+      await axios.post(`${API}/api/admin/reset-passcode`, { phone: c.phone });
+      toast.success('Passcode di-reset. Customer bisa buat passcode baru saat login.');
+      setCustomers(prev => prev.map(x => x.phone === c.phone ? { ...x, has_passcode: false } : x));
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Gagal reset passcode');
+    } finally {
+      setResetting('');
+    }
+  };
+
+  const filtered = customers.filter(c =>
+    !q ||
+    (c.name || '').toLowerCase().includes(q.toLowerCase()) ||
+    (c.phone || '').includes(q)
+  );
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="font-heading text-2xl font-bold text-[#7C2D12]">Customer & Passcode</h1>
+          <p className="text-xs text-[#9A3412] mt-0.5">Daftar pelanggan terdaftar. Reset passcode kalau ada yang lupa — mereka bikin baru saat login berikutnya.</p>
+        </div>
+        <button onClick={load} disabled={loading} className="flex items-center gap-2 bg-white border border-[#FED7AA] text-[#7C2D12] font-bold px-4 py-2 rounded-xl hover:bg-[#FFF7ED] disabled:opacity-50 text-sm">
+          <RefreshCw size={15} className={loading ? 'animate-spin' : ''} /> Refresh
+        </button>
+      </div>
+
+      <Section title="Daftar Customer" icon={Users}>
+        <input
+          type="text"
+          value={q}
+          onChange={e => setQ(e.target.value)}
+          placeholder="Cari nama atau nomor HP..."
+          className={inputCls + ' mb-4'}
+        />
+        {loading ? (
+          <p className="text-sm text-gray-500 py-6 text-center">Memuat...</p>
+        ) : filtered.length === 0 ? (
+          <p className="text-sm text-gray-500 py-6 text-center">Belum ada customer{q ? ' yang cocok' : ''}.</p>
+        ) : (
+          <div className="space-y-2">
+            {filtered.map(c => (
+              <div key={c.phone} className="flex items-center justify-between gap-3 p-3 rounded-xl border border-[#FED7AA] bg-white flex-wrap">
+                <div className="min-w-0">
+                  <p className="font-bold text-[#7C2D12] text-sm truncate">{c.name || 'Tanpa Nama'}</p>
+                  <p className="text-xs text-[#9A3412]">+{c.phone}</p>
+                  <span className={`inline-block mt-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${c.has_passcode ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                    {c.has_passcode ? '🔒 Punya passcode' : '⚠️ Belum set passcode'}
+                  </span>
+                </div>
+                <button
+                  onClick={() => handleReset(c)}
+                  disabled={!c.has_passcode || resetting === c.phone}
+                  className="flex items-center gap-1.5 bg-red-50 text-red-600 border border-red-200 font-bold px-3 py-2 rounded-lg hover:bg-red-100 disabled:opacity-40 text-xs whitespace-nowrap"
+                >
+                  <KeyRound size={14} /> {resetting === c.phone ? 'Mereset...' : 'Reset Passcode'}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </Section>
+
+      <div className="rounded-xl bg-blue-50 border border-blue-200 p-4 text-xs text-blue-900">
+        <p className="font-bold mb-1">ℹ️ Cara kerja reset passcode:</p>
+        <ul className="list-disc list-inside space-y-1 text-[11px]">
+          <li>Customer yang lupa passcode menghubungi kamu (mis. lewat WhatsApp).</li>
+          <li>Klik <strong>Reset Passcode</strong> di nama mereka.</li>
+          <li>Passcode lama dihapus. Saat login berikutnya, mereka diminta membuat passcode 6 angka baru.</li>
         </ul>
       </div>
     </div>
