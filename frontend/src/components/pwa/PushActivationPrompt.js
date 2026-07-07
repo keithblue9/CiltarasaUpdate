@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Bell, BellRing, X, Loader2, Share, PlusSquare } from 'lucide-react';
 import { toast } from 'sonner';
 import { detectEnv } from './detectEnv';
-import { isPushSupported, getCurrentPermission, getExistingSubscription, requestSubscribe as sellerSubscribe } from './sellerPush';
+import { isPushSupported, getCurrentPermission, requestSubscribe as sellerSubscribe } from './sellerPush';
 import { subscribeBuyer } from './buyerPush';
 
 const SNOOZE_MS = 3 * 24 * 60 * 60 * 1000; // 3 hari
@@ -21,6 +21,7 @@ export default function PushActivationPrompt({ role, token, pin, personName }) {
   const [busy, setBusy] = useState(false);
   const [mode, setMode] = useState('activate'); // 'activate' | 'ios-install'
   const snoozeKey = `ciltarasa_push_prompt_snooze_${role}`;
+  const activatedKey = `ciltarasa_push_active_${role}`;
 
   useEffect(() => {
     let cancelled = false;
@@ -47,13 +48,13 @@ export default function PushActivationPrompt({ role, token, pin, personName }) {
           if (!supported) return; // desktop safari lama dll → diam saja
           const perm = await getCurrentPermission();
           if (perm === 'denied') return; // diblokir di OS → jangan nagih
-          // getExistingSubscription bisa "hang" kalau service worker telat aktif.
-          // Kasih timeout 2.5s → kalau lewat, anggap belum subscribe (tetap tampilkan ajakan).
-          const sub = await Promise.race([
-            getExistingSubscription(),
-            new Promise((res) => setTimeout(() => res(null), 2500)),
-          ]);
-          if (perm === 'granted' && sub) return; // sudah aktif → jangan muncul lagi
+          // Satu browser hanya punya 1 push subscription (dipakai bareng buyer & seller).
+          // Jadi "sudah aktif" ditentukan PER-ROLE via flag lokal — bukan dari subscription
+          // browser. Ini mencegah popup buyer ikut hilang gara-gara seller sudah subscribe
+          // di browser yang sama (atau sebaliknya).
+          let activatedThisRole = false;
+          try { activatedThisRole = localStorage.getItem(activatedKey) === '1'; } catch (e) { /* ignore */ }
+          if (perm === 'granted' && activatedThisRole) return; // role ini sudah aktif → jangan muncul
           nextMode = 'activate';
         }
       } catch (e) {
@@ -80,6 +81,7 @@ export default function PushActivationPrompt({ role, token, pin, personName }) {
       const label = personName ? ('HP ' + personName) : undefined;
       if (role === 'buyer') await subscribeBuyer(token, label);
       else await sellerSubscribe(pin, label);
+      try { localStorage.setItem(activatedKey, '1'); } catch (e) { /* ignore */ }
       toast.success('Notifikasi aktif! 🔔');
       setShow(false);
     } catch (e) {
