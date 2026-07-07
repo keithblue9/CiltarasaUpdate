@@ -1027,15 +1027,16 @@ async def set_passcode(req: SetPasscodeReq):
     user = await db.users.find_one({"phone": phone}, {"_id": 0})
     if user and user.get("passcode_hash"):
         raise HTTPException(409, "Akun ini sudah punya passcode. Silakan login, atau minta seller reset kalau lupa.")
-    set_fields = {"passcode_hash": _hash_pc(req.passcode), "verified": True, "updated_at": ts}
-    if req.name:
-        set_fields["name"] = req.name
+    set_fields = {
+        "passcode_hash": _hash_pc(req.passcode),
+        "verified": True,
+        "updated_at": ts,
+        "name": req.name or (user or {}).get("name", "") or "",
+    }
     await db.users.update_one(
         {"phone": phone},
         {"$set": set_fields,
-         "$setOnInsert": {"id": str(uuid.uuid4()), "phone": phone,
-                          "name": req.name or (user or {}).get("name", "") or "",
-                          "created_at": ts}},
+         "$setOnInsert": {"id": str(uuid.uuid4()), "phone": phone, "created_at": ts}},
         upsert=True,
     )
     fresh = await db.users.find_one({"phone": phone}, {"_id": 0})
