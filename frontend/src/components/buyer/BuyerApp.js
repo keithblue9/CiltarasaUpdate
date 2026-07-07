@@ -21,6 +21,7 @@ import PwaInstallHub from '../pwa/PwaInstallHub';
 import useTrackVisit from './useTrackVisit';
 import MaintenanceScreen from './MaintenanceScreen';
 import BuyerChatWidget from './BuyerChatWidget';
+import PushActivationPrompt from '../pwa/PushActivationPrompt';
 
 function ProfileMenu() {
   const { authUser, logout, setAuthMode } = useApp();
@@ -249,7 +250,7 @@ const API = process.env.REACT_APP_BACKEND_URL;
 
 export default function BuyerApp() {
   const [cartOpen, setCartOpen] = useState(false);
-  const { storeConfig, settings } = useApp();
+  const { storeConfig, settings, authUser, authToken } = useApp();
   const [maintenance, setMaintenance] = useState(null);
   useTrackVisit();
 
@@ -288,6 +289,7 @@ export default function BuyerApp() {
         <BuyerFooter />
         <PwaInstallHub />
         <BuyerChatWidget />
+        {authUser && <PushActivationPrompt role="buyer" token={authToken} personName={authUser.name} />}
       </div>
     </BuyerThemeProvider>
   );
