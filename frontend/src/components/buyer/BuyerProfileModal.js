@@ -45,12 +45,14 @@ export default function BuyerProfileModal({ open, onClose }) {
   if (!open || !authUser) return null;
 
   const chooseDelivery = (opt) => {
-    if (opt === 'pickup') {
-      setDeliveryMethod('pickup');
-      setDeliveryOptId('pickup');
+    const oid = opt.id || opt.name;
+    if (deliveryOptId === oid) {
+      // klik lagi opsi yang sama → batalkan pilihan
+      setDeliveryOptId('');
+      setDeliveryMethod('');
     } else {
-      setDeliveryMethod(opt.name || opt.label || 'delivery');
-      setDeliveryOptId(opt.id || '');
+      setDeliveryOptId(oid);
+      setDeliveryMethod(opt.is_pickup ? 'pickup' : 'delivery');
     }
   };
 
@@ -59,8 +61,8 @@ export default function BuyerProfileModal({ open, onClose }) {
     try {
       await updateProfile({
         address,
-        delivery_method: deliveryMethod || undefined,
-        delivery_option_id: deliveryOptId || undefined,
+        delivery_method: deliveryMethod,
+        delivery_option_id: deliveryOptId,
       });
       toast.success('Profil tersimpan! ✅');
     } catch (e) {
@@ -192,11 +194,15 @@ export default function BuyerProfileModal({ open, onClose }) {
                   <Truck size={13} /> Metode Kirim Favorit
                 </label>
                 <div className="space-y-2">
+                  {deliveryOptions.length === 0 && (
+                    <p className="text-xs text-gray-500">Belum ada opsi pengiriman dari seller.</p>
+                  )}
                   {deliveryOptions.map((opt) => {
-                    const active = deliveryOptId === (opt.id || '') && deliveryMethod === (opt.name || opt.label || 'delivery');
+                    const oid = opt.id || opt.name;
+                    const active = deliveryOptId === oid;
                     return (
                       <button
-                        key={opt.id || opt.name}
+                        key={oid}
                         onClick={() => chooseDelivery(opt)}
                         className={`w-full flex items-center justify-between gap-2 p-3 rounded-xl border-2 text-left transition-all ${active ? 'border-[#EA580C] bg-[#FFF7ED]' : 'border-[#FED7AA] bg-white'}`}
                       >
@@ -205,14 +211,8 @@ export default function BuyerProfileModal({ open, onClose }) {
                       </button>
                     );
                   })}
-                  <button
-                    onClick={() => chooseDelivery('pickup')}
-                    className={`w-full flex items-center justify-between gap-2 p-3 rounded-xl border-2 text-left transition-all ${deliveryOptId === 'pickup' ? 'border-[#EA580C] bg-[#FFF7ED]' : 'border-[#FED7AA] bg-white'}`}
-                  >
-                    <span className="text-sm font-semibold text-[#7C2D12]">Ambil Sendiri (Pickup)</span>
-                    {deliveryOptId === 'pickup' && <Check size={16} className="text-[#EA580C]" />}
-                  </button>
                 </div>
+                {deliveryOptId && <p className="text-[11px] text-gray-500 mt-1.5">Klik lagi opsi yang terpilih untuk membatalkan.</p>}
               </div>
 
               <button
