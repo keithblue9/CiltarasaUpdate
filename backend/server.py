@@ -590,6 +590,8 @@ DEFAULT_STORE_CONFIG = {
         "qris_cancel_label": "Batalkan",
         "qris_upload_label": "Upload Bukti Pembayaran QRIS",
         "no_qris_image_warning": "Seller belum upload QR. Hubungi seller via WhatsApp untuk minta QR.",
+        "ongkir_later_label": "Ongkir nanti",
+        "ongkir_later_note": "\u26A0\uFE0F Ongkir untuk opsi ini belum final \u2014 seller akan info total + ongkir setelah pesanan dikonfirmasi.",
     },
     "auto_chat_config": {
         # Stage 'menunggu' = saat order baru dibuat (POST /api/orders)
