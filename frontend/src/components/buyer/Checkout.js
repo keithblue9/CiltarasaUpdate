@@ -405,6 +405,7 @@ export default function Checkout() {
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const [completeModal, setCompleteModal] = useState(false);
+  const [wizStep, setWizStep] = useState(0);
 
   // Validasi: tombol submit hanya enabled jika payment flow lengkap (config-driven)
   const paymentReady = useMemo(() => {
@@ -498,14 +499,9 @@ export default function Checkout() {
     );
   }
 
-  return (
-    <div className="max-w-2xl mx-auto px-4 py-10">
-      <button onClick={() => navigate('/buyer')} className="flex items-center gap-2 text-[#78350F] hover:text-[#D97706] mb-6 font-semibold transition-colors">
-        <ArrowLeft size={18} /> Kembali ke Menu
-      </button>
-      <h1 className="font-heading text-3xl font-bold text-[#78350F] mb-8">Checkout</h1>
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Customer Info */}
+  const secCustomer = (
+    <>
+      {/* Customer Info */}
         <div className="bg-white rounded-2xl border border-[#FED7AA] p-6">
           <h3 className="font-heading font-bold text-[#78350F] text-lg mb-4">Data Pemesan</h3>
           <div className="space-y-4">
@@ -521,8 +517,11 @@ export default function Checkout() {
             </div>
           </div>
         </div>
-
-        {/* Delivery */}
+    </>
+  );
+  const secDelivery = (
+    <>
+      {/* Delivery */}
         <div className="bg-white rounded-2xl border border-[#FED7AA] p-6">
           <h3 className="font-heading font-bold text-[#78350F] text-lg mb-4">Metode Pengambilan / Pengiriman</h3>
           {deliveryOptions.length === 0 ? (
@@ -573,8 +572,11 @@ export default function Checkout() {
             </div>
           )}
         </div>
-
-        {/* Payment */}
+    </>
+  );
+  const secPayment = (
+    <>
+      {/* Payment */}
         <div className="bg-white rounded-2xl border border-[#FED7AA] p-6">
           <h3 className="font-heading font-bold text-[#78350F] text-lg mb-4">Metode Pembayaran</h3>
           {isPayLaterFallback ? (
@@ -637,15 +639,21 @@ export default function Checkout() {
             </div>
           )}
         </div>
-
-        {/* Notes */}
+    </>
+  );
+  const secNotes = (
+    <>
+      {/* Notes */}
         <div className="bg-white rounded-2xl border border-[#FED7AA] p-6">
           <h3 className="font-heading font-bold text-[#78350F] text-lg mb-4">Catatan Tambahan</h3>
           <textarea value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="Catatan untuk seller (opsional)..."
             rows={2} className="w-full px-4 py-3 rounded-xl border border-[#FED7AA] focus:outline-none focus:ring-2 focus:ring-[#D97706] font-body text-[#451A03] resize-none" />
         </div>
-
-        {/* Order Summary */}
+    </>
+  );
+  const secSummary = (
+    <>
+      {/* Order Summary */}
         <div className="bg-[#FEF3C7] rounded-2xl border border-[#FED7AA] p-6">
           <h3 className="font-heading font-bold text-[#78350F] text-lg mb-3">Ringkasan Pesanan</h3>
           <div className="space-y-2 mb-4">
@@ -690,16 +698,93 @@ export default function Checkout() {
             )}
           </div>
         </div>
-
-        <button data-testid="submit-order-btn" type="submit" disabled={loading}
+    </>
+  );
+  const secSubmit = (
+    <>
+      <button data-testid="submit-order-btn" type="submit" disabled={loading}
           className="w-full bg-[#D97706] text-white font-bold py-4 rounded-full hover:bg-[#B45309] transition-all transform hover:-translate-y-0.5 shadow-md text-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
           {loading ? 'Memproses...' : <><MessageCircle size={20} /> Buat Pesanan</>}
         </button>
         {!paymentReady && !loading && (
           <p className="text-xs text-center text-[#92400E]">Klik "Buat Pesanan" — nanti kami bantu lengkapi pilihan yang kurang 😊</p>
         )}
-      </form>
+    </>
+  );
 
+  const checkoutMode = storeConfig?.checkout_mode === 'wizard' ? 'wizard' : 'single';
+
+  const wizardSteps = [
+    { title: 'Data', node: secCustomer, valid: () => !!form.customer_name && !!form.customer_phone },
+    { title: 'Kirim', node: secDelivery, valid: () => !!form.delivery_option_id && (!requiresAddress || !!form.customer_address) },
+    { title: 'Bayar', node: secPayment, valid: () => paymentReady },
+    { title: 'Konfirmasi', node: <>{secNotes}{secSummary}</>, valid: () => true },
+  ];
+  const wizLast = wizStep >= wizardSteps.length - 1;
+  const goNext = () => {
+    if (!wizardSteps[wizStep].valid()) { toast.error('Lengkapi dulu bagian ini ya \uD83D\uDE0A'); return; }
+    setWizStep(s => Math.min(s + 1, wizardSteps.length - 1));
+  };
+  const goBack = () => setWizStep(s => Math.max(s - 1, 0));
+
+  return (
+    <div className="max-w-2xl mx-auto px-4 py-10">
+      <button onClick={() => navigate('/buyer')} className="flex items-center gap-2 text-[#78350F] hover:text-[#D97706] mb-6 font-semibold transition-colors">
+        <ArrowLeft size={18} /> Kembali ke Menu
+      </button>
+      <h1 className="font-heading text-3xl font-bold text-[#78350F] mb-8">Checkout</h1>
+      {checkoutMode === 'wizard' ? (
+        <div className="space-y-6">
+          {/* Step progress 1 → 2 → 3 → 4 */}
+          <div className="flex items-center">
+            {wizardSteps.map((st, i) => (
+              <React.Fragment key={i}>
+                <button
+                  type="button"
+                  onClick={() => { if (i < wizStep) setWizStep(i); }}
+                  className="flex flex-col items-center gap-1"
+                  style={{ minWidth: 56 }}
+                >
+                  <span className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold transition-colors ${i === wizStep ? 'bg-[#D97706] text-white' : i < wizStep ? 'bg-emerald-500 text-white' : 'bg-[#FED7AA] text-[#9A3412]'}`}>
+                    {i < wizStep ? '✓' : i + 1}
+                  </span>
+                  <span className={`text-[10px] font-semibold ${i === wizStep ? 'text-[#78350F]' : 'text-[#9A3412]'}`}>{st.title}</span>
+                </button>
+                {i < wizardSteps.length - 1 && (
+                  <span className={`h-0.5 flex-1 rounded-full ${i < wizStep ? 'bg-emerald-500' : 'bg-[#FED7AA]'}`} />
+                )}
+              </React.Fragment>
+            ))}
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-6">
+            {wizardSteps[wizStep].node}
+            <div className="flex gap-3 items-stretch">
+              {wizStep > 0 && (
+                <button type="button" onClick={goBack} className="flex-1 border-2 border-[#FED7AA] text-[#78350F] font-bold py-3.5 rounded-full hover:bg-[#FEF3C7] transition-all">
+                  ← Kembali
+                </button>
+              )}
+              {!wizLast ? (
+                <button type="button" onClick={goNext} className="flex-[2] bg-[#D97706] text-white font-bold py-3.5 rounded-full hover:bg-[#B45309] transition-all shadow-md">
+                  Lanjut →
+                </button>
+              ) : (
+                <div className="flex-[2]">{secSubmit}</div>
+              )}
+            </div>
+          </form>
+        </div>
+      ) : (
+        <form onSubmit={handleSubmit} className="space-y-6">
+          {secCustomer}
+          {secDelivery}
+          {secPayment}
+          {secNotes}
+          {secSummary}
+          {secSubmit}
+        </form>
+      )}
       {completeModal && (() => {
         const missing = getMissingSteps();
         return (
