@@ -126,7 +126,7 @@ function OrderDetailModal({ order, onClose, onStatusChange, onWhatsApp, onViewPr
           <div className="grid grid-cols-2 gap-3 text-sm">
             <div><p className="text-[#92400E] text-xs">Nama</p><p className="font-semibold text-[#451A03]">{order.customer_name}</p></div>
             <div><p className="text-[#92400E] text-xs">No. HP</p><p className="font-semibold text-[#451A03]">{order.customer_phone}</p></div>
-            <div><p className="text-[#92400E] text-xs">Metode</p><p className="font-semibold text-[#451A03]">{order.delivery_method === 'delivery' ? 'Pengiriman' : 'Ambil Sendiri'}</p></div>
+            <div><p className="text-[#92400E] text-xs">Metode</p><p className="font-semibold text-[#451A03]">{order.delivery_option_name || (order.delivery_method === 'delivery' ? 'Pengiriman' : 'Ambil Sendiri')}</p></div>
             <div><p className="text-[#92400E] text-xs">Pembayaran</p><p className="font-semibold text-[#451A03]">{PAYMENT_LABELS[order.payment_method] || order.payment_method}</p></div>
             {order.customer_address && <div className="col-span-2"><p className="text-[#92400E] text-xs">Alamat</p><p className="font-semibold text-[#451A03]">{order.customer_address}</p></div>}
             {order.notes && <div className="col-span-2"><p className="text-[#92400E] text-xs">Catatan</p><p className="font-semibold text-[#451A03]">{order.notes}</p></div>}
@@ -326,7 +326,7 @@ export default function IncomingOrders() {
                       )}
                     </div>
                     <p className="text-sm text-[#451A03] mt-1 font-semibold">{order.customer_name}</p>
-                    <p className="text-xs text-[#92400E] mt-0.5">{order.customer_phone} · {order.delivery_method === 'delivery' ? 'Pengiriman' : 'Ambil Sendiri'}</p>
+                    <p className="text-xs text-[#92400E] mt-0.5">{order.customer_phone} · {order.delivery_option_name || (order.delivery_method === 'delivery' ? 'Pengiriman' : 'Ambil Sendiri')}</p>
                     {/* Payment method + rekening info — visible at-a-glance */}
                     {order.payment_method && (
                       <div className="text-xs mt-1 flex items-center gap-1.5 flex-wrap">
