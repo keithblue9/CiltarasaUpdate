@@ -37,18 +37,27 @@ export default function PushActivationPrompt({ role, token, pin, personName }) {
       } catch (e) { /* ignore */ }
 
       const env = detectEnv();
-      let nextMode = null;
-
-      if (env.os === 'ios' && !env.isStandalone) {
-        // iOS di tab browser → push tidak mungkin sebelum di-install
-        nextMode = 'ios-install';
-      } else {
-        const supported = await isPushSupported();
-        if (!supported) return; // desktop safari lama dll → diam saja
-        const perm = await getCurrentPermission();
-        if (perm === 'denied') return; // diblokir di OS → jangan nagih
-        const sub = await getExistingSubscription();
-        if (perm === 'granted' && sub) return; // sudah aktif → jangan muncul lagi
+      let nextMode = 'activate';
+      try {
+        if (env.os === 'ios' && !env.isStandalone) {
+          // iOS di tab browser → push tidak mungkin sebelum di-install
+          nextMode = 'ios-install';
+        } else {
+          const supported = await isPushSupported();
+          if (!supported) return; // desktop safari lama dll → diam saja
+          const perm = await getCurrentPermission();
+          if (perm === 'denied') return; // diblokir di OS → jangan nagih
+          // getExistingSubscription bisa "hang" kalau service worker telat aktif.
+          // Kasih timeout 2.5s → kalau lewat, anggap belum subscribe (tetap tampilkan ajakan).
+          const sub = await Promise.race([
+            getExistingSubscription(),
+            new Promise((res) => setTimeout(() => res(null), 2500)),
+          ]);
+          if (perm === 'granted' && sub) return; // sudah aktif → jangan muncul lagi
+          nextMode = 'activate';
+        }
+      } catch (e) {
+        // fail-open: kalau ada error tak terduga, tetap tampilkan ajakan aktifkan
         nextMode = 'activate';
       }
 
