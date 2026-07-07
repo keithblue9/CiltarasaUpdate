@@ -404,6 +404,8 @@ const PAYMENT_TEXT_FIELDS = [
   { key: 'qris_cancel_label', label: 'Tombol "Batalkan"', placeholder: 'Batalkan' },
   { key: 'qris_upload_label', label: 'Label Upload Bukti QRIS', placeholder: 'Upload Bukti Pembayaran QRIS' },
   { key: 'no_qris_image_warning', label: 'Warning jika QR belum diupload', placeholder: 'Seller belum upload QR...', multiline: true },
+  { key: 'ongkir_later_label', label: 'Label "Ongkir nanti" (di opsi kirim)', placeholder: 'Ongkir nanti' },
+  { key: 'ongkir_later_note', label: 'Catatan "Ongkir belum final"', placeholder: '⚠️ Ongkir untuk opsi ini belum final...', multiline: true },
 ];
 
 export function PaymentsConfig() {
