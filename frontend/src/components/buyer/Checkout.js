@@ -32,6 +32,8 @@ const DEFAULT_TEXTS = {
   qris_cancel_label: 'Batalkan',
   qris_upload_label: 'Upload Bukti Pembayaran QRIS',
   no_qris_image_warning: 'Seller belum upload QR. Hubungi seller via WhatsApp untuk minta QR.',
+  ongkir_later_label: 'Ongkir nanti',
+  ongkir_later_note: '⚠️ Ongkir untuk opsi ini belum final — seller akan info total + ongkir setelah pesanan dikonfirmasi.',
 };
 
 // ─── ProofUploader: reusable component untuk upload bukti bayar .jpg/.png ───
@@ -572,7 +574,7 @@ export default function Checkout() {
                   <span className="text-2xl">{opt.emoji || '🚚'}</span>
                   <span className="leading-tight">{opt.name}</span>
                   {opt.needs_ongkir_input ? (
-                    <span className="text-[10px] font-bold text-[#9333EA] mt-0.5">💰 Ongkir nanti</span>
+                    <span className="text-[10px] font-bold text-[#9333EA] mt-0.5">💰 {texts.ongkir_later_label}</span>
                   ) : Number(opt.fee) > 0 ? (
                     <span className="text-[10px] font-bold text-[#EA580C] mt-0.5">+{formatRp(opt.fee)}</span>
                   ) : (
@@ -598,7 +600,7 @@ export default function Checkout() {
           {currentDelivery?.needs_ongkir_input && (
             <div className="mt-2 p-2 rounded-lg bg-amber-50 border border-amber-200">
               <p className="text-[11px] text-amber-800">
-                ⚠️ Ongkir untuk opsi ini <strong>belum final</strong> — seller akan info total + ongkir lewat WhatsApp setelah pesanan dikonfirmasi.
+                {texts.ongkir_later_note}
               </p>
             </div>
           )}
