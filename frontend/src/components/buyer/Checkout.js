@@ -98,7 +98,7 @@ function ProofUploader({ value, onChange, label, hint, testId = 'proof-uploader'
 }
 
 // ─── BankTransferFlow: pilih bank → pay_now/pay_later → upload bukti (jika now) ───
-function BankTransferFlow({ banks, texts, paymentBankId, setPaymentBankId, paymentType, setPaymentType, proofUrl, setProofUrl, isDelivery, allowedTiming }) {
+function BankTransferFlow({ banks, texts, paymentBankId, setPaymentBankId, paymentType, setPaymentType, proofUrl, setProofUrl, isDelivery, allowedTiming, highlight = {} }) {
   // allowedTiming: 'now' | 'later' | 'both' — from payment_method.delivery_timing or pickup_timing
   const allowNow = allowedTiming === 'now' || allowedTiming === 'both';
   const allowLater = allowedTiming === 'later' || allowedTiming === 'both';
@@ -131,8 +131,10 @@ function BankTransferFlow({ banks, texts, paymentBankId, setPaymentBankId, payme
         {banks.length === 0 ? (
           <p className="text-sm text-red-600 bg-red-50 p-3 rounded-xl">Belum ada rekening bank. Hubungi seller.</p>
         ) : (
-          <div className="space-y-2">
-            {banks.map((b, idx) => (
+          <>
+            {highlight.bank && <p className="text-xs text-red-500 font-semibold mb-1.5" data-hl-missing="true">⚠️ Pilih salah satu rekening dulu</p>}
+            <div className={`space-y-2 ${highlight.bank ? 'ring-2 ring-red-300 rounded-xl p-1.5' : ''}`}>
+              {banks.map((b, idx) => (
               <button key={b.id || idx} type="button" data-testid={`bank-${b.id || idx}`} onClick={() => setPaymentBankId(b.id)}
                 className={`w-full p-3 rounded-xl border-2 text-left transition-all ${
                   paymentBankId === b.id ? 'border-[#D97706] bg-[#FEF3C7]' : 'border-[#FED7AA] bg-white hover:border-[#D97706]'}`}>
@@ -149,19 +151,21 @@ function BankTransferFlow({ banks, texts, paymentBankId, setPaymentBankId, payme
                 </div>
               </button>
             ))}
-          </div>
+            </div>
+          </>
         )}
       </div>
 
       {paymentBankId && (allowNow || allowLater) && (
         <div>
           <h4 className="font-heading font-bold text-[#78350F] text-base mb-2">Cara Bayar</h4>
+          {highlight.timing && <p className="text-xs text-red-500 font-semibold mb-1.5" data-hl-missing="true">⚠️ Pilih "Bayar Sekarang" atau "Bayar Nanti" dulu</p>}
           {allowedTiming !== 'both' && (
             <p className="text-[11px] text-[#9A3412] italic mb-2">
               💡 Untuk {isDelivery ? 'pengiriman' : 'ambil sendiri'} ini, seller hanya membolehkan <strong>{allowNow ? 'Bayar Sekarang' : 'Bayar Nanti'}</strong>.
             </p>
           )}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className={`grid grid-cols-1 sm:grid-cols-2 gap-3 ${highlight.timing ? 'ring-2 ring-red-300 rounded-xl p-1.5' : ''}`}>
             <button type="button" data-testid="pay-type-now"
               onClick={() => allowNow && setPaymentType('now')}
               disabled={!allowNow}
@@ -185,7 +189,10 @@ function BankTransferFlow({ banks, texts, paymentBankId, setPaymentBankId, payme
       )}
 
       {paymentBankId && paymentType === 'now' && allowNow && (
-        <ProofUploader value={proofUrl} onChange={setProofUrl} label={texts.upload_proof_label + ' *'} hint={texts.upload_proof_hint} testId="bank-proof-uploader" />
+        <div className={highlight.proof ? 'ring-2 ring-red-300 rounded-2xl p-2' : ''} data-hl-missing={highlight.proof ? 'true' : undefined}>
+          {highlight.proof && <p className="text-xs text-red-500 font-semibold mb-1.5">⚠️ Upload bukti transfer dulu</p>}
+          <ProofUploader value={proofUrl} onChange={setProofUrl} label={texts.upload_proof_label + ' *'} hint={texts.upload_proof_hint} testId="bank-proof-uploader" />
+        </div>
       )}
     </div>
   );
@@ -193,7 +200,7 @@ function BankTransferFlow({ banks, texts, paymentBankId, setPaymentBankId, payme
 
 // ─── QrisFlow: tampilkan QR → Telah Bayar (upload bukti) / Batalkan ───
 // Saat delivery: skip prepayment, langsung "later"
-function QrisFlow({ qrisImageUrl, texts, qrisStage, setQrisStage, proofUrl, setProofUrl, isDelivery }) {
+function QrisFlow({ qrisImageUrl, texts, qrisStage, setQrisStage, proofUrl, setProofUrl, isDelivery, highlight = {} }) {
   const previewSrc = qrisImageUrl?.startsWith('/api/') ? `${API}${qrisImageUrl}` : qrisImageUrl;
 
   if (isDelivery) {
@@ -227,20 +234,26 @@ function QrisFlow({ qrisImageUrl, texts, qrisStage, setQrisStage, proofUrl, setP
       </div>
 
       {qrisStage === 'pending' && (
-        <div className="grid grid-cols-2 gap-3">
-          <button type="button" data-testid="qris-paid-btn" onClick={() => setQrisStage('paid')}
-            className="bg-green-500 text-white font-bold py-3 rounded-xl hover:bg-green-600 transition-all">
-            ✅ {texts.qris_paid_label}
-          </button>
-          <button type="button" data-testid="qris-cancel-btn" onClick={() => { setQrisStage('cancelled'); setProofUrl(''); }}
-            className="bg-gray-200 text-gray-700 font-bold py-3 rounded-xl hover:bg-gray-300 transition-all">
-            ❌ {texts.qris_cancel_label}
-          </button>
-        </div>
+        <>
+          {highlight.qris && <p className="text-xs text-red-500 font-semibold mb-1.5" data-hl-missing="true">⚠️ Klik "{texts.qris_paid_label}" setelah kamu transfer</p>}
+          <div className={`grid grid-cols-2 gap-3 ${highlight.qris ? 'ring-2 ring-red-300 rounded-xl p-1.5' : ''}`}>
+            <button type="button" data-testid="qris-paid-btn" onClick={() => setQrisStage('paid')}
+              className="bg-green-500 text-white font-bold py-3 rounded-xl hover:bg-green-600 transition-all">
+              ✅ {texts.qris_paid_label}
+            </button>
+            <button type="button" data-testid="qris-cancel-btn" onClick={() => { setQrisStage('cancelled'); setProofUrl(''); }}
+              className="bg-gray-200 text-gray-700 font-bold py-3 rounded-xl hover:bg-gray-300 transition-all">
+              ❌ {texts.qris_cancel_label}
+            </button>
+          </div>
+        </>
       )}
 
       {qrisStage === 'paid' && (
-        <ProofUploader value={proofUrl} onChange={setProofUrl} label={texts.qris_upload_label + ' *'} hint={texts.upload_proof_hint} testId="qris-proof-uploader" />
+        <div className={highlight.proof ? 'ring-2 ring-red-300 rounded-2xl p-2' : ''} data-hl-missing={highlight.proof ? 'true' : undefined}>
+          {highlight.proof && <p className="text-xs text-red-500 font-semibold mb-1.5">⚠️ Upload bukti pembayaran dulu</p>}
+          <ProofUploader value={proofUrl} onChange={setProofUrl} label={texts.qris_upload_label + ' *'} hint={texts.upload_proof_hint} testId="qris-proof-uploader" />
+        </div>
       )}
 
       {qrisStage === 'cancelled' && (
@@ -406,6 +419,8 @@ export default function Checkout() {
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const [completeModal, setCompleteModal] = useState(false);
   const [wizStep, setWizStep] = useState(0);
+  const [attempted, setAttempted] = useState(false);
+  useEffect(() => { setAttempted(false); }, [wizStep]);
 
   // Validasi: tombol submit hanya enabled jika payment flow lengkap (config-driven)
   const paymentReady = useMemo(() => {
@@ -482,7 +497,7 @@ export default function Checkout() {
     if (e && e.preventDefault) e.preventDefault();
     if (cart.length === 0) { toast.error('Keranjang kosong!'); return; }
     const missing = getMissingSteps();
-    if (missing.length > 0) { setCompleteModal(true); return; }
+    if (missing.length > 0) { setAttempted(true); scrollFirstMissing(); setCompleteModal(true); return; }
     await doSubmit();
   };
 
@@ -499,6 +514,15 @@ export default function Checkout() {
     );
   }
 
+  // ─── Highlight bagian yang belum dipilih setelah user coba Lanjut/Buat Pesanan ───
+  const missSet = attempted ? new Set(getMissingSteps()) : new Set();
+  const scrollFirstMissing = () => {
+    setTimeout(() => {
+      const el = document.querySelector('[data-hl-missing="true"]');
+      if (el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 60);
+  };
+
   const secCustomer = (
     <>
       {/* Customer Info */}
@@ -508,12 +532,16 @@ export default function Checkout() {
             <div>
               <label className="block text-sm font-semibold text-[#78350F] mb-1">Nama Lengkap *</label>
               <input data-testid="checkout-name-input" type="text" required value={form.customer_name} onChange={e => set('customer_name', e.target.value)}
-                placeholder="Masukkan nama lengkap" className="w-full px-4 py-3 rounded-xl border border-[#FED7AA] focus:outline-none focus:ring-2 focus:ring-[#D97706] font-body text-[#451A03]" />
+                data-hl-missing={missSet.has('name') ? 'true' : undefined}
+                placeholder="Masukkan nama lengkap" className={`w-full px-4 py-3 rounded-xl border focus:outline-none focus:ring-2 focus:ring-[#D97706] font-body text-[#451A03] ${missSet.has('name') ? 'border-red-400 bg-red-50' : 'border-[#FED7AA]'}`} />
+              {missSet.has('name') && <p className="text-xs text-red-500 mt-1 font-semibold">⚠️ Nama belum diisi</p>}
             </div>
             <div>
               <label className="block text-sm font-semibold text-[#78350F] mb-1">Nomor HP (WhatsApp) *</label>
               <input data-testid="checkout-phone-input" type="tel" required value={form.customer_phone} onChange={e => set('customer_phone', e.target.value)}
-                placeholder="Contoh: 081234567890" className="w-full px-4 py-3 rounded-xl border border-[#FED7AA] focus:outline-none focus:ring-2 focus:ring-[#D97706] font-body text-[#451A03]" />
+                data-hl-missing={missSet.has('phone') ? 'true' : undefined}
+                placeholder="Contoh: 081234567890" className={`w-full px-4 py-3 rounded-xl border focus:outline-none focus:ring-2 focus:ring-[#D97706] font-body text-[#451A03] ${missSet.has('phone') ? 'border-red-400 bg-red-50' : 'border-[#FED7AA]'}`} />
+              {missSet.has('phone') && <p className="text-xs text-red-500 mt-1 font-semibold">⚠️ Nomor HP belum diisi</p>}
             </div>
           </div>
         </div>
@@ -560,8 +588,10 @@ export default function Checkout() {
             <div>
               <label className="block text-sm font-semibold text-[#78350F] mb-1">Alamat Lengkap *</label>
               <textarea data-testid="checkout-address-input" required value={form.customer_address} onChange={e => set('customer_address', e.target.value)}
+                data-hl-missing={missSet.has('address') ? 'true' : undefined}
                 placeholder="Jl. Nama Jalan No. RT/RW, Kecamatan, Kota" rows={3}
-                className="w-full px-4 py-3 rounded-xl border border-[#FED7AA] focus:outline-none focus:ring-2 focus:ring-[#D97706] font-body text-[#451A03] resize-none" />
+                className={`w-full px-4 py-3 rounded-xl border focus:outline-none focus:ring-2 focus:ring-[#D97706] font-body text-[#451A03] resize-none ${missSet.has('address') ? 'border-red-400 bg-red-50' : 'border-[#FED7AA]'}`} />
+              {missSet.has('address') && <p className="text-xs text-red-500 mt-1 font-semibold">⚠️ Alamat belum diisi</p>}
             </div>
           )}
           {currentDelivery?.needs_ongkir_input && (
@@ -619,6 +649,7 @@ export default function Checkout() {
               setProofUrl={(v) => set('payment_proof_url', v)}
               isDelivery={isDelivery}
               allowedTiming={allowedTiming}
+              highlight={{ bank: missSet.has('bank'), timing: missSet.has('timing'), proof: missSet.has('proof') }}
             />
           )}
           {!isPayLaterFallback && currentPaymentType === 'qris' && (
@@ -630,6 +661,7 @@ export default function Checkout() {
               proofUrl={form.payment_proof_url}
               setProofUrl={(v) => set('payment_proof_url', v)}
               isDelivery={isDelivery}
+              highlight={{ qris: missSet.has('qris'), proof: missSet.has('proof') }}
             />
           )}
           {currentPaymentType === 'cod' && (
@@ -722,7 +754,8 @@ export default function Checkout() {
   ];
   const wizLast = wizStep >= wizardSteps.length - 1;
   const goNext = () => {
-    if (!wizardSteps[wizStep].valid()) { toast.error('Lengkapi dulu bagian ini ya \uD83D\uDE0A'); return; }
+    if (!wizardSteps[wizStep].valid()) { setAttempted(true); scrollFirstMissing(); toast.error('Ada yang belum dipilih — cek tanda merahnya ya 👀'); return; }
+    setAttempted(false);
     setWizStep(s => Math.min(s + 1, wizardSteps.length - 1));
   };
   const goBack = () => setWizStep(s => Math.max(s - 1, 0));
