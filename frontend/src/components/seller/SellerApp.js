@@ -17,6 +17,7 @@ import SellerPushSettings from './SellerPushSettings';
 import SellerPwaInstallBanner from './SellerPwaInstallBanner';
 import PendingOrdersAlert from './PendingOrdersAlert';
 import SellerChatWidget from './SellerChatWidget';
+import PushActivationPrompt from '../pwa/PushActivationPrompt';
 import { setSellerManifest, restoreBuyerManifest } from '../pwa/sellerPush';
 import { Smartphone } from 'lucide-react';
 import { detectEnv } from '../pwa/detectEnv';
@@ -181,6 +182,7 @@ export default function SellerApp() {
         <PendingOrdersAlert onNavigateOrders={() => setActiveTab('orders')} />
       )}
       <SellerChatWidget />
+      <PushActivationPrompt role="seller" pin={typeof localStorage !== 'undefined' ? localStorage.getItem('seller_pin') : null} />
     </div>
   );
 }
