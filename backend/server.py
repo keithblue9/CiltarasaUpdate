@@ -47,10 +47,6 @@ APP_URL = os.environ.get("APP_URL", "")          # Legacy fallback
 FRONTEND_URL = os.environ.get("FRONTEND_URL") or APP_URL or "https://ciltarasa.online"
 BACKEND_URL  = os.environ.get("BACKEND_URL") or os.environ.get("RENDER_EXTERNAL_URL") or APP_URL or ""
 
-# Fonnte WhatsApp token — dibaca dari Environment Variable (rahasia, JANGAN hardcode di repo).
-# Set di Render → Environment → FONNTE_TOKEN = <token dari fonnte.com>
-FONNTE_TOKEN_DEFAULT = os.environ.get("FONNTE_TOKEN", "")
-
 async def get_active_pin() -> str:
     """Return current seller PIN — DB override if set, else env default."""
     doc = await db.auth_config.find_one({"_id": "main"})
@@ -118,92 +114,7 @@ def gdrive_to_direct(url: str) -> str:
         return f"https://drive.google.com/uc?export=view&id={m.group(1)}"
     return url
 
-# ─── Fonnte WhatsApp Helper ──────────────────────────────────────────────────
-FONNTE_URL = "https://api.fonnte.com/send"
-
-async def get_fonnte_config():
-    """Get Fonnte config with auto-heal from DEFAULT_STORE_CONFIG if missing/empty.
-
-    Root-cause fixes for "seller not getting WA":
-    1. If seller_notify_phone is missing/empty in DB → use default and PERSIST
-    2. If fonnte_token is missing/empty → use default and PERSIST
-    3. Always log warnings if config is invalid so it's visible in Render logs
-    """
-    sc = await db.store_config.find_one({"_id": "main"}, {"_id": 0})
-    if not sc:
-        logger.warning("[fonnte] store_config 'main' missing entirely — using defaults")
-        return DEFAULT_STORE_CONFIG.get("fonnte_token"), DEFAULT_STORE_CONFIG.get("seller_notify_phone"), True
-
-    token = (sc.get("fonnte_token") or "").strip()
-    phone_raw = (sc.get("seller_notify_phone") or "").strip()
-    phone = normalize_phone(phone_raw) if phone_raw else ""
-    enabled = sc.get("wa_notif_enabled", True)
-
-    # ─── AUTO-HEAL: persist defaults back if anything missing ───
-    heal_updates = {}
-    if not token:
-        token = DEFAULT_STORE_CONFIG.get("fonnte_token", "")
-        if token:
-            heal_updates["fonnte_token"] = token
-            logger.warning(f"[fonnte] token missing in DB, auto-healing with default")
-    if not phone or len(phone) < 10:
-        default_phone = DEFAULT_STORE_CONFIG.get("seller_notify_phone", "")
-        phone = normalize_phone(default_phone) if default_phone else ""
-        if phone:
-            heal_updates["seller_notify_phone"] = phone
-            logger.warning(f"[fonnte] seller_notify_phone invalid ({phone_raw!r}), auto-healing with default {phone}")
-    if "wa_notif_enabled" not in sc:
-        heal_updates["wa_notif_enabled"] = True
-    if heal_updates:
-        try:
-            await db.store_config.update_one({"_id": "main"}, {"$set": heal_updates}, upsert=True)
-            logger.info(f"[fonnte] auto-healed store_config: {list(heal_updates.keys())}")
-        except Exception as e:
-            logger.warning(f"[fonnte] auto-heal write failed: {e}")
-
-    return token, phone, enabled
-
-async def fonnte_send(target: str, message: str) -> Dict[str, Any]:
-    """Send WhatsApp message via Fonnte API. Returns {ok, status, response, reason}.
-    Adds detailed logging so Render logs show exactly why a send fails.
-    """
-    token, _, enabled = await get_fonnte_config()
-    if not enabled:
-        logger.info(f"[fonnte] skipped: WA notif disabled in store_config")
-        return {"ok": False, "skipped": True, "reason": "WA notif disabled in config"}
-    if not token:
-        logger.warning(f"[fonnte] skipped: token still empty even after auto-heal")
-        return {"ok": False, "skipped": True, "reason": "Fonnte token not set"}
-    target_norm = normalize_phone(target)
-    if not target_norm or len(target_norm) < 10:
-        logger.warning(f"[fonnte] skipped: invalid target phone {target!r} → normalized {target_norm!r}")
-        return {"ok": False, "skipped": True, "reason": f"Invalid target phone: {target!r}"}
-    try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            r = await client.post(
-                FONNTE_URL,
-                headers={"Authorization": token},
-                data={"target": target_norm, "message": message, "countryCode": "62"},
-            )
-            try:
-                data = r.json() if r.headers.get("content-type", "").startswith("application/json") else {"raw": r.text}
-            except Exception:
-                data = {"raw": r.text[:500]}
-            status_val = data.get("status", True)
-            ok = r.status_code == 200 and status_val not in (False, "false", "False", 0, "0")
-            if not ok:
-                # Surface the actual Fonnte reason for debugging
-                fonnte_reason = data.get("reason") or data.get("message") or f"HTTP {r.status_code}"
-                logger.warning(f"[fonnte] send to {target_norm} returned not-ok: status={r.status_code}, reason={fonnte_reason}, full={str(data)[:300]}")
-                return {"ok": False, "status": r.status_code, "response": data, "reason": str(fonnte_reason)}
-            logger.info(f"[fonnte] sent to {target_norm}: id={data.get('id')}, quota={data.get('quota')}")
-            return {"ok": True, "status": r.status_code, "response": data}
-    except httpx.TimeoutException:
-        logger.warning(f"[fonnte] TIMEOUT after 15s sending to {target_norm}")
-        return {"ok": False, "error": "Timeout 15s — Fonnte API tidak respond", "reason": "Fonnte timeout"}
-    except Exception as e:
-        logger.warning(f"[fonnte] send failed to {target_norm}: {type(e).__name__}: {e}")
-        return {"ok": False, "error": str(e), "reason": f"{type(e).__name__}: {str(e)[:100]}"}
+# ─── (WhatsApp helper dihapus — notifikasi sekarang via Web Push) ───
 
 def fmt_rp_id(n) -> str:
     return f"Rp {int(n):,}".replace(",", ".")
@@ -334,24 +245,41 @@ def build_buyer_status_message(order: dict, app_url: str = "") -> str:
         f"Terima kasih sudah belanja di Ciltarasa! 🧡"
     )
 
-def build_otp_message(code: str) -> str:
-    return (
-        f"🔐 *Ciltarasa - Kode Verifikasi*\n\n"
-        f"Kode OTP kamu adalah: *{code}*\n\n"
-        f"Jangan kasih kode ini ke siapa pun ya, termasuk admin Ciltarasa.\n"
-        f"Kode berlaku 5 menit.\n\n"
-        f"Terima kasih sudah belanja di Ciltarasa! 🧡"
-    )
-
 # ─── Pydantic Models ─────────────────────────────────────────────────────────
-class OTPRequest(BaseModel):
+class CheckPhoneReq(BaseModel):
     phone: str
     name: Optional[str] = None
 
-class OTPVerify(BaseModel):
+class SetPasscodeReq(BaseModel):
     phone: str
-    otp: str
+    passcode: str
     name: Optional[str] = None
+
+class LoginReq(BaseModel):
+    phone: str
+    passcode: str
+
+class ChangePasscodeReq(BaseModel):
+    token: str
+    old_passcode: str
+    new_passcode: str
+
+class ProfileUpdateReq(BaseModel):
+    token: str
+    name: Optional[str] = None
+    address: Optional[str] = None
+    delivery_method: Optional[str] = None
+    delivery_option_id: Optional[str] = None
+
+class ResetPasscodeReq(BaseModel):
+    phone: str
+
+class BuyerPushSub(BaseModel):
+    token: str
+    endpoint: str
+    keys: Dict[str, str]
+    user_agent: Optional[str] = None
+    label: Optional[str] = None
 
 class OrderItemModel(BaseModel):
     product_id: str
@@ -462,7 +390,6 @@ class StoreConfigUpdate(BaseModel):
     fun_facts: Optional[List[Dict[str, Any]]] = None
     fun_facts_meta: Optional[Dict[str, Any]] = None
     how_to_order_steps: Optional[List[Dict[str, Any]]] = None
-    fonnte_token: Optional[str] = None
     seller_notify_phone: Optional[str] = None
     wa_notif_enabled: Optional[bool] = None
     low_stock_threshold: Optional[int] = None
@@ -630,10 +557,9 @@ DEFAULT_STORE_CONFIG = {
         "guest_label": "Lanjut sebagai Tamu",
         "guest_subtitle": "Belanja tanpa daftar (no promo)",
         "tos_text": "Dengan melanjutkan, kamu setuju dengan syarat & ketentuan Ciltarasa",
-        "otp_hint": "📱 Cek WhatsApp kamu untuk lihat kode OTP yang dikirim",
-        "phone_hint": "💡 Pastikan nomor WhatsApp aktif untuk terima kode OTP",
+        "otp_hint": "🔐 Masukkan passcode 6 angka kamu",
+        "phone_hint": "💡 Pertama kali? Kamu akan diminta buat passcode 6 angka",
     },
-    "fonnte_token": FONNTE_TOKEN_DEFAULT,
     "seller_notify_phone": "6285190884129",
     "wa_notif_enabled": True,
     "low_stock_threshold": 10,
@@ -846,44 +772,18 @@ async def seed_database():
             logger.info(f"Backfilled store_config: {list(backfill.keys())}")
 
 
-        # ─── MIGRATION: Fix seller_notify_phone, fonnte_token, and wa_notif_enabled ───
+        # ─── MIGRATION: Fix stale hardcoded WhatsApp contact number ───
         # Multiple scenarios handled:
         # 1. Wrong hardcoded phone from old code (WRONG_PHONE)
         # 2. Empty/None/missing seller_notify_phone — auto-set from default
-        # 3. Empty/None/missing fonnte_token — auto-set from default
         # 4. wa_notif_enabled missing — set to True
         WRONG_PHONE = "6285249682337"
         CORRECT_PHONE = DEFAULT_STORE_CONFIG.get("seller_notify_phone", "6285190884129")
-        DEFAULT_TOKEN = DEFAULT_STORE_CONFIG.get("fonnte_token", "")
         phone_fix = {}
 
-        # Fix wrong WhatsApp number in display config
+        # Fix wrong WhatsApp number in display config (dipakai tombol kontak wa.me)
         if existing.get("whatsapp") == WRONG_PHONE:
             phone_fix["whatsapp"] = CORRECT_PHONE
-
-        # Fix seller_notify_phone — handle wrong, empty, None, or missing
-        current_seller_phone = (existing.get("seller_notify_phone") or "").strip()
-        if current_seller_phone == WRONG_PHONE or not current_seller_phone or len(current_seller_phone) < 10:
-            phone_fix["seller_notify_phone"] = CORRECT_PHONE
-            logger.info(f"Migration: seller_notify_phone {current_seller_phone!r} → {CORRECT_PHONE}")
-
-        # Fix fonnte_token — handle empty/missing (token revocation needs manual update via UI)
-        current_token = (existing.get("fonnte_token") or "").strip()
-        if not current_token and DEFAULT_TOKEN:
-            phone_fix["fonnte_token"] = DEFAULT_TOKEN
-            logger.info(f"Migration: fonnte_token was empty, restored from default")
-
-        # Ensure wa_notif_enabled exists
-        if "wa_notif_enabled" not in existing:
-            phone_fix["wa_notif_enabled"] = True
-            logger.info("Migration: wa_notif_enabled missing → set True")
-
-        # Ensure auto_chat_config.menunggu.seller_enabled is True (most common cause of silent failure)
-        ac = existing.get("auto_chat_config") or {}
-        menunggu_cfg = ac.get("menunggu") or {}
-        if menunggu_cfg and menunggu_cfg.get("seller_enabled") is False:
-            phone_fix["auto_chat_config.menunggu.seller_enabled"] = True
-            logger.info("Migration: auto_chat_config.menunggu.seller_enabled was False → forced True")
 
         if phone_fix:
             await db.store_config.update_one({"_id": "main"}, {"$set": phone_fix})
@@ -1067,67 +967,126 @@ async def seed_database():
             })
         logger.info("Seeded sample orders")
 
-# ─── Auth Endpoints (Simulated OTP) ──────────────────────────────────────────
-@api_router.post("/auth/request-otp")
-async def request_otp(req: OTPRequest):
+# ─── Auth Endpoints (Passcode) ─────────────────────────────────────────────
+from passlib.context import CryptContext
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+
+def _hash_pc(p: str) -> str:
+    return pwd_context.hash(p)
+
+
+def _verify_pc(p: str, h: str) -> bool:
+    try:
+        return pwd_context.verify(p or "", h or "")
+    except Exception:
+        return False
+
+
+def _valid_pc(p) -> bool:
+    return isinstance(p, str) and len(p) == 6 and p.isdigit()
+
+
+def _safe_user(u: dict) -> dict:
+    if not u:
+        return u
+    return {k: v for k, v in u.items()
+            if k not in ("passcode_hash", "otp_code", "otp_expires_at", "_id")}
+
+
+@api_router.post("/auth/check-phone")
+async def check_phone(req: CheckPhoneReq):
+    """Cek apakah nomor sudah terdaftar & sudah punya passcode.
+    Frontend pakai ini untuk arahkan ke: login vs buat passcode."""
     phone = normalize_phone(req.phone)
     if len(phone) < 10:
         raise HTTPException(400, "Nomor HP tidak valid")
-    # Generate 6-digit OTP. If WA notif is enabled and token configured, send real OTP.
-    token, _, enabled = await get_fonnte_config()
-    use_real = bool(token and enabled)
-    otp_code = f"{secrets.randbelow(900000) + 100000}" if use_real else "123456"
+    user = await db.users.find_one({"phone": phone}, {"_id": 0})
+    return {
+        "exists": bool(user),
+        "has_passcode": bool(user and user.get("passcode_hash")),
+        "name": (user or {}).get("name", "") or (req.name or ""),
+        "phone": phone,
+    }
+
+
+@api_router.post("/auth/set-passcode")
+async def set_passcode(req: SetPasscodeReq):
+    """First-time set: user baru, ATAU user lama yang belum punya passcode (migrasi),
+    ATAU setelah di-reset seller. Kalau sudah punya passcode -> tolak (login/reset)."""
+    phone = normalize_phone(req.phone)
+    if len(phone) < 10:
+        raise HTTPException(400, "Nomor HP tidak valid")
+    if not _valid_pc(req.passcode):
+        raise HTTPException(400, "Passcode harus 6 angka.")
     ts = now_iso()
-    expires = (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()
+    user = await db.users.find_one({"phone": phone}, {"_id": 0})
+    if user and user.get("passcode_hash"):
+        raise HTTPException(409, "Akun ini sudah punya passcode. Silakan login, atau minta seller reset kalau lupa.")
+    set_fields = {"passcode_hash": _hash_pc(req.passcode), "verified": True, "updated_at": ts}
+    if req.name:
+        set_fields["name"] = req.name
     await db.users.update_one(
         {"phone": phone},
-        {"$set": {"otp_code": otp_code, "otp_expires_at": expires, "updated_at": ts},
-         "$setOnInsert": {"id": str(uuid.uuid4()), "phone": phone, "name": req.name or "", "verified": False, "created_at": ts}},
-        upsert=True
+        {"$set": set_fields,
+         "$setOnInsert": {"id": str(uuid.uuid4()), "phone": phone,
+                          "name": req.name or (user or {}).get("name", "") or "",
+                          "created_at": ts}},
+        upsert=True,
     )
-    # Try send via Fonnte
-    wa_result = {"ok": False}
-    if use_real:
-        wa_result = await fonnte_send(phone, build_otp_message(otp_code))
-    response = {
-        "success": True,
-        "phone": phone,
-        "wa_sent": wa_result.get("ok", False),
-        "message": "Kode OTP terkirim via WhatsApp. Cek WA kamu ya!" if wa_result.get("ok") else "Kode OTP berhasil dibuat.",
-    }
-    if not use_real:
-        response["demo_otp"] = otp_code
-        response["message"] = "Mode simulasi aktif. Pakai kode 123456."
-    return response
+    fresh = await db.users.find_one({"phone": phone}, {"_id": 0})
+    return {"success": True, "user": _safe_user(fresh), "token": fresh["id"]}
 
-@api_router.post("/auth/verify-otp")
-async def verify_otp(req: OTPVerify):
+
+@api_router.post("/auth/login")
+async def login(req: LoginReq):
     phone = normalize_phone(req.phone)
     user = await db.users.find_one({"phone": phone}, {"_id": 0})
     if not user:
-        raise HTTPException(404, "Nomor HP belum terdaftar. Silakan request OTP dulu.")
-    # Check expiry
-    exp = user.get("otp_expires_at")
-    if exp:
-        try:
-            exp_dt = datetime.fromisoformat(exp.replace("Z", "+00:00"))
-            if datetime.now(timezone.utc) > exp_dt:
-                raise HTTPException(400, "Kode OTP sudah kadaluarsa. Request ulang ya.")
-        except ValueError:
-            pass
-    expected = user.get("otp_code") or "123456"
-    if req.otp != expected:
-        raise HTTPException(400, "Kode OTP salah.")
-    upd = {"verified": True, "updated_at": now_iso()}
-    if req.name:
+        raise HTTPException(404, "Nomor HP belum terdaftar. Daftar dulu ya.")
+    if not user.get("passcode_hash"):
+        raise HTTPException(409, "Akun ini belum punya passcode. Silakan buat passcode dulu.")
+    if not _verify_pc(req.passcode, user.get("passcode_hash")):
+        raise HTTPException(400, "Passcode salah.")
+    await db.users.update_one({"phone": phone}, {"$set": {"verified": True, "updated_at": now_iso()}})
+    return {"success": True, "user": _safe_user(user), "token": user["id"]}
+
+
+@api_router.post("/auth/change-passcode")
+async def change_passcode(req: ChangePasscodeReq):
+    user = await db.users.find_one({"id": req.token}, {"_id": 0})
+    if not user:
+        raise HTTPException(404, "Sesi tidak valid. Login ulang ya.")
+    if user.get("passcode_hash") and not _verify_pc(req.old_passcode, user.get("passcode_hash")):
+        raise HTTPException(400, "Passcode lama salah.")
+    if not _valid_pc(req.new_passcode):
+        raise HTTPException(400, "Passcode baru harus 6 angka.")
+    await db.users.update_one({"id": req.token},
+                              {"$set": {"passcode_hash": _hash_pc(req.new_passcode), "updated_at": now_iso()}})
+    return {"success": True, "message": "Passcode berhasil diganti."}
+
+
+@api_router.post("/auth/profile")
+async def update_profile(req: ProfileUpdateReq):
+    user = await db.users.find_one({"id": req.token}, {"_id": 0})
+    if not user:
+        raise HTTPException(404, "Sesi tidak valid. Login ulang ya.")
+    upd = {"updated_at": now_iso()}
+    if req.name is not None:
         upd["name"] = req.name
-    await db.users.update_one({"phone": phone}, {"$set": upd, "$unset": {"otp_code": "", "otp_expires_at": ""}})
-    user = await db.users.find_one({"phone": phone}, {"_id": 0, "otp_code": 0, "otp_expires_at": 0})
-    return {"success": True, "user": user, "token": user["id"]}
+    if req.address is not None:
+        upd["address"] = req.address
+    if req.delivery_method is not None:
+        upd["delivery_method"] = req.delivery_method
+    if req.delivery_option_id is not None:
+        upd["delivery_option_id"] = req.delivery_option_id
+    await db.users.update_one({"id": req.token}, {"$set": upd})
+    fresh = await db.users.find_one({"id": req.token}, {"_id": 0})
+    return {"success": True, "user": _safe_user(fresh)}
 
 @api_router.get("/auth/me")
 async def auth_me(token: str):
-    user = await db.users.find_one({"id": token}, {"_id": 0, "otp_code": 0, "otp_expires_at": 0})
+    user = await db.users.find_one({"id": token}, {"_id": 0, "otp_code": 0, "otp_expires_at": 0, "passcode_hash": 0})
     if not user:
         raise HTTPException(404, "User tidak ditemukan")
     return user
@@ -1279,48 +1238,7 @@ async def create_order(order: OrderCreate):
                 {"$inc": {"stock": -item.quantity, "sold_count": item.quantity}}
             )
     await manager.broadcast({"type": "order_created", "data": doc})
-    # ─── FASE 3: Auto-Chat with configurable templates per stage ───
-    cfg = await db.store_config.find_one({"_id": "main"}) or {}
-    auto_chat = (cfg.get("auto_chat_config") or {}).get("menunggu", {})
-    store_name = cfg.get("name") or "Ciltarasa"
-    bank_accounts = cfg.get("bank_accounts") or []
-    token, seller_phone, enabled = await get_fonnte_config()
-    wa_seller_sent = False
-    wa_seller_reason = None
-    wa_buyer_sent = False
-    wa_buyer_reason = None
-    if enabled:
-        # Seller notif
-        if auto_chat.get("seller_enabled", True) and seller_phone:
-            tpl = auto_chat.get("seller_template") or ""
-            msg = render_chat_template(tpl, doc, store_name, FRONTEND_URL, bank_accounts) if tpl else build_seller_order_message(doc)
-            res = await fonnte_send(seller_phone, msg)
-            wa_seller_sent = res.get("ok", False)
-            wa_seller_reason = res.get("reason") or res.get("error") or (res.get("response") or {}).get("reason")
-            if not wa_seller_sent:
-                logger.warning(f"WA seller notif failed for order {doc.get('order_number')}: {res}")
-        elif not auto_chat.get("seller_enabled", True):
-            wa_seller_reason = "Auto-chat seller disabled for 'menunggu'"
-        elif not seller_phone:
-            wa_seller_reason = "seller_notify_phone empty in store_config"
-        # Buyer notif on order created (opsional)
-        if auto_chat.get("buyer_enabled", False) and doc.get("customer_phone"):
-            tpl_b = auto_chat.get("buyer_template") or ""
-            if tpl_b:
-                msg_b = render_chat_template(tpl_b, doc, store_name, FRONTEND_URL, bank_accounts)
-                res_b = await fonnte_send(doc["customer_phone"], msg_b)
-                wa_buyer_sent = res_b.get("ok", False)
-                wa_buyer_reason = res_b.get("reason") or res_b.get("error") or (res_b.get("response") or {}).get("reason")
-    else:
-        wa_seller_reason = "WA notif disabled in config"
-        wa_buyer_reason = "WA notif disabled in config"
-    doc["_wa_seller_sent"] = wa_seller_sent
-    if wa_seller_reason:
-        doc["_wa_seller_reason"] = wa_seller_reason
-    doc["_wa_buyer_sent"] = wa_buyer_sent
-    if wa_buyer_reason:
-        doc["_wa_buyer_reason"] = wa_buyer_reason
-    # ─── FASE 5: Web Push notification ke semua seller device subscribers ───
+    # ─── Web Push notification ke semua seller device subscribers ───
     try:
         items_short = ", ".join([f"{it.get('product_name','')} x{it.get('quantity',0)}" for it in (doc.get('items') or [])[:3]])
         if len(doc.get('items') or []) > 3:
@@ -1346,7 +1264,7 @@ class PaymentProofSubmit(BaseModel):
 
 @api_router.post("/orders/{oid}/payment-proof")
 async def submit_payment_proof(oid: str, body: PaymentProofSubmit):
-    """Buyer submit bukti transfer setelah pesanan siap kirim. Forward foto ke seller via Fonnte."""
+    """Buyer submit bukti transfer setelah pesanan siap kirim. Seller dinotif via Web Push."""
     order = await db.orders.find_one({"id": oid}, {"_id": 0})
     if not order:
         raise HTTPException(404, "Order not found")
@@ -1364,39 +1282,6 @@ async def submit_payment_proof(oid: str, body: PaymentProofSubmit):
     )
     doc = await db.orders.find_one({"id": oid}, {"_id": 0})
     await manager.broadcast({"type": "payment_proof_submitted", "data": doc})
-    # Forward bukti ke seller via Fonnte (sebagai message + image URL)
-    token, seller_phone, enabled = await get_fonnte_config()
-    proof_full_url = body.proof_url if body.proof_url.startswith("http") else f"{BACKEND_URL}{body.proof_url}"
-    wa_sent = False
-    wa_reason = None
-    if enabled and seller_phone:
-        msg = (
-            f"💰 *BUKTI PEMBAYARAN BARU*\n\n"
-            f"Order: #{doc.get('order_number')}\n"
-            f"Pelanggan: {doc.get('customer_name')}\n"
-            f"Total: {fmt_rp_id(doc.get('total', 0))}\n\n"
-            f"Bukti transfer:\n{proof_full_url}\n\n"
-            f"Mohon dicek & konfirmasi 🙏"
-        )
-        try:
-            # Fonnte supports `file` param for media attachment
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                r = await client.post(
-                    FONNTE_URL,
-                    headers={"Authorization": token},
-                    data={"target": seller_phone, "message": msg, "url": proof_full_url, "filename": "bukti-bayar.jpg"},
-                )
-                res = r.json() if r.headers.get("content-type", "").startswith("application/json") else {"raw": r.text}
-                wa_sent = bool(res.get("status"))
-                wa_reason = res.get("reason") or res.get("message")
-        except Exception as e:
-            wa_reason = f"Send error: {str(e)[:120]}"
-            logger.warning(f"Payment proof WA failed for {oid}: {e}")
-    else:
-        wa_reason = "WA disabled or seller_notify_phone empty"
-    doc["_wa_seller_sent"] = wa_sent
-    if wa_reason:
-        doc["_wa_seller_reason"] = wa_reason
 
     # ─── Web Push: notify seller that payment proof was submitted ───
     try:
@@ -1452,43 +1337,26 @@ async def update_order_status(oid: str, update: OrderStatusUpdate, _auth: bool =
     await db.orders.update_one({"id": oid}, {"$set": update_fields})
     doc = await db.orders.find_one({"id": oid}, {"_id": 0})
     await manager.broadcast({"type": "order_updated", "data": doc})
-    # ─── FASE 3: Auto-Chat per stage (seller + buyer configurable) ───
-    cfg = await db.store_config.find_one({"_id": "main"}) or {}
-    auto_chat = (cfg.get("auto_chat_config") or {}).get(new_status, {})
-    store_name = cfg.get("name") or "Ciltarasa"
-    bank_accounts = cfg.get("bank_accounts") or []
-    token, seller_phone, enabled = await get_fonnte_config()
-    wa_buyer_sent = False
-    wa_buyer_reason = None
-    wa_seller_sent = False
-    wa_seller_reason = None
-    if enabled:
-        # Buyer notif
-        if auto_chat.get("buyer_enabled", True) and doc.get("customer_phone"):
-            tpl = auto_chat.get("buyer_template") or ""
-            msg = render_chat_template(tpl, doc, store_name, FRONTEND_URL, bank_accounts) if tpl else build_buyer_status_message(doc, FRONTEND_URL)
-            res = await fonnte_send(doc["customer_phone"], msg)
-            wa_buyer_sent = res.get("ok", False)
-            wa_buyer_reason = res.get("reason") or res.get("error") or (res.get("response") or {}).get("reason")
-        elif not auto_chat.get("buyer_enabled", True):
-            wa_buyer_reason = f"Auto-chat buyer disabled for '{new_status}'"
-        # Seller notif
-        if auto_chat.get("seller_enabled", False) and seller_phone:
-            tpl_s = auto_chat.get("seller_template") or ""
-            if tpl_s:
-                msg_s = render_chat_template(tpl_s, doc, store_name, FRONTEND_URL, bank_accounts)
-                res_s = await fonnte_send(seller_phone, msg_s)
-                wa_seller_sent = res_s.get("ok", False)
-                wa_seller_reason = res_s.get("reason") or res_s.get("error") or (res_s.get("response") or {}).get("reason")
-    else:
-        wa_buyer_reason = "WA notif disabled in config"
-        wa_seller_reason = "WA notif disabled in config"
-    doc["_wa_buyer_sent"] = wa_buyer_sent
-    if wa_buyer_reason:
-        doc["_wa_buyer_reason"] = wa_buyer_reason
-    doc["_wa_seller_sent"] = wa_seller_sent
-    if wa_seller_reason:
-        doc["_wa_seller_reason"] = wa_seller_reason
+    # ─── Web Push ke buyer saat status pesanan berubah ───
+    push_buyer_sent = 0
+    try:
+        if doc.get("customer_phone") and prev_status != new_status:
+            label = STATUS_LABEL.get(new_status, new_status)
+            emoji = STATUS_EMOJI.get(new_status, "📦")
+            desc = STATUS_DESC.get(new_status, "")
+            pr = await broadcast_push({
+                "title": f"{emoji} Pesanan #{doc.get('order_number','')} — {label}",
+                "body": (f"Halo {doc.get('customer_name','Bunda')}! {desc}").strip(),
+                "tag": f"buyer-order-{doc.get('id')}",
+                "url": "/#/buyer",
+                "order_number": doc.get("order_number"),
+                "alert_type": "status",
+                "requireInteraction": False,
+            }, audience="buyer", phone=doc.get("customer_phone"))
+            push_buyer_sent = pr.get("sent", 0)
+    except Exception as e:
+        logger.warning(f"Buyer push failed for order {oid}: {e}")
+    doc["_push_buyer_sent"] = push_buyer_sent
     return doc
 
 @api_router.put("/orders/{oid}/received")
@@ -1507,23 +1375,20 @@ async def update_order_received(oid: str, update: OrderReceivedUpdate):
     doc = await db.orders.find_one({"id": oid}, {"_id": 0})
     await manager.broadcast({"type": "order_updated", "data": doc})
 
-    # ─── Notify seller via WA when buyer reports NOT received ───
+    # ─── Web Push ke seller saat buyer lapor pesanan BELUM diterima ───
     if not update.received:
-        token, seller_phone, enabled = await get_fonnte_config()
-        if enabled and seller_phone:
-            msg = (
-                f"⚠️ *PESANAN BELUM DITERIMA*\n\n"
-                f"Order: #{doc.get('order_number')}\n"
-                f"Pelanggan: {doc.get('customer_name')}\n"
-                f"No. HP: +{doc.get('customer_phone')}\n"
-                f"Total: {fmt_rp_id(doc.get('total', 0))}\n\n"
-                f"Buyer melaporkan pesanan belum sampai 😟\n"
-                f"Mohon segera ditindaklanjuti 🙏"
-            )
-            try:
-                await fonnte_send(seller_phone, msg)
-            except Exception as e:
-                logger.warning(f"Failed to notify seller about not-received order {oid}: {e}")
+        try:
+            await broadcast_push({
+                "title": f"⚠️ Pesanan #{doc.get('order_number','')} belum diterima",
+                "body": f"{doc.get('customer_name','-')} lapor pesanan belum sampai. Mohon dicek 🙏",
+                "tag": f"notrecv-{doc.get('id')}",
+                "url": "/#/seller",
+                "order_number": doc.get("order_number"),
+                "alert_type": "order",
+                "requireInteraction": True,
+            }, audience="seller")
+        except Exception as e:
+            logger.warning(f"Not-received push failed for {oid}: {e}")
 
     return doc
 
@@ -1625,153 +1490,6 @@ async def update_store_config(update: StoreConfigUpdate, _auth: bool = Depends(r
     return s
 
 # ─── Admin Utilities ────────────────────────────────────────────────────────
-class TestWAReq(BaseModel):
-    target: str
-    message: Optional[str] = None
-
-@api_router.post("/admin/test-wa")
-async def test_wa(req: TestWAReq, _auth: bool = Depends(require_seller)):
-    msg = req.message or "🔔 Tes notifikasi dari dashboard Ciltarasa. Jika kamu menerima ini, integrasi Fonnte sukses! ✅"
-    res = await fonnte_send(req.target, msg)
-    return res
-
-@api_router.get("/admin/wa-diagnostic")
-async def wa_diagnostic(_auth: bool = Depends(require_seller)):
-    """One-shot diagnostic showing EVERYTHING that affects WhatsApp seller notifications.
-    Use this when notif tidak masuk — kasih tau exactly apa yang missing/salah.
-    """
-    sc = await db.store_config.find_one({"_id": "main"}, {"_id": 0}) or {}
-    token, seller_phone, enabled = await get_fonnte_config()
-
-    # Inspect auto_chat for menunggu (the new-order trigger)
-    ac = sc.get("auto_chat_config") or {}
-    menunggu = ac.get("menunggu") or {}
-
-    checks = {
-        "store_config_exists": bool(sc),
-        "fonnte_token_set": bool(token),
-        "fonnte_token_preview": (token[:6] + "..." + token[-4:]) if token and len(token) > 10 else None,
-        "seller_notify_phone_set": bool(seller_phone),
-        "seller_notify_phone": seller_phone,
-        "seller_notify_phone_raw_in_db": sc.get("seller_notify_phone"),
-        "wa_notif_enabled": enabled,
-        "auto_chat_menunggu_seller_enabled": menunggu.get("seller_enabled", True),
-        "auto_chat_menunggu_seller_template_set": bool(menunggu.get("seller_template")),
-        "default_seller_phone_const": DEFAULT_STORE_CONFIG.get("seller_notify_phone"),
-        "default_fonnte_token_set_in_code": bool(DEFAULT_STORE_CONFIG.get("fonnte_token")),
-    }
-
-    # Live device check
-    device_status = None
-    if token:
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                r = await client.post(
-                    "https://api.fonnte.com/device",
-                    headers={"Authorization": token},
-                )
-                try:
-                    device_status = r.json() if r.headers.get("content-type", "").startswith("application/json") else {"raw": r.text}
-                except Exception:
-                    device_status = {"raw": r.text[:300]}
-                device_status["_http_status"] = r.status_code
-        except Exception as e:
-            device_status = {"error": str(e)}
-
-    # Build diagnosis verdict
-    issues = []
-    if not checks["fonnte_token_set"]:
-        issues.append("❌ Fonnte token KOSONG. Buka Admin → Auto-Chat & isi token. Default seharusnya restore otomatis tapi gagal.")
-    if not checks["seller_notify_phone_set"]:
-        issues.append("❌ seller_notify_phone KOSONG. Isi di Admin → Auto-Chat WhatsApp.")
-    if not checks["wa_notif_enabled"]:
-        issues.append("⚠️ wa_notif_enabled OFF. Aktifkan di Admin → Auto-Chat.")
-    if not checks["auto_chat_menunggu_seller_enabled"]:
-        issues.append("⚠️ Auto-chat 'menunggu' untuk seller DIMATIKAN. Aktifkan di Admin → Auto-Chat WhatsApp.")
-    if device_status and isinstance(device_status, dict):
-        ds = str(device_status.get("status", "")).lower()
-        if ds in ("disconnect", "disconnected", ""):
-            issues.append(f"❌ Fonnte device DISCONNECTED ({ds!r}). Buka https://fonnte.com → Devices → scan QR ulang dari WhatsApp HP seller.")
-        elif device_status.get("quota") == 0 or device_status.get("quota") == "0":
-            issues.append("❌ Quota Fonnte HABIS. Top-up di fonnte.com.")
-
-    verdict = "✅ Konfigurasi OK — kemungkinan notif sampai." if not issues else "⚠️ Ditemukan " + str(len(issues)) + " masalah:"
-
-    return {
-        "verdict": verdict,
-        "issues": issues,
-        "checks": checks,
-        "fonnte_device_live_status": device_status,
-        "tip": "Setelah perbaiki issue, coba bikin order test dari sisi buyer. Cek Render logs untuk lihat '[fonnte] sent to ...' atau warning detail.",
-    }
-
-@api_router.post("/admin/wa-autoheal")
-async def wa_autoheal(_auth: bool = Depends(require_seller)):
-    """Manually trigger auto-heal of seller_notify_phone, fonnte_token, wa_notif_enabled
-    using DEFAULT_STORE_CONFIG values. Use this if migration didn't fire (e.g. fields
-    set to empty string instead of missing).
-    """
-    sc = await db.store_config.find_one({"_id": "main"}, {"_id": 0}) or {}
-    fixes = {}
-
-    current_phone = (sc.get("seller_notify_phone") or "").strip()
-    if not current_phone or len(current_phone) < 10:
-        fixes["seller_notify_phone"] = DEFAULT_STORE_CONFIG.get("seller_notify_phone")
-
-    if not (sc.get("fonnte_token") or "").strip():
-        fixes["fonnte_token"] = DEFAULT_STORE_CONFIG.get("fonnte_token")
-
-    if "wa_notif_enabled" not in sc or sc.get("wa_notif_enabled") is None:
-        fixes["wa_notif_enabled"] = True
-
-    # Force-enable auto_chat menunggu seller
-    ac = sc.get("auto_chat_config") or {}
-    menunggu = ac.get("menunggu") or {}
-    if not menunggu.get("seller_enabled", True):
-        fixes["auto_chat_config.menunggu.seller_enabled"] = True
-
-    if fixes:
-        await db.store_config.update_one({"_id": "main"}, {"$set": fixes}, upsert=True)
-        logger.info(f"[wa-autoheal] applied: {list(fixes.keys())}")
-
-    return {"ok": True, "applied": fixes, "no_changes_needed": not fixes}
-
-@api_router.get("/admin/fonnte-status")
-async def fonnte_device_status(_auth: bool = Depends(require_seller)):
-    """Real-time check Fonnte device status (connected/disconnected). Push aktual, bukan static."""
-    token, seller_phone, enabled = await get_fonnte_config()
-    if not token:
-        return {"ok": False, "connected": False, "reason": "Token Fonnte belum diisi"}
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.post(
-                "https://api.fonnte.com/device",
-                headers={"Authorization": token},
-            )
-            data = r.json() if r.headers.get("content-type", "").startswith("application/json") else {"raw": r.text}
-            # Fonnte returns { device: "...", status: "connect"/"disconnect", quota: N, ... }
-            status_val = (data.get("status") or "").lower() if isinstance(data.get("status"), str) else ""
-            connected = status_val in ("connect", "connected", "active")
-            # Surface error reason to top-level for UI clarity
-            reason = None
-            if not connected:
-                reason = data.get("reason") or data.get("message") or (status_val if status_val else "Device disconnected")
-            return {
-                "ok": True,
-                "connected": connected,
-                "status": status_val or "unknown",
-                "device": data.get("device") or data.get("name") or "-",
-                "quota": data.get("quota"),
-                "messages": data.get("messages"),
-                "enabled": enabled,
-                "seller_phone": seller_phone,
-                "reason": reason,
-                "raw": data,
-            }
-    except Exception as e:
-        logger.warning(f"Fonnte device status check failed: {e}")
-        return {"ok": False, "connected": False, "reason": f"Error: {str(e)}"}
-
 class ResetCustomersReq(BaseModel):
     confirm: str  # must equal "RESET"
     scope: str = "all"  # all | orders | users | both
@@ -1793,6 +1511,38 @@ async def reset_customers(req: ResetCustomersReq, _auth: bool = Depends(require_
         deleted["users"] = r.deleted_count
     await manager.broadcast({"type": "data_reset", "data": deleted})
     return {"success": True, "deleted": deleted}
+
+
+@api_router.get("/admin/customers")
+async def admin_list_customers(_auth: bool = Depends(require_seller)):
+    """Daftar customer untuk dashboard seller (buat tombol reset passcode dll)."""
+    users = await db.users.find({}, {"_id": 0}).sort("created_at", -1).to_list(2000)
+    out = []
+    for u in users:
+        out.append({
+            "id": u.get("id"),
+            "phone": u.get("phone"),
+            "name": u.get("name", ""),
+            "has_passcode": bool(u.get("passcode_hash")),
+            "address": u.get("address", ""),
+            "created_at": u.get("created_at"),
+        })
+    return {"count": len(out), "customers": out}
+
+
+@api_router.post("/admin/reset-passcode")
+async def admin_reset_passcode(req: ResetPasscodeReq, _auth: bool = Depends(require_seller)):
+    """Seller reset passcode customer yang lupa. Passcode dihapus -> customer bikin
+    passcode baru saat login berikutnya (via /auth/set-passcode)."""
+    phone = normalize_phone(req.phone)
+    user = await db.users.find_one({"phone": phone}, {"_id": 0})
+    if not user:
+        raise HTTPException(404, "Customer tidak ditemukan")
+    await db.users.update_one({"phone": phone},
+                              {"$unset": {"passcode_hash": ""},
+                               "$set": {"updated_at": now_iso()}})
+    return {"ok": True, "name": user.get("name", ""), "phone": phone,
+            "message": "Passcode di-reset. Customer bisa buat passcode baru saat login berikutnya."}
 
 # ─── Seller Auth: Verify PIN + Change PIN ───────────────────────────────────
 class PinVerifyReq(BaseModel):
@@ -2297,6 +2047,7 @@ async def push_subscribe(sub: PushSubscription, x_seller_pin: Optional[str] = He
         "keys": sub.keys,
         "user_agent": sub.user_agent or "",
         "label": sub.label or "Device",
+        "role": "seller",
         "created_at": now_iso(),
         "last_seen": now_iso(),
     }
@@ -2308,6 +2059,37 @@ async def push_subscribe(sub: PushSubscription, x_seller_pin: Optional[str] = He
     )
     saved = await db.push_subscriptions.find_one({"endpoint": sub.endpoint}, {"_id": 0})
     return {"ok": True, "subscription": saved}
+
+
+@api_router.post("/push/buyer/subscribe")
+async def buyer_push_subscribe(sub: BuyerPushSub):
+    """Buyer subscribe ke push notif. Auth pakai token (= user id), bukan PIN seller."""
+    if not WEBPUSH_AVAILABLE:
+        raise HTTPException(501, "Web Push tidak tersedia di server")
+    user = await db.users.find_one({"id": sub.token}, {"_id": 0})
+    if not user:
+        raise HTTPException(401, "Sesi tidak valid. Login ulang ya.")
+    doc = {
+        "id": str(uuid.uuid4()),
+        "endpoint": sub.endpoint,
+        "keys": sub.keys,
+        "user_agent": sub.user_agent or "",
+        "label": sub.label or "Buyer Device",
+        "role": "buyer",
+        "phone": user["phone"],
+        "created_at": now_iso(),
+        "last_seen": now_iso(),
+    }
+    await db.push_subscriptions.update_one({"endpoint": sub.endpoint}, {"$set": doc}, upsert=True)
+    return {"ok": True}
+
+
+@api_router.post("/push/buyer/unsubscribe")
+async def buyer_push_unsubscribe(payload: Dict[str, str]):
+    endpoint = payload.get("endpoint")
+    if endpoint:
+        await db.push_subscriptions.delete_one({"endpoint": endpoint})
+    return {"ok": True}
 
 
 @api_router.post("/push/unsubscribe")
@@ -2363,14 +2145,22 @@ def _vapid_send_key(v: dict):
         return None
 
 
-async def broadcast_push(payload: dict):
-    """Send push ke SEMUA active subscriptions. Auto-clean stale 410/404 subs."""
+async def broadcast_push(payload: dict, audience: str = "seller", phone: str = None):
+    """Send push ke subscriptions sesuai audience. Auto-clean stale 410/404 subs.
+    audience='seller' -> semua device seller (sub lama tanpa field role dianggap seller).
+    audience='buyer'  -> hanya device buyer dengan phone yang cocok."""
     if not WEBPUSH_AVAILABLE:
         return {"sent": 0, "failed": 0, "reason": "Web Push unavailable"}
     v = await _get_vapid()
     if not v:
         return {"sent": 0, "failed": 0, "reason": "VAPID keys not generated"}
-    subs = await db.push_subscriptions.find({}, {"_id": 0}).to_list(500)
+    if audience == "buyer":
+        query = {"role": "buyer"}
+        if phone:
+            query["phone"] = phone
+    else:
+        query = {"role": {"$ne": "buyer"}}
+    subs = await db.push_subscriptions.find(query, {"_id": 0}).to_list(500)
     sent = 0
     failed = 0
     stale = []
