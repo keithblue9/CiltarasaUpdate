@@ -360,6 +360,7 @@ class FinancialEntryCreate(BaseModel):
     amount: float
     category: str
     date: str
+    note: Optional[str] = None
 
 class ReviewCreate(BaseModel):
     order_id: str
@@ -397,6 +398,7 @@ class StoreConfigUpdate(BaseModel):
     low_stock_threshold: Optional[int] = None
     restock_safety_days: Optional[int] = None
     checkout_mode: Optional[str] = None
+    kas_awal: Optional[float] = None
     qris_image_url: Optional[str] = None
     payment_texts: Optional[Dict[str, str]] = None
     auto_chat_config: Optional[Dict[str, Any]] = None
@@ -567,6 +569,7 @@ DEFAULT_STORE_CONFIG = {
     "wa_notif_enabled": True,
     "low_stock_threshold": 10,
     "checkout_mode": "single",  # "single" (satu halaman) | "wizard" (step-by-step)
+    "kas_awal": 0,  # Kas awal / modal awal untuk laporan keuangan (Kas Akhir = Kas Awal + Laba Bersih)
     "pwa_install": {
         "buyer_enabled": True,
         "buyer_delay_seconds": 30,
@@ -2827,11 +2830,23 @@ async def get_financial_report():
         return pmap_id.get(item.get("product_id")) or pmap_name.get(item.get("product_name"))
 
     total_cogs = 0
+    hpp_breakdown = {}  # key -> {name, qty, cost_unit, subtotal, missing_cost}
     for order in completed:
         for item in order.get("items", []):
             p = lookup_product(item)
-            if p:
-                total_cogs += float(p.get("cost_price") or 0) * float(item.get("quantity") or 0)
+            cost = float(p.get("cost_price") or 0) if p else 0.0
+            qty = float(item.get("quantity") or 0)
+            total_cogs += cost * qty
+            key = item.get("product_id") or item.get("product_name") or "?"
+            name = (p.get("name") if p else None) or item.get("product_name") or "Produk"
+            if key not in hpp_breakdown:
+                hpp_breakdown[key] = {"name": name, "qty": 0.0, "cost_unit": cost, "subtotal": 0.0, "missing_cost": cost == 0}
+            hpp_breakdown[key]["qty"] += qty
+            hpp_breakdown[key]["cost_unit"] = cost
+            hpp_breakdown[key]["subtotal"] += cost * qty
+            if cost == 0:
+                hpp_breakdown[key]["missing_cost"] = True
+    hpp_breakdown_list = sorted(hpp_breakdown.values(), key=lambda x: -x["subtotal"])
 
     gross_profit = product_revenue - total_cogs
     entries = await db.financial_entries.find({"type": "expense"}, {"_id": 0}).to_list(1000)
@@ -2858,15 +2873,22 @@ async def get_financial_report():
     for m in monthly:
         monthly[m]["profit"] = monthly[m]["income"] - monthly[m]["cogs"]
 
+    cfg = await db.store_config.find_one({"_id": "main"}) or {}
+    kas_awal = float(cfg.get("kas_awal") or 0)
+    kas_akhir = kas_awal + net_profit
+
     return {
         "total_income": total_income,
         "product_revenue": product_revenue,
         "total_delivery": total_delivery,
         "total_cogs": total_cogs,
+        "hpp_breakdown": hpp_breakdown_list,
         "gross_profit": gross_profit,
         "total_expenses": total_expenses,
         "net_profit": net_profit,
         "margin": margin,
+        "kas_awal": kas_awal,
+        "kas_akhir": kas_akhir,
         "monthly": monthly,
         "transactions": completed[:50],
         "expense_entries": entries,
