@@ -96,7 +96,7 @@ export default function BuyerProfileModal({ open, onClose }) {
         setPushOn(false);
         toast('Notifikasi dimatikan di HP ini.');
       } else {
-        await subscribeBuyer(authToken, 'HP ' + (authUser.name || 'Buyer'));
+        await subscribeBuyer({ token: authToken, label: 'HP ' + (authUser.name || 'Buyer') });
         setPushOn(true);
         toast.success('Notifikasi aktif! Kamu akan dapat kabar saat status pesanan berubah. 🔔');
       }

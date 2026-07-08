@@ -16,7 +16,7 @@ const DEFAULT_TEXTS = {
   login_label: 'Masuk',
   login_subtitle: 'Sudah punya akun? Masuk yuk',
   guest_label: 'Lanjut sebagai Tamu',
-  guest_subtitle: 'Belanja tanpa daftar (no promo)',
+  guest_subtitle: 'Belanja langsung tanpa daftar — cepat & praktis',
   tos_text: 'Dengan melanjutkan, kamu setuju dengan syarat & ketentuan Ciltarasa',
   otp_hint: '🔐 Masukkan passcode 6 angka kamu',
   phone_hint: '💡 Pertama kali? Kamu akan diminta buat passcode 6 angka',
@@ -180,18 +180,21 @@ export default function OnboardingModal() {
                 <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
               </button>
 
+              <p className="text-center text-xs text-[#9A3412] pt-1">Baru pertama & bingung? Langsung pesan aja tanpa daftar 👇</p>
               <button
                 data-testid="onboarding-guest-btn"
                 onClick={handleGuest}
-                className="w-full group flex items-center gap-3 p-3 text-[#78350F] hover:bg-[#FEF3C7] rounded-2xl transition-all"
+                className="w-full group flex items-center gap-3 p-4 rounded-2xl border-2 border-[#D97706] bg-[#FFF7ED] hover:bg-[#FEF3C7] transition-all relative shadow-sm"
               >
-                <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center">
-                  <ShoppingBag size={18} className="text-gray-500" />
+                <span className="absolute -top-2.5 right-3 text-[10px] font-bold bg-[#D97706] text-white px-2 py-0.5 rounded-full shadow">✨ Paling Gampang</span>
+                <div className="w-10 h-10 bg-[#FED7AA] rounded-xl flex items-center justify-center">
+                  <ShoppingBag size={18} className="text-[#EA580C]" />
                 </div>
                 <div className="flex-1 text-left">
-                  <div className="font-semibold text-sm">{t.guest_label}</div>
-                  <div className="text-xs text-gray-500">{t.guest_subtitle}</div>
+                  <div className="font-bold text-sm text-[#7C2D12]">{t.guest_label}</div>
+                  <div className="text-xs text-[#9A3412]">{t.guest_subtitle}</div>
                 </div>
+                <ArrowRight size={18} className="text-[#EA580C] group-hover:translate-x-1 transition-transform" />
               </button>
 
               <div className="text-center pt-2">

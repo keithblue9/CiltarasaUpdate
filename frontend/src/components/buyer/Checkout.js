@@ -490,7 +490,7 @@ export default function Checkout() {
       toast.success(`Pesanan ${newOrder.order_number} berhasil dibuat! 🎉`);
       navigate(`/buyer/track?order=${newOrder.order_number}`);
     } catch (err) {
-      toast.error('Gagal membuat pesanan. Coba lagi.');
+      toast.error(err?.response?.data?.detail || 'Gagal membuat pesanan. Coba lagi.');
     } finally {
       setLoading(false);
     }
