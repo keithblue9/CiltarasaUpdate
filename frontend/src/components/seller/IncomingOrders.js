@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Eye, MessageCircle, Search, Filter, RefreshCw, ChevronDown } from 'lucide-react';
+import { Eye, MessageCircle, Search, RefreshCw, ChevronDown } from 'lucide-react';
 import axios from 'axios';
 import { useApp } from '../../context/AppContext';
 import { toast } from 'sonner';
@@ -182,6 +182,7 @@ export default function IncomingOrders() {
   const { wsEvent, settings, products, storeConfig } = useApp();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [statusFilter, setStatusFilter] = useState('all');
   const [searchQ, setSearchQ] = useState('');
   const [selectedOrder, setSelectedOrder] = useState(null);
@@ -191,10 +192,14 @@ export default function IncomingOrders() {
 
   const load = async () => {
     setLoading(true);
+    setLoadError(false);
     try {
       const res = await axios.get(`${API}/api/orders`);
-      setOrders(res.data);
-    } catch (err) { console.warn('[IncomingOrders] load failed:', err); }
+      setOrders(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      console.warn('[IncomingOrders] load failed:', err);
+      setLoadError(true);
+    }
     setLoading(false);
   };
 
@@ -262,7 +267,7 @@ export default function IncomingOrders() {
 
   const filtered = orders
     .filter(o => statusFilter === 'all' || o.status === statusFilter)
-    .filter(o => !searchQ || o.order_number.toLowerCase().includes(searchQ.toLowerCase()) || o.customer_name.toLowerCase().includes(searchQ.toLowerCase()));
+    .filter(o => !searchQ || (o.order_number || '').toLowerCase().includes(searchQ.toLowerCase()) || (o.customer_name || '').toLowerCase().includes(searchQ.toLowerCase()));
 
   return (
     <div className="space-y-5">
@@ -290,6 +295,13 @@ export default function IncomingOrders() {
           ))}
         </div>
       </div>
+
+      {loadError && !loading && (
+        <div className="flex items-center justify-between gap-3 p-3 rounded-xl bg-red-50 border border-red-200 text-sm flex-wrap">
+          <span className="text-red-700 font-semibold">⚠️ Gagal memuat pesanan. Cek koneksi — server kadang lambat saat baru "bangun". Coba lagi ya.</span>
+          <button onClick={load} className="px-3 py-1.5 rounded-lg bg-red-500 text-white font-bold text-xs whitespace-nowrap">Coba Lagi</button>
+        </div>
+      )}
 
       {loading ? (
         <div className="flex justify-center py-12"><RefreshCw size={28} className="text-[#D97706] animate-spin" /></div>

@@ -16,7 +16,7 @@ import { HowToOrderConfig, ResetCustomersConfig, ChangePinConfig, TrafficStats, 
 import SellerPushSettings from './SellerPushSettings';
 import SellerPwaInstallBanner from './SellerPwaInstallBanner';
 import PendingOrdersAlert from './PendingOrdersAlert';
-import SellerChatWidget from './SellerChatWidget';
+import JuraganPage from './JuraganPage';
 import PushActivationPrompt from '../pwa/PushActivationPrompt';
 import { setSellerManifest, restoreBuyerManifest } from '../pwa/sellerPush';
 import { Smartphone } from 'lucide-react';
@@ -119,6 +119,7 @@ export default function SellerApp() {
     'pwa-install': <PwaInstallConfig />,
     discounts: <DiscountManagement />,
     customers: <CustomersConfig />,
+    juragan: <JuraganPage />,
     'checkout-mode': <CheckoutModeConfig />,
     'change-pin': <ChangePinConfig onPinChanged={() => handleLogout()} />,
     'reset-customers': <ResetCustomersConfig />,
@@ -181,7 +182,6 @@ export default function SellerApp() {
       {activeTab !== 'orders' && (
         <PendingOrdersAlert onNavigateOrders={() => setActiveTab('orders')} />
       )}
-      <SellerChatWidget />
       <PushActivationPrompt role="seller" pin={typeof localStorage !== 'undefined' ? localStorage.getItem('seller_pin') : null} />
     </div>
   );

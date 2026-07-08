@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, X, Save, Trash2, Package, CheckCircle2, Clock, Truck, Lightbulb } from 'lucide-react';
+import { Plus, X, Save, Trash2, Package, CheckCircle2, Clock, Pencil } from 'lucide-react';
 import axios from 'axios';
 import { useApp } from '../../context/AppContext';
 import { toast } from 'sonner';
@@ -9,12 +9,13 @@ const fmtRp = (n) => `Rp ${Number(n).toLocaleString('id-ID')}`;
 const fmtDate = (iso) => iso ? new Date(iso).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '-';
 const inputCls = "w-full px-4 py-2.5 rounded-xl border border-[#FED7AA] focus:outline-none focus:border-[#F97316] font-body text-[#451A03] bg-white";
 
-function PurchaseForm({ products, prefill, onSave, onCancel }) {
+function PurchaseForm({ products, prefill, editing, onSave, onCancel }) {
+  const src = editing || prefill;
   const [form, setForm] = useState({
-    items: prefill?.items?.length ? prefill.items : [{ product_id: '', product_name: '', quantity: 1, unit_cost: 0, subtotal: 0 }],
-    supplier: prefill?.supplier || '',
-    ordered_at: prefill?.ordered_at?.slice(0, 10) || new Date().toISOString().slice(0, 10),
-    notes: prefill?.notes || '',
+    items: src?.items?.length ? src.items : [{ product_id: '', product_name: '', quantity: 1, unit_cost: 0, subtotal: 0 }],
+    supplier: src?.supplier || '',
+    ordered_at: src?.ordered_at?.slice(0, 10) || new Date().toISOString().slice(0, 10),
+    notes: src?.notes || '',
   });
 
   const setF = (k, v) => setForm(f => ({ ...f, [k]: v }));
@@ -50,10 +51,15 @@ function PurchaseForm({ products, prefill, onSave, onCancel }) {
     <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[92vh] overflow-y-auto">
         <div className="flex items-center justify-between p-5 border-b border-[#FED7AA] bg-gradient-to-r from-[#FFF7ED] to-[#FEF3C7] sticky top-0">
-          <h3 className="font-heading font-bold text-[#7C2D12] text-xl">Buat Pesanan Pembelian (Restock)</h3>
+          <h3 className="font-heading font-bold text-[#7C2D12] text-xl">{editing ? 'Edit Pembelian' : 'Buat Pesanan Pembelian (Restock)'}</h3>
           <button onClick={onCancel} className="p-2 rounded-full hover:bg-[#FED7AA]"><X size={18} /></button>
         </div>
         <div className="p-5 space-y-4">
+          {editing?.status === 'received' && (
+            <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800">
+              ⚠️ Pembelian ini <strong>sudah diterima</strong>. Mengubah qty item akan otomatis menyesuaikan stok produk (selisihnya).
+            </div>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-bold text-[#7C2D12] mb-1.5 uppercase">Supplier</label>
@@ -109,14 +115,14 @@ function PurchaseForm({ products, prefill, onSave, onCancel }) {
         </div>
         <div className="flex gap-3 p-5 border-t border-[#FED7AA] sticky bottom-0 bg-white">
           <button onClick={onCancel} className="flex-1 py-3 rounded-xl border-2 border-[#FED7AA] text-[#7C2D12] font-bold hover:bg-[#FED7AA]">Batal</button>
-          <button data-testid="save-purchase-btn" onClick={submit} className="flex-1 py-3 rounded-xl bg-gradient-to-r from-[#F97316] to-[#EA580C] text-white font-bold flex items-center justify-center gap-2"><Save size={16} /> Simpan Pesanan</button>
+          <button data-testid="save-purchase-btn" onClick={submit} className="flex-1 py-3 rounded-xl bg-gradient-to-r from-[#F97316] to-[#EA580C] text-white font-bold flex items-center justify-center gap-2"><Save size={16} /> {editing ? 'Simpan Perubahan' : 'Simpan Pesanan'}</button>
         </div>
       </div>
     </div>
   );
 }
 
-function PurchaseCard({ purchase, onReceive, onDelete }) {
+function PurchaseCard({ purchase, onReceive, onDelete, onEdit }) {
   const isReceived = purchase.status === 'received';
   const [confirmDate, setConfirmDate] = useState(new Date().toISOString().slice(0, 10));
   const [showReceiveForm, setShowReceiveForm] = useState(false);
@@ -168,28 +174,36 @@ function PurchaseCard({ purchase, onReceive, onDelete }) {
 
         {purchase.notes && <p className="mt-2 text-xs text-[#9A3412] italic bg-[#FFFBF5] px-2 py-1 rounded">📝 {purchase.notes}</p>}
 
-        {!isReceived && (
-          <div className="mt-3 pt-3 border-t border-[#FED7AA]">
-            {!showReceiveForm ? (
+        <div className="mt-3 pt-3 border-t border-[#FED7AA]">
+          {!isReceived && showReceiveForm ? (
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-[#7C2D12]">Tanggal diterima:</label>
+              <input type="date" className={inputCls} value={confirmDate} onChange={e => setConfirmDate(e.target.value)} />
               <div className="flex gap-2">
-                <button data-testid={`mark-received-${purchase.id}`} onClick={() => setShowReceiveForm(true)} className="flex-1 bg-gradient-to-r from-green-500 to-emerald-600 text-white font-bold py-2 rounded-xl text-xs flex items-center justify-center gap-1.5">
-                  <CheckCircle2 size={14} /> Tandai Sudah Diterima
+                <button onClick={() => setShowReceiveForm(false)} className="flex-1 py-2 rounded-xl border border-[#FED7AA] text-[#7C2D12] font-bold text-xs">Batal</button>
+                <button onClick={() => onReceive(purchase, confirmDate)} className="flex-1 py-2 rounded-xl bg-green-500 text-white font-bold text-xs">Konfirmasi Terima</button>
+              </div>
+              <p className="text-[10px] text-amber-600 bg-amber-50 px-2 py-1 rounded">⚠️ Stok produk akan auto-bertambah saat dikonfirmasi terima</p>
+            </div>
+          ) : (
+            <>
+              <div className="flex gap-2">
+                {!isReceived && (
+                  <button data-testid={`mark-received-${purchase.id}`} onClick={() => setShowReceiveForm(true)} className="flex-1 bg-gradient-to-r from-green-500 to-emerald-600 text-white font-bold py-2 rounded-xl text-xs flex items-center justify-center gap-1.5">
+                    <CheckCircle2 size={14} /> Tandai Diterima
+                  </button>
+                )}
+                <button data-testid={`edit-purchase-${purchase.id}`} onClick={() => onEdit(purchase)} className={`${isReceived ? 'flex-1' : ''} px-3 py-2 rounded-xl bg-[#FFF7ED] border border-[#FED7AA] text-[#B45309] font-bold text-xs flex items-center justify-center gap-1.5`}>
+                  <Pencil size={14} /> Edit
                 </button>
-                <button onClick={() => onDelete(purchase)} className="px-3 py-2 rounded-xl bg-red-50 text-red-500"><Trash2 size={14} /></button>
+                <button data-testid={`delete-purchase-${purchase.id}`} onClick={() => onDelete(purchase)} className="px-3 py-2 rounded-xl bg-red-50 text-red-500 flex items-center justify-center"><Trash2 size={14} /></button>
               </div>
-            ) : (
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-[#7C2D12]">Tanggal diterima:</label>
-                <input type="date" className={inputCls} value={confirmDate} onChange={e => setConfirmDate(e.target.value)} />
-                <div className="flex gap-2">
-                  <button onClick={() => setShowReceiveForm(false)} className="flex-1 py-2 rounded-xl border border-[#FED7AA] text-[#7C2D12] font-bold text-xs">Batal</button>
-                  <button onClick={() => onReceive(purchase, confirmDate)} className="flex-1 py-2 rounded-xl bg-green-500 text-white font-bold text-xs">Konfirmasi Terima</button>
-                </div>
-                <p className="text-[10px] text-amber-600 bg-amber-50 px-2 py-1 rounded">⚠️ Stok produk akan auto-bertambah saat dikonfirmasi terima</p>
-              </div>
-            )}
-          </div>
-        )}
+              {isReceived && (
+                <p className="mt-2 text-[10px] text-amber-600 bg-amber-50 px-2 py-1 rounded">⚠️ Edit/Hapus pembelian yang sudah diterima akan otomatis menyesuaikan/mengembalikan stok produk.</p>
+              )}
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -199,6 +213,7 @@ export default function PurchaseManagement() {
   const { products, purchases, refreshPurchases, refreshProducts } = useApp();
   const [showForm, setShowForm] = useState(false);
   const [prefill, setPrefill] = useState(null);
+  const [editing, setEditing] = useState(null);
   const [filter, setFilter] = useState('all');
 
   // Listen for restock alert clicks via custom event
@@ -213,11 +228,20 @@ export default function PurchaseManagement() {
 
   const handleSave = async (data) => {
     try {
-      await axios.post(`${API}/api/purchases`, data);
+      if (editing) {
+        await axios.put(`${API}/api/purchases/${editing.id}`, data);
+      } else {
+        await axios.post(`${API}/api/purchases`, data);
+      }
       await refreshPurchases();
-      toast.success('Pesanan pembelian dibuat!');
-      setShowForm(false); setPrefill(null);
-    } catch { toast.error('Gagal simpan'); }
+      await refreshProducts();
+      toast.success(editing ? 'Pembelian diperbarui! ✅' : 'Pesanan pembelian dibuat!');
+      setShowForm(false); setPrefill(null); setEditing(null);
+    } catch (e) { toast.error('Gagal simpan: ' + (e.response?.data?.detail || 'error')); }
+  };
+
+  const handleEdit = (p) => {
+    setEditing(p); setPrefill(null); setShowForm(true);
   };
 
   const handleReceive = async (p, dateStr) => {
@@ -231,10 +255,14 @@ export default function PurchaseManagement() {
   };
 
   const handleDelete = async (p) => {
-    if (!window.confirm(`Hapus pembelian ${p.purchase_number}?`)) return;
+    const warn = p.status === 'received'
+      ? `Hapus pembelian ${p.purchase_number}? Stok yang tadi bertambah dari pembelian ini akan dikurangi kembali.`
+      : `Hapus pembelian ${p.purchase_number}?`;
+    if (!window.confirm(warn)) return;
     try {
       await axios.delete(`${API}/api/purchases/${p.id}`);
       await refreshPurchases();
+      await refreshProducts();
       toast.success('Pembelian dihapus');
     } catch { toast.error('Gagal hapus'); }
   };
@@ -248,7 +276,7 @@ export default function PurchaseManagement() {
           <h1 className="font-heading text-2xl font-bold text-[#7C2D12]">Pembelian / Restock</h1>
           <p className="text-xs text-[#9A3412] mt-0.5">Kelola pembelian bahan baku & restock produk. Stok auto-bertambah saat barang diterima.</p>
         </div>
-        <button data-testid="add-purchase-btn" onClick={() => { setPrefill(null); setShowForm(true); }} className="flex items-center gap-2 bg-gradient-to-r from-[#F97316] to-[#EA580C] text-white font-bold px-5 py-2.5 rounded-full shadow hover:shadow-lg">
+        <button data-testid="add-purchase-btn" onClick={() => { setPrefill(null); setEditing(null); setShowForm(true); }} className="flex items-center gap-2 bg-gradient-to-r from-[#F97316] to-[#EA580C] text-white font-bold px-5 py-2.5 rounded-full shadow hover:shadow-lg">
           <Plus size={16} /> Buat Pembelian
         </button>
       </div>
@@ -270,13 +298,13 @@ export default function PurchaseManagement() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {filtered.map(p => (
-            <PurchaseCard key={p.id} purchase={p} onReceive={handleReceive} onDelete={handleDelete} />
+            <PurchaseCard key={p.id} purchase={p} onReceive={handleReceive} onDelete={handleDelete} onEdit={handleEdit} />
           ))}
         </div>
       )}
 
       {showForm && (
-        <PurchaseForm products={products} prefill={prefill} onSave={handleSave} onCancel={() => { setShowForm(false); setPrefill(null); }} />
+        <PurchaseForm products={products} prefill={prefill} editing={editing} onSave={handleSave} onCancel={() => { setShowForm(false); setPrefill(null); setEditing(null); }} />
       )}
     </div>
   );

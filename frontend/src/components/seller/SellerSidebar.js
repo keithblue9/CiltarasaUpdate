@@ -6,6 +6,7 @@ import { useApp } from '../../context/AppContext';
 const operationalTabs = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'orders', label: 'Pesanan Masuk', icon: ShoppingBag },
+  { id: 'juragan', label: 'Tanya Juragan', icon: Sparkles },
   { id: 'products', label: 'Produk', icon: Package },
   { id: 'purchases', label: 'Pembelian / Restock', icon: ShoppingCart },
   { id: 'sales', label: 'Lap. Penjualan', icon: BarChart2 },
