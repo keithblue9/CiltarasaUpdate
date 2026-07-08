@@ -215,6 +215,10 @@ export default function PurchaseManagement() {
   const [prefill, setPrefill] = useState(null);
   const [editing, setEditing] = useState(null);
   const [filter, setFilter] = useState('all');
+  const [hppTotal, setHppTotal] = useState(0);
+  useEffect(() => {
+    axios.get(`${API}/api/reports/financial`).then(r => setHppTotal(r.data?.total_cogs || 0)).catch(() => {});
+  }, []);
 
   // Listen for restock alert clicks via custom event
   useEffect(() => {
@@ -279,6 +283,28 @@ export default function PurchaseManagement() {
         <button data-testid="add-purchase-btn" onClick={() => { setPrefill(null); setEditing(null); setShowForm(true); }} className="flex items-center gap-2 bg-gradient-to-r from-[#F97316] to-[#EA580C] text-white font-bold px-5 py-2.5 rounded-full shadow hover:shadow-lg">
           <Plus size={16} /> Buat Pembelian
         </button>
+      </div>
+
+      {/* Stat cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="bg-white rounded-2xl border border-[#FED7AA] p-4">
+          <p className="text-xs text-[#92400E] font-semibold">Total Nilai Pembelian</p>
+          <p className="font-heading font-bold text-xl text-[#7C2D12] mt-1">Rp {purchases.reduce((s, p) => s + Number(p.total || 0), 0).toLocaleString('id-ID')}</p>
+          <p className="text-[10px] text-[#9A3412] mt-0.5">{purchases.length} PO total</p>
+        </div>
+        <div className="bg-white rounded-2xl border border-[#FED7AA] p-4">
+          <p className="text-xs text-[#92400E] font-semibold">Sudah Diterima (masuk stok)</p>
+          <p className="font-heading font-bold text-xl text-green-700 mt-1">Rp {purchases.filter(p => p.status === 'received').reduce((s, p) => s + Number(p.total || 0), 0).toLocaleString('id-ID')}</p>
+          <p className="text-[10px] text-[#9A3412] mt-0.5">{purchases.filter(p => p.status === 'received').length} PO diterima</p>
+        </div>
+        <div className="bg-white rounded-2xl border border-[#FED7AA] p-4">
+          <p className="text-xs text-[#92400E] font-semibold">HPP Total (barang terjual)</p>
+          <p className="font-heading font-bold text-xl text-red-500 mt-1">Rp {Number(hppTotal).toLocaleString('id-ID')}</p>
+          <p className="text-[10px] text-[#9A3412] mt-0.5">Sama dengan HPP di Lap. Keuangan</p>
+        </div>
+      </div>
+      <div className="rounded-xl bg-blue-50 border border-blue-200 p-3 text-[11px] text-blue-900">
+        ℹ️ <strong>Total Pembelian</strong> = biaya restock yang kamu beli. <strong>HPP</strong> = biaya barang yang sudah <strong>terjual</strong> (angka di Lap. Keuangan). Wajar beda — yang dibeli belum tentu semua sudah terjual.
       </div>
 
       <div className="flex gap-2">
