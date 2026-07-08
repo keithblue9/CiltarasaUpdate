@@ -6,12 +6,10 @@ import DashboardOverview from './DashboardOverview';
 import Dashboard from './Dashboard';
 import ProductManagement from './ProductManagement';
 import IncomingOrders from './IncomingOrders';
-import SalesReport from './SalesReport';
-import FinancialReport from './FinancialReport';
+import ReportsPage from './ReportsPage';
 import { StoreProfile, StoreCerita, CategoriesConfig, DeliveryConfig, PaymentsConfig, HomepageTextsConfig, HeroSlideshowConfig, FunFactsConfig, OnboardingTextsConfig } from './StoreConfigPages';
 import SeoThemeConfig from './SeoThemeConfig';
 import DiscountManagement from './DiscountManagement';
-import PurchaseManagement from './PurchaseManagement';
 import { HowToOrderConfig, ResetCustomersConfig, ChangePinConfig, TrafficStats, InvoiceConfig, DashboardWidgetsConfig, MaintenanceConfig, PwaInstallConfig, CustomersConfig, CheckoutModeConfig } from './AdminPages';
 import SellerPushSettings from './SellerPushSettings';
 import SellerPwaInstallBanner from './SellerPwaInstallBanner';
@@ -97,10 +95,12 @@ export default function SellerApp() {
     dashboard: <Dashboard />,
     'dashboard-legacy': <DashboardOverview onTabChange={setActiveTab} />,
     products: <ProductManagement />,
-    purchases: <PurchaseManagement />,
     orders: <IncomingOrders />,
-    sales: <SalesReport />,
-    financial: <FinancialReport />,
+    reports: <ReportsPage />,
+    // alias id lama → tetap jalan (navigasi silang dari dashboard dll)
+    purchases: <ReportsPage initialTab="purchases" />,
+    sales: <ReportsPage initialTab="sales" />,
+    financial: <ReportsPage initialTab="financial" />,
     traffic: <TrafficStats />,
     'store-profile': <StoreProfile />,
     'store-cerita': <StoreCerita />,

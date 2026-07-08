@@ -16,8 +16,14 @@ const CATEGORY_LABEL = {
   lain: 'Lain-lain',
 };
 
+const TYPE_LABEL = {
+  expense: 'Biaya',
+  topup_saldo: 'Top-up Saldo Ongkir',
+  saldo_usage: 'Pemakaian Saldo (diganti customer)',
+};
+
 const EXPENSE_PRESETS = [
-  { label: 'Top up saldo ongkir', category: 'delivery' },
+  { label: 'Biaya admin top-up saldo', category: 'delivery', cash_source: 'saldo_ongkir' },
   { label: 'Beli kemasan / packaging', category: 'packaging' },
   { label: 'Bahan baku tambahan', category: 'ingredient' },
   { label: 'Gaji / upah', category: 'operasional' },
@@ -27,7 +33,7 @@ const EXPENSE_PRESETS = [
   { label: 'Iklan / promosi', category: 'operasional' },
 ];
 
-const emptyEntry = () => ({ type: 'expense', description: '', amount: '', category: 'operasional', date: new Date().toISOString().split('T')[0], note: '' });
+const emptyEntry = () => ({ type: 'expense', description: '', amount: '', category: 'operasional', date: new Date().toISOString().split('T')[0], note: '', cash_source: 'rekening' });
 
 export default function FinancialReport() {
   const [report, setReport] = useState(null);
@@ -38,7 +44,10 @@ export default function FinancialReport() {
   const [saving, setSaving] = useState(false);
   const [hppModal, setHppModal] = useState(false);
   const [kasAwalInput, setKasAwalInput] = useState('');
+  const [modalBarangInput, setModalBarangInput] = useState('');
   const [savingKas, setSavingKas] = useState(false);
+  const [fisikRekening, setFisikRekening] = useState('');
+  const [fisikSaldo, setFisikSaldo] = useState('');
 
   const load = async () => {
     setLoading(true);
@@ -50,6 +59,7 @@ export default function FinancialReport() {
       setReport(r.data);
       setEntries(e.data);
       setKasAwalInput(String(r.data?.kas_awal ?? 0));
+      setModalBarangInput(String(r.data?.modal_awal_barang ?? 0));
     } catch (err) { console.warn('[FinancialReport] load failed:', err); toast.error('Gagal memuat laporan. Coba refresh.'); }
     setLoading(false);
   };
@@ -80,8 +90,8 @@ export default function FinancialReport() {
   const saveKasAwal = async () => {
     setSavingKas(true);
     try {
-      await axios.put(`${API}/api/store-config`, { kas_awal: Number(kasAwalInput) || 0 });
-      toast.success('Kas awal disimpan! 💰');
+      await axios.put(`${API}/api/store-config`, { kas_awal: Number(kasAwalInput) || 0, modal_awal_barang: Number(modalBarangInput) || 0 });
+      toast.success('Modal awal disimpan! 💰');
       await load();
     } catch { toast.error('Gagal simpan kas awal'); }
     finally { setSavingKas(false); }
@@ -94,13 +104,19 @@ export default function FinancialReport() {
       }))
     : [];
 
-  const totalExpenses = entries.reduce((s, e) => s + Number(e.amount || 0), 0);
+  const expenseEntries = entries.filter(e => (e.type || 'expense') === 'expense');
+  const totalExpenses = expenseEntries.reduce((s, e) => s + Number(e.amount || 0), 0);
 
   if (loading) return <div className="flex justify-center py-20"><RefreshCw size={32} className="text-[#D97706] animate-spin" /></div>;
 
   const netProfit = report?.net_profit || 0;
-  const kasAwal = Number(kasAwalInput) || 0;
-  const kasAkhir = kasAwal + netProfit;
+  const totalKas = report?.total_kas ?? 0;
+  const saldoOngkirCalc = report?.saldo_ongkir_calc ?? 0;
+  const rekeningCalc = report?.rekening_calc ?? 0;
+  const stockNow = report?.stock_value_now ?? 0;
+  const selRek = fisikRekening === '' ? null : Number(fisikRekening) - rekeningCalc;
+  const selSal = fisikSaldo === '' ? null : Number(fisikSaldo) - saldoOngkirCalc;
+  const selTot = (fisikRekening === '' && fisikSaldo === '') ? null : (Number(fisikRekening || 0) + Number(fisikSaldo || 0)) - totalKas;
 
   return (
     <div className="space-y-5">
@@ -114,29 +130,29 @@ export default function FinancialReport() {
         <h2 className="font-heading font-bold text-[#78350F] text-lg mb-4">Laporan Laba Rugi</h2>
 
         {/* Kas Awal */}
-        <div className="bg-[#FDF8F0] border border-[#FED7AA] rounded-xl p-3 mb-4 flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2 min-w-0">
+        <div className="bg-[#FDF8F0] border border-[#FED7AA] rounded-xl p-3 mb-4 space-y-2.5">
+          <div className="flex items-center gap-2">
             <Wallet size={18} className="text-[#B45309] flex-shrink-0" />
             <div>
-              <p className="text-sm font-bold text-[#78350F] leading-tight">Kas Awal (modal awal)</p>
-              <p className="text-[10px] text-[#92400E]">Saldo kas di awal periode. Kas Akhir = Kas Awal + Laba Bersih.</p>
+              <p className="text-sm font-bold text-[#78350F] leading-tight">Modal Awal</p>
+              <p className="text-[10px] text-[#92400E]">Pisahkan bentuk uang tunai & bentuk barang (nilai stok awal) — dua hal yang beda.</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="flex items-center px-2.5 py-1.5 rounded-xl border border-[#FED7AA] bg-white">
-              <span className="text-xs text-[#92400E] font-semibold mr-1">Rp</span>
-              <input
-                type="number"
-                value={kasAwalInput}
-                onChange={(e) => setKasAwalInput(e.target.value)}
-                placeholder="0"
-                className="w-28 outline-none text-sm font-bold text-[#451A03] bg-transparent text-right"
-              />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl border border-[#FED7AA] bg-white">
+              <span className="text-[11px] text-[#92400E] font-semibold">Kas Awal (uang tunai)</span>
+              <span className="flex items-center"><span className="text-xs text-[#92400E] mr-1">Rp</span>
+                <input type="number" value={kasAwalInput} onChange={(e) => setKasAwalInput(e.target.value)} placeholder="0" className="w-24 outline-none text-sm font-bold text-[#451A03] bg-transparent text-right" /></span>
             </div>
-            <button onClick={saveKasAwal} disabled={savingKas} className="bg-[#D97706] text-white font-bold px-3 py-1.5 rounded-xl text-xs hover:bg-[#B45309] disabled:opacity-60">
-              {savingKas ? '...' : 'Simpan'}
-            </button>
+            <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl border border-[#FED7AA] bg-white">
+              <span className="text-[11px] text-[#92400E] font-semibold">Modal Awal (nilai barang)</span>
+              <span className="flex items-center"><span className="text-xs text-[#92400E] mr-1">Rp</span>
+                <input type="number" value={modalBarangInput} onChange={(e) => setModalBarangInput(e.target.value)} placeholder="0" className="w-24 outline-none text-sm font-bold text-[#451A03] bg-transparent text-right" /></span>
+            </div>
           </div>
+          <button onClick={saveKasAwal} disabled={savingKas} className="w-full bg-[#D97706] text-white font-bold py-2 rounded-xl text-xs hover:bg-[#B45309] disabled:opacity-60">
+            {savingKas ? 'Menyimpan...' : 'Simpan Modal Awal'}
+          </button>
         </div>
 
         <div className="space-y-3">
@@ -159,16 +175,28 @@ export default function FinancialReport() {
           <div className="border-t border-[#FED7AA] my-2" />
           <Row label="LABA BERSIH" value={netProfit} color={netProfit >= 0 ? 'text-green-600' : 'text-red-500'} bold big />
 
-          {/* Kas Akhir */}
+          {/* Kas Hasil Jualan — total & per kantong */}
           <div className="border-t-2 border-dashed border-[#FED7AA] my-2" />
-          <div className="bg-gradient-to-r from-[#FFF7ED] to-[#FEF3C7] rounded-xl p-3 flex justify-between items-center">
-            <div>
-              <span className="font-heading font-bold text-[#78350F] text-base">KAS AKHIR</span>
-              <p className="text-[10px] text-[#92400E]">Kas Awal ({formatRp(kasAwal)}) + Laba Bersih</p>
+          <div className="bg-gradient-to-r from-[#FFF7ED] to-[#FEF3C7] rounded-xl p-3 space-y-2">
+            <div className="flex justify-between items-center">
+              <div>
+                <span className="font-heading font-bold text-[#78350F] text-base">KAS HASIL JUALAN (Total)</span>
+                <p className="text-[10px] text-[#92400E]">= Kas Awal + Modal Awal Barang + Laba Bersih − Nilai Stok Sekarang ({formatRp(stockNow)})</p>
+              </div>
+              <span className={`font-heading font-bold text-xl ${totalKas >= 0 ? 'text-green-700' : 'text-red-500'}`}>
+                {totalKas < 0 ? `-${formatRp(Math.abs(totalKas))}` : formatRp(totalKas)}
+              </span>
             </div>
-            <span className={`font-heading font-bold text-xl ${kasAkhir >= 0 ? 'text-green-700' : 'text-red-500'}`}>
-              {kasAkhir < 0 ? `-${formatRp(Math.abs(kasAkhir))}` : formatRp(kasAkhir)}
-            </span>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="bg-white/70 rounded-lg px-3 py-2">
+                <p className="text-[10px] text-[#92400E] font-semibold">🏦 Di Rekening/Dompet</p>
+                <p className={`font-bold text-sm ${rekeningCalc >= 0 ? 'text-[#7C2D12]' : 'text-red-500'}`}>{rekeningCalc < 0 ? `-${formatRp(Math.abs(rekeningCalc))}` : formatRp(rekeningCalc)}</p>
+              </div>
+              <div className="bg-white/70 rounded-lg px-3 py-2">
+                <p className="text-[10px] text-[#92400E] font-semibold">🚚 Di Saldo Ongkir (parkir)</p>
+                <p className={`font-bold text-sm ${saldoOngkirCalc >= 0 ? 'text-[#7C2D12]' : 'text-red-500'}`}>{saldoOngkirCalc < 0 ? `-${formatRp(Math.abs(saldoOngkirCalc))}` : formatRp(saldoOngkirCalc)}</p>
+              </div>
+            </div>
           </div>
 
           <div className="bg-[#FDF8F0] rounded-xl p-3 mt-1">
@@ -178,6 +206,25 @@ export default function FinancialReport() {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* ─── Kroscek Kas: hitungan vs fisik ─── */}
+      <div className="bg-white rounded-2xl border border-[#FED7AA] p-6">
+        <h2 className="font-heading font-bold text-[#78350F] text-lg">Kroscek Kas (Fisik vs Hitungan)</h2>
+        <p className="text-xs text-[#92400E] mb-4">Masukkan isi rekening/dompet & saldo ongkir kamu yang <strong>beneran</strong> sekarang. Sistem bandingkan dengan hitungan — kalau ada selisih, berarti ada transaksi yang belum tercatat.</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <ReconRow label="🏦 Rekening/Dompet" calc={rekeningCalc} value={fisikRekening} onChange={setFisikRekening} diff={selRek} />
+          <ReconRow label="🚚 Saldo Ongkir" calc={saldoOngkirCalc} value={fisikSaldo} onChange={setFisikSaldo} diff={selSal} />
+        </div>
+        {selTot !== null && (
+          <div className={`mt-3 rounded-xl p-3 text-sm font-bold flex justify-between items-center ${Math.abs(selTot) < 1 ? 'bg-green-50 border border-green-200 text-green-700' : 'bg-red-50 border border-red-200 text-red-600'}`}>
+            <span>{Math.abs(selTot) < 1 ? '✅ Total fisik COCOK dengan hitungan!' : '⚠️ Total fisik SELISIH dari hitungan'}</span>
+            <span>{selTot === 0 ? formatRp(0) : `${selTot > 0 ? '+' : '-'}${formatRp(Math.abs(selTot))}`}</span>
+          </div>
+        )}
+        {selTot !== null && Math.abs(selTot) >= 1 && (
+          <p className="mt-2 text-[11px] text-[#92400E]">Kemungkinan penyebab: ada biaya/top-up yang belum dicatat, restock belum di-input, barang rusak/hilang belum tercatat, atau harga modal produk belum diisi.</p>
+        )}
       </div>
 
       {/* Monthly chart */}
@@ -218,17 +265,22 @@ export default function FinancialReport() {
                 <div key={e.id} className="flex items-center justify-between p-3 bg-[#FDF8F0] rounded-xl">
                   <div className="min-w-0">
                     <p className="font-semibold text-[#451A03] text-sm truncate">{e.description}</p>
-                    <p className="text-xs text-[#92400E]">{CATEGORY_LABEL[e.category] || e.category} · {e.date}{e.note ? ` · ${e.note}` : ''}</p>
+                    <p className="text-xs text-[#92400E]">
+                      {(e.type || 'expense') !== 'expense'
+                        ? <span className="font-bold text-blue-700">{TYPE_LABEL[e.type]} · non-laba</span>
+                        : <>{CATEGORY_LABEL[e.category] || e.category}{e.cash_source === 'saldo_ongkir' ? ' · dari saldo ongkir' : ''}</>}
+                      {' · '}{e.date}{e.note ? ` · ${e.note}` : ''}
+                    </p>
                   </div>
                   <div className="flex items-center gap-3 flex-shrink-0">
-                    <span className="font-bold text-red-500 text-sm">{formatRp(e.amount)}</span>
+                    <span className={`font-bold text-sm ${(e.type || 'expense') === 'expense' ? 'text-red-500' : 'text-blue-700'}`}>{formatRp(e.amount)}</span>
                     <button onClick={() => handleDeleteEntry(e.id)} className="text-red-400 hover:text-red-600 p-1"><Trash2 size={14} /></button>
                   </div>
                 </div>
               ))}
             </div>
             <div className="flex justify-between items-center mt-3 pt-3 border-t border-[#FED7AA]">
-              <span className="font-bold text-[#78350F] text-sm">Total Biaya ({entries.length})</span>
+              <span className="font-bold text-[#78350F] text-sm">Total Biaya (masuk Laba Bersih) — {expenseEntries.length} entri</span>
               <span className="font-heading font-bold text-red-500">{formatRp(totalExpenses)}</span>
             </div>
           </>
@@ -334,26 +386,44 @@ export default function FinancialReport() {
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowExpenseModal(false)} />
           <div className="relative w-full sm:max-w-md bg-white sm:rounded-3xl rounded-t-3xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
             <div className="px-5 py-4 bg-gradient-to-r from-[#F97316] to-[#EA580C] text-white flex items-center justify-between">
-              <h3 className="font-heading font-bold text-lg">Tambah Biaya</h3>
+              <h3 className="font-heading font-bold text-lg">Tambah Catatan Keuangan</h3>
               <button onClick={() => setShowExpenseModal(false)} className="p-1.5 hover:bg-white/20 rounded-full"><X size={20} /></button>
             </div>
             <div className="p-5 space-y-4 overflow-y-auto">
-              {/* Quick picks */}
+              {/* Tipe entri */}
+              <div>
+                <label className="text-xs font-bold text-[#78350F] mb-1.5 block">Tipe</label>
+                <div className="grid grid-cols-1 gap-1.5">
+                  {Object.entries(TYPE_LABEL).map(([v, l]) => (
+                    <button key={v} type="button" onClick={() => setEntryForm(f => ({ ...f, type: v, cash_source: v === 'expense' ? f.cash_source : 'rekening' }))}
+                      className={`text-left text-xs px-3 py-2 rounded-xl border transition-all ${entryForm.type === v ? 'bg-[#EA580C] text-white border-[#EA580C]' : 'bg-white border-[#FED7AA] text-[#7C2D12] hover:border-[#EA580C]'}`}>
+                      <span className="font-bold">{l}</span>
+                      <span className={`block text-[10px] ${entryForm.type === v ? 'text-orange-100' : 'text-[#92400E]'}`}>
+                        {v === 'expense' ? 'Mengurangi laba bersih (mis. biaya admin, kemasan, gaji)' : v === 'topup_saldo' ? 'Pindah uang: rekening → saldo ongkir. TIDAK mengurangi laba.' : 'Ongkir dibayar dari saldo & sudah diganti customer (masuk rekening). TIDAK mengurangi laba.'}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Quick picks — hanya untuk Biaya */}
+              {entryForm.type === 'expense' && (
               <div>
                 <label className="text-xs font-bold text-[#78350F] mb-1.5 block">Pilih cepat</label>
                 <div className="flex flex-wrap gap-1.5">
                   {EXPENSE_PRESETS.map(p => (
                     <button key={p.label} type="button"
-                      onClick={() => setEntryForm(f => ({ ...f, description: p.label, category: p.category }))}
+                      onClick={() => setEntryForm(f => ({ ...f, description: p.label, category: p.category, cash_source: p.cash_source || 'rekening' }))}
                       className={`text-[11px] px-2.5 py-1.5 rounded-full border transition-all ${entryForm.description === p.label ? 'bg-[#EA580C] text-white border-[#EA580C]' : 'bg-[#FFF7ED] border-[#FED7AA] text-[#7C2D12] hover:border-[#EA580C]'}`}>
                       {p.label}
                     </button>
                   ))}
                 </div>
               </div>
+              )}
 
               <div>
-                <label className="text-xs font-bold text-[#78350F] mb-1 block">Nama Biaya</label>
+                <label className="text-xs font-bold text-[#78350F] mb-1 block">Deskripsi</label>
                 <input value={entryForm.description} onChange={e => setEntryForm(f => ({ ...f, description: e.target.value }))} placeholder="Contoh: Top up saldo ongkir"
                   className="w-full px-3 py-2.5 rounded-xl border border-[#FED7AA] text-sm focus:outline-none focus:ring-2 focus:ring-[#D97706]" />
               </div>
@@ -371,13 +441,25 @@ export default function FinancialReport() {
                 </div>
               </div>
 
-              <div>
-                <label className="text-xs font-bold text-[#78350F] mb-1 block">Kategori</label>
-                <select value={entryForm.category} onChange={e => setEntryForm(f => ({ ...f, category: e.target.value }))}
-                  className="w-full px-3 py-2.5 rounded-xl border border-[#FED7AA] text-sm focus:outline-none focus:ring-2 focus:ring-[#D97706]">
-                  {Object.entries(CATEGORY_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                </select>
+              {entryForm.type === 'expense' && (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-[#78350F] mb-1 block">Kategori</label>
+                  <select value={entryForm.category} onChange={e => setEntryForm(f => ({ ...f, category: e.target.value }))}
+                    className="w-full px-3 py-2.5 rounded-xl border border-[#FED7AA] text-sm focus:outline-none focus:ring-2 focus:ring-[#D97706]">
+                    {Object.entries(CATEGORY_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-[#78350F] mb-1 block">Uang keluar dari</label>
+                  <select value={entryForm.cash_source} onChange={e => setEntryForm(f => ({ ...f, cash_source: e.target.value }))}
+                    className="w-full px-3 py-2.5 rounded-xl border border-[#FED7AA] text-sm focus:outline-none focus:ring-2 focus:ring-[#D97706]">
+                    <option value="rekening">Rekening/Dompet</option>
+                    <option value="saldo_ongkir">Saldo Ongkir</option>
+                  </select>
+                </div>
               </div>
+              )}
 
               <div>
                 <label className="text-xs font-bold text-[#78350F] mb-1 block">Catatan (opsional)</label>
@@ -395,11 +477,34 @@ export default function FinancialReport() {
             <div className="p-4 border-t border-[#FED7AA] flex gap-2 bg-white">
               <button onClick={() => setShowExpenseModal(false)} className="flex-1 border border-[#FED7AA] text-[#78350F] font-bold py-2.5 rounded-xl hover:bg-[#FED7AA] text-sm">Batal</button>
               <button onClick={handleAddEntry} disabled={saving} className="flex-[2] bg-gradient-to-r from-[#F97316] to-[#EA580C] text-white font-bold py-2.5 rounded-xl hover:shadow-md text-sm disabled:opacity-60">
-                {saving ? 'Menyimpan...' : 'Simpan Biaya'}
+                {saving ? 'Menyimpan...' : 'Simpan'}
               </button>
             </div>
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+function ReconRow({ label, calc, value, onChange, diff }) {
+  return (
+    <div className="rounded-xl border border-[#FED7AA] p-3 space-y-1.5">
+      <p className="text-xs font-bold text-[#78350F]">{label}</p>
+      <div className="flex justify-between text-xs text-[#92400E]">
+        <span>Hitungan sistem</span><span className="font-bold text-[#7C2D12]">{formatRp(calc)}</span>
+      </div>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs text-[#92400E]">Fisik (isi manual)</span>
+        <span className="flex items-center px-2 py-1 rounded-lg border border-[#FED7AA] bg-white">
+          <span className="text-[10px] text-[#92400E] mr-1">Rp</span>
+          <input type="number" value={value} onChange={e => onChange(e.target.value)} placeholder="0" className="w-24 outline-none text-xs font-bold text-right bg-transparent" />
+        </span>
+      </div>
+      {diff !== null && (
+        <p className={`text-[11px] font-bold ${Math.abs(diff) < 1 ? 'text-green-600' : 'text-red-500'}`}>
+          {Math.abs(diff) < 1 ? '✅ Cocok' : `Selisih: ${diff > 0 ? '+' : '-'}${formatRp(Math.abs(diff))}`}
+        </p>
       )}
     </div>
   );

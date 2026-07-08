@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Package, ShoppingBag, BarChart2, DollarSign, LogOut, X, Wifi, WifiOff, Store, BookOpen, FolderTree, Truck, CreditCard, Tag, Settings, Type, ImagePlus, Sparkles, ShoppingCart, ListOrdered, ShieldAlert, LogIn, KeyRound, TrendingUp, FileText, BarChart3, Bell, Power, Smartphone, Palette , Users } from 'lucide-react';
+import { LayoutDashboard, Package, ShoppingBag, BarChart2, LogOut, X, Wifi, WifiOff, Store, BookOpen, FolderTree, Truck, CreditCard, Tag, Settings, Type, ImagePlus, Sparkles, ListOrdered, ShieldAlert, LogIn, KeyRound, TrendingUp, FileText, BarChart3, Bell, Power, Smartphone, Palette, Users } from 'lucide-react';
 import { LogoWithText } from '../shared/Logo';
 import { useApp } from '../../context/AppContext';
 
@@ -8,9 +8,7 @@ const operationalTabs = [
   { id: 'orders', label: 'Pesanan Masuk', icon: ShoppingBag },
   { id: 'juragan', label: 'Tanya Juragan', icon: Sparkles },
   { id: 'products', label: 'Produk', icon: Package },
-  { id: 'purchases', label: 'Pembelian / Restock', icon: ShoppingCart },
-  { id: 'sales', label: 'Lap. Penjualan', icon: BarChart2 },
-  { id: 'financial', label: 'Lap. Keuangan', icon: DollarSign },
+  { id: 'reports', label: 'Laporan', icon: BarChart2 },
   { id: 'traffic', label: 'Statistik Pengunjung', icon: TrendingUp },
 ];
 
