@@ -250,7 +250,7 @@ const API = process.env.REACT_APP_BACKEND_URL;
 
 export default function BuyerApp() {
   const [cartOpen, setCartOpen] = useState(false);
-  const { storeConfig, settings, authUser, authToken } = useApp();
+  const { storeConfig, settings, authUser, authToken, authMode } = useApp();
   const [maintenance, setMaintenance] = useState(null);
   useTrackVisit();
 
@@ -289,7 +289,7 @@ export default function BuyerApp() {
         <BuyerFooter />
         <PwaInstallHub />
         <BuyerChatWidget />
-        {authUser && <PushActivationPrompt role="buyer" token={authToken} personName={authUser.name} />}
+        {(authUser || authMode === 'guest') && <PushActivationPrompt role="buyer" token={authToken} personName={authUser?.name} />}
       </div>
     </BuyerThemeProvider>
   );
