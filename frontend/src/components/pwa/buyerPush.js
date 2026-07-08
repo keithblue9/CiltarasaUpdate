@@ -31,7 +31,7 @@ export async function getExistingSubscription() {
 }
 
 // Subscribe the current device to buyer push notifications.
-export async function subscribeBuyer(token, label) {
+export async function subscribeBuyer({ token, phone, label } = {}) {
   if (!(await isPushSupported())) throw new Error('Browser tidak support notifikasi');
   const perm = await Notification.requestPermission();
   if (perm !== 'granted') throw new Error('Izin notifikasi ditolak');
@@ -53,7 +53,8 @@ export async function subscribeBuyer(token, label) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      token,
+      token: token || null,
+      phone: phone || null,
       endpoint: subJson.endpoint,
       keys: subJson.keys,
       user_agent: navigator.userAgent,

@@ -20,6 +20,8 @@ export default function PushActivationPrompt({ role, token, pin, personName }) {
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
   const [mode, setMode] = useState('activate'); // 'activate' | 'ios-install'
+  const [phone, setPhone] = useState('');
+  const isGuest = role === 'buyer' && !token;
   const snoozeKey = `ciltarasa_push_prompt_snooze_${role}`;
   const activatedKey = `ciltarasa_push_active_${role}`;
 
@@ -27,8 +29,7 @@ export default function PushActivationPrompt({ role, token, pin, personName }) {
     let cancelled = false;
     let timer;
     (async () => {
-      // Butuh kredensial yang sesuai
-      if (role === 'buyer' && !token) return;
+      // Seller butuh PIN. Buyer selalu boleh — guest akan diminta nomor WA saat aktivasi.
       if (role === 'seller' && !pin) return;
 
       // Sudah di-snooze?
@@ -79,8 +80,17 @@ export default function PushActivationPrompt({ role, token, pin, personName }) {
     setBusy(true);
     try {
       const label = personName ? ('HP ' + personName) : undefined;
-      if (role === 'buyer') await subscribeBuyer(token, label);
-      else await sellerSubscribe(pin, label);
+      if (role === 'buyer') {
+        if (token) {
+          await subscribeBuyer({ token, label });
+        } else {
+          const p = (phone || '').replace(/\D/g, '');
+          if (p.length < 9) { toast.error('Masukkan nomor WhatsApp yang benar dulu ya'); setBusy(false); return; }
+          await subscribeBuyer({ phone: p, label });
+        }
+      } else {
+        await sellerSubscribe(pin, label);
+      }
       try { localStorage.setItem(activatedKey, '1'); } catch (e) { /* ignore */ }
       toast.success('Notifikasi aktif! 🔔');
       setShow(false);
@@ -122,6 +132,23 @@ export default function PushActivationPrompt({ role, token, pin, personName }) {
         {mode === 'activate' ? (
           <div className="p-4">
             <p className="text-sm text-[#78350F] mb-4">{desc}</p>
+            {isGuest && (
+              <div className="mb-4">
+                <label className="block text-xs font-bold text-[#7C2D12] mb-1.5">Nomor WhatsApp kamu</label>
+                <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl border border-[#FED7AA] bg-white focus-within:border-[#F97316]">
+                  <span className="text-[#9A3412] font-semibold text-sm">+62</span>
+                  <input
+                    type="tel"
+                    inputMode="numeric"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))}
+                    placeholder="81234567890"
+                    className="flex-1 outline-none text-sm text-[#451A03] bg-transparent"
+                  />
+                </div>
+                <p className="text-[10px] text-gray-500 mt-1">Dipakai untuk kirim update status pesananmu. Pakai nomor yang sama saat checkout ya.</p>
+              </div>
+            )}
             <div className="flex gap-2">
               <button
                 onClick={snooze}
