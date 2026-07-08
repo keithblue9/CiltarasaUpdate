@@ -1,15 +1,17 @@
 import React, { useState } from 'react';
-import { BarChart2, ShoppingCart, Boxes, DollarSign } from 'lucide-react';
+import { BarChart2, ShoppingCart, Boxes, DollarSign, Truck } from 'lucide-react';
 import SalesReport from './SalesReport';
 import PurchaseManagement from './PurchaseManagement';
 import InventoryReport from './InventoryReport';
 import FinancialReport from './FinancialReport';
+import OngkirReport from './OngkirReport';
 
 const TABS = [
   { id: 'sales', label: 'Laporan Penjualan', icon: BarChart2 },
   { id: 'purchases', label: 'Laporan Pembelian (Restock)', icon: ShoppingCart },
   { id: 'inventory', label: 'Laporan Inventory (Stock)', icon: Boxes },
   { id: 'financial', label: 'Laporan Keuangan', icon: DollarSign },
+  { id: 'ongkir', label: 'Saldo Ongkir & History', icon: Truck },
 ];
 
 export default function ReportsPage({ initialTab = 'sales' }) {
@@ -42,6 +44,7 @@ export default function ReportsPage({ initialTab = 'sales' }) {
         {tab === 'purchases' && <PurchaseManagement />}
         {tab === 'inventory' && <InventoryReport />}
         {tab === 'financial' && <FinancialReport />}
+        {tab === 'ongkir' && <OngkirReport />}
       </div>
     </div>
   );

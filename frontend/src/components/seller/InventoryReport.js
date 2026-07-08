@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { RefreshCw, Search, AlertTriangle, Boxes, PackageX, PackageMinus, Coins } from 'lucide-react';
 import axios from 'axios';
+import { PeriodTabs, KpiCard, DetailModal } from './ReportShared';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 const fmtRp = (n) => `Rp ${Number(n || 0).toLocaleString('id-ID')}`;
@@ -10,21 +11,23 @@ export default function InventoryReport() {
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
   const [sortBy, setSortBy] = useState('value'); // value | stock | name
+  const [period, setPeriod] = useState('month'); // pengaruh ke velocity/laju jual
+  const [detail, setDetail] = useState(null); // 'value' | 'low' | 'oos' | 'missing'
 
-  const load = async () => {
+  const load = async (p = period) => {
     setLoading(true);
     try {
-      const r = await axios.get(`${API}/api/dashboard/inventory`);
+      const r = await axios.get(`${API}/api/dashboard/inventory?period=${p}`);
       setData(r.data);
     } catch (e) { console.warn('[InventoryReport] load failed:', e); }
     setLoading(false);
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(period); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [period]);
 
   if (loading) return <div className="flex justify-center py-20"><RefreshCw size={32} className="text-[#D97706] animate-spin" /></div>;
-  if (!data) return <p className="text-center text-[#92400E] py-10 text-sm">Gagal memuat. <button onClick={load} className="underline font-bold">Coba lagi</button></p>;
+  if (!data) return <p className="text-center text-[#92400E] py-10 text-sm">Gagal memuat. <button onClick={() => load()} className="underline font-bold">Coba lagi</button></p>;
 
-  const { kpi, all_products = [], category_breakdown = [], top_movers = [], slow_movers = [], missing_cost_items = [] } = data;
+  const { kpi, all_products = [], category_breakdown = [], top_movers = [], slow_movers = [], missing_cost_items = [], low_stock_items = [], out_of_stock_items = [] } = data;
   const totalValue = kpi.stock_value_cost_only ?? kpi.stock_value ?? 0;
 
   const rows = all_products
@@ -33,30 +36,34 @@ export default function InventoryReport() {
 
   return (
     <div className="space-y-5">
-      {/* KPI cards */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <p className="text-xs text-[#9A3412]">Stok & nilai selalu <strong>sekarang</strong>. Filter periode memengaruhi <strong>laju jual (velocity)</strong>.</p>
+        <PeriodTabs value={period} onChange={setPeriod} />
+      </div>
+
+      {/* KPI cards — semua bisa diklik */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Kpi icon={Coins} color="green" title="Nilai Stok (harga modal)" value={fmtRp(totalValue)} sub={`${kpi.total_stock_units || 0} unit di ${kpi.total_products} produk`} />
-        <Kpi icon={Boxes} color="blue" title="Total Produk" value={kpi.total_products} sub="semua produk terhitung" />
-        <Kpi icon={PackageMinus} color="amber" title="Stok Menipis" value={kpi.low_stock_count} sub={`≤ ${kpi.low_stock_threshold} unit`} />
-        <Kpi icon={PackageX} color="red" title="Stok Habis" value={kpi.out_of_stock_count} sub="perlu restock" />
+        <KpiCard icon={Coins} color="green" title="Nilai Stok (harga modal)" value={fmtRp(totalValue)} sub={`${kpi.total_stock_units || 0} unit di ${kpi.total_products} produk`} onClick={() => setDetail('value')} />
+        <KpiCard icon={Boxes} color="blue" title="Total Produk" value={kpi.total_products} sub="semua produk terhitung" onClick={() => setDetail('all')} />
+        <KpiCard icon={PackageMinus} color="amber" title="Stok Menipis" value={kpi.low_stock_count} sub={`≤ ${kpi.low_stock_threshold} unit`} onClick={kpi.low_stock_count > 0 ? () => setDetail('low') : null} />
+        <KpiCard icon={PackageX} color="red" title="Stok Habis" value={kpi.out_of_stock_count} sub="perlu restock" onClick={kpi.out_of_stock_count > 0 ? () => setDetail('oos') : null} />
       </div>
 
       {kpi.missing_cost_count > 0 && (
-        <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800 flex gap-2">
+        <button onClick={() => setDetail('missing')} className="w-full text-left rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800 flex gap-2 hover:bg-amber-100">
           <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
           <span>
-            <strong>{kpi.missing_cost_count} produk belum punya harga modal</strong> ({missing_cost_items.map(p => p.name).slice(0, 4).join(', ')}{missing_cost_items.length > 4 ? ', …' : ''}).
-            Nilainya dihitung Rp 0 di laporan ini — isi harga modal lewat Pembelian/Restock atau edit produk biar nilai stok & HPP akurat.
+            <strong>{kpi.missing_cost_count} produk belum punya harga modal</strong> — nilainya dihitung Rp 0. Klik untuk lihat daftar & perbaiki.
           </span>
-        </div>
+        </button>
       )}
 
-      {/* Full valuation table — SEMUA produk masuk sini */}
+      {/* Full valuation table */}
       <div className="bg-white rounded-2xl border border-[#FED7AA] p-5">
         <div className="flex items-center justify-between flex-wrap gap-3 mb-3">
           <div>
             <h2 className="font-heading font-bold text-[#78350F] text-lg">Rincian Nilai Stok per Produk</h2>
-            <p className="text-[11px] text-[#92400E]">Semua produk terhitung di sini (termasuk yang stoknya sehat). Nilai = harga modal × qty stok.</p>
+            <p className="text-[11px] text-[#92400E]">Semua produk terhitung. Nilai = harga modal × qty stok.</p>
           </div>
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[#FED7AA] bg-white">
@@ -81,7 +88,7 @@ export default function InventoryReport() {
                 <th className="text-right py-2 px-2 font-semibold">Modal/unit</th>
                 <th className="text-right py-2 px-2 font-semibold">Nilai</th>
                 <th className="text-right py-2 px-2 font-semibold">% Nilai</th>
-                <th className="text-right py-2 px-2 font-semibold">Laju 30 hari</th>
+                <th className="text-right py-2 px-2 font-semibold">Laju jual</th>
               </tr>
             </thead>
             <tbody>
@@ -104,7 +111,7 @@ export default function InventoryReport() {
             </tbody>
             <tfoot>
               <tr className="border-t-2 border-[#FED7AA]">
-                <td colSpan={4} className="py-2.5 px-2 font-bold text-[#78350F]">TOTAL NILAI STOK ({rows.length} produk{q ? ' tersaring' : ''})</td>
+                <td colSpan={4} className="py-2.5 px-2 font-bold text-[#78350F]">TOTAL ({rows.length} produk{q ? ' tersaring' : ''})</td>
                 <td className="py-2.5 px-2 text-right font-heading font-bold text-green-700">{fmtRp(rows.reduce((s, p) => s + p.value, 0))}</td>
                 <td colSpan={2}></td>
               </tr>
@@ -113,7 +120,7 @@ export default function InventoryReport() {
         </div>
       </div>
 
-      {/* Category breakdown */}
+      {/* Category + movers */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="bg-white rounded-2xl border border-[#FED7AA] p-5">
           <h3 className="font-heading font-bold text-[#78350F] mb-3">Nilai per Kategori</h3>
@@ -133,14 +140,14 @@ export default function InventoryReport() {
         </div>
 
         <div className="bg-white rounded-2xl border border-[#FED7AA] p-5">
-          <h3 className="font-heading font-bold text-[#78350F] mb-3">Paling Laku vs Paling Lambat (30 hari)</h3>
+          <h3 className="font-heading font-bold text-[#78350F] mb-3">Paling Laku vs Paling Lambat</h3>
           <div className="grid grid-cols-2 gap-3 text-xs">
             <div>
               <p className="font-bold text-green-700 mb-1.5">🔥 Top Movers</p>
               {top_movers.filter(p => p.velocity_30d > 0).slice(0, 5).map(p => (
                 <p key={p.id} className="text-[#451A03] py-0.5 truncate">{p.name} <span className="text-[#92400E]">({p.velocity_30d}/hr)</span></p>
               ))}
-              {top_movers.filter(p => p.velocity_30d > 0).length === 0 && <p className="text-gray-400">Belum ada penjualan 30 hari ini</p>}
+              {top_movers.filter(p => p.velocity_30d > 0).length === 0 && <p className="text-gray-400">Belum ada penjualan di periode ini</p>}
             </div>
             <div>
               <p className="font-bold text-amber-700 mb-1.5">🐢 Slow Movers</p>
@@ -152,23 +159,41 @@ export default function InventoryReport() {
           </div>
         </div>
       </div>
+
+      {/* Modals */}
+      <DetailModal open={detail === 'value'} onClose={() => setDetail(null)} title="Rincian Nilai Stok" subtitle={`Total ${fmtRp(totalValue)} · ${kpi.total_products} produk`}>
+        <ProductList items={all_products.filter(p => p.value > 0)} showValue />
+      </DetailModal>
+      <DetailModal open={detail === 'all'} onClose={() => setDetail(null)} title="Semua Produk" subtitle={`${kpi.total_products} produk terdaftar`}>
+        <ProductList items={all_products} showValue />
+      </DetailModal>
+      <DetailModal open={detail === 'low'} onClose={() => setDetail(null)} title="Stok Menipis" subtitle={`${low_stock_items.length} produk ≤ ${kpi.low_stock_threshold} unit`}>
+        <ProductList items={low_stock_items} />
+      </DetailModal>
+      <DetailModal open={detail === 'oos'} onClose={() => setDetail(null)} title="Stok Habis" subtitle={`${out_of_stock_items.length} produk perlu restock`}>
+        <ProductList items={out_of_stock_items} />
+      </DetailModal>
+      <DetailModal open={detail === 'missing'} onClose={() => setDetail(null)} title="Produk Tanpa Harga Modal" subtitle={`${missing_cost_items.length} produk — perbaiki di menu Produk / Pembelian`}>
+        <ProductList items={missing_cost_items} />
+      </DetailModal>
     </div>
   );
 }
 
-function Kpi({ icon: Icon, color, title, value, sub }) {
-  const colors = {
-    green: 'bg-green-50 text-green-700 border-green-200',
-    blue: 'bg-blue-50 text-blue-700 border-blue-200',
-    amber: 'bg-amber-50 text-amber-700 border-amber-200',
-    red: 'bg-red-50 text-red-600 border-red-200',
-  };
+function ProductList({ items, showValue }) {
+  if (!items.length) return <p className="text-center text-[#92400E] py-6 text-sm">Tidak ada data.</p>;
   return (
-    <div className="bg-white rounded-2xl border border-[#FED7AA] p-4">
-      <div className={`w-8 h-8 rounded-lg border flex items-center justify-center mb-2 ${colors[color]}`}><Icon size={16} /></div>
-      <p className="text-[11px] text-[#92400E] font-semibold">{title}</p>
-      <p className="font-heading font-bold text-lg text-[#7C2D12] leading-tight">{value}</p>
-      <p className="text-[10px] text-[#9A3412] mt-0.5">{sub}</p>
+    <div className="space-y-2">
+      {items.map(p => (
+        <div key={p.id} className="flex items-center gap-3 p-3 bg-[#FDF8F0] rounded-xl">
+          {p.image_url && <img src={p.image_url} alt="" className="w-10 h-10 rounded-lg object-cover flex-shrink-0" />}
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-[#451A03] text-sm truncate">{p.name}</p>
+            <p className="text-[11px] text-[#92400E]">Stok: {p.stock} · Modal/unit: {fmtRp(p.cost_price)} · Kategori: {p.category}</p>
+          </div>
+          {showValue && <span className="font-bold text-[#7C2D12] text-sm">{fmtRp(p.value)}</span>}
+        </div>
+      ))}
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import axios from 'axios';
 import { toast } from 'sonner';
 import CashbookTable from './CashbookTable';
+import { PeriodTabs } from './ReportShared';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 const formatRp = (n) => `Rp ${Number(n || 0).toLocaleString('id-ID')}`;
@@ -48,13 +49,14 @@ export default function FinancialReport() {
   const [savingKas, setSavingKas] = useState(false);
   const [fisikRekening, setFisikRekening] = useState('');
   const [fisikSaldo, setFisikSaldo] = useState('');
+  const [period, setPeriod] = useState('month');
 
-  const load = async () => {
+  const load = async (p = period) => {
     setLoading(true);
     try {
       const [r, e] = await Promise.all([
-        axios.get(`${API}/api/reports/financial`),
-        axios.get(`${API}/api/financial-entries`),
+        axios.get(`${API}/api/reports/financial?period=${p}`),
+        axios.get(`${API}/api/financial-entries?period=${p}`),
       ]);
       setReport(r.data);
       setEntries(e.data);
@@ -64,7 +66,7 @@ export default function FinancialReport() {
     setLoading(false);
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(period); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [period]);
 
   const handleAddEntry = async () => {
     if (!entryForm.description || !entryForm.amount) { toast.error('Isi nama biaya & jumlahnya ya'); return; }
@@ -74,7 +76,7 @@ export default function FinancialReport() {
       toast.success('Biaya ditambahkan! ✅');
       setShowExpenseModal(false);
       setEntryForm(emptyEntry());
-      await load();
+      await load(period);
     } catch { toast.error('Gagal menambahkan biaya.'); }
     finally { setSaving(false); }
   };
@@ -83,7 +85,7 @@ export default function FinancialReport() {
     if (!window.confirm('Hapus biaya ini?')) return;
     try {
       await axios.delete(`${API}/api/financial-entries/${id}`);
-      await load();
+      await load(period);
     } catch (err) { console.warn('[FinancialReport] delete failed:', err); toast.error('Gagal menghapus.'); }
   };
 
@@ -92,7 +94,7 @@ export default function FinancialReport() {
     try {
       await axios.put(`${API}/api/store-config`, { kas_awal: Number(kasAwalInput) || 0, modal_awal_barang: Number(modalBarangInput) || 0 });
       toast.success('Modal awal disimpan! 💰');
-      await load();
+      await load(period);
     } catch { toast.error('Gagal simpan kas awal'); }
     finally { setSavingKas(false); }
   };
@@ -122,7 +124,10 @@ export default function FinancialReport() {
     <div className="space-y-5">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="font-heading text-2xl font-bold text-[#78350F]">Laporan Keuangan</h1>
-        <button onClick={load} className="p-2 text-[#D97706]"><RefreshCw size={18} /></button>
+        <div className="flex items-center gap-2">
+          <PeriodTabs value={period} onChange={setPeriod} />
+          <button onClick={() => load(period)} className="p-2 text-[#D97706]"><RefreshCw size={18} /></button>
+        </div>
       </div>
 
       {/* Income Statement */}

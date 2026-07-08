@@ -3,6 +3,7 @@ import { Plus, X, Save, Trash2, Package, CheckCircle2, Clock, Pencil } from 'luc
 import axios from 'axios';
 import { useApp } from '../../context/AppContext';
 import { toast } from 'sonner';
+import { PeriodTabs, KpiCard, DetailModal } from './ReportShared';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 const fmtRp = (n) => `Rp ${Number(n).toLocaleString('id-ID')}`;
@@ -215,10 +216,20 @@ export default function PurchaseManagement() {
   const [prefill, setPrefill] = useState(null);
   const [editing, setEditing] = useState(null);
   const [filter, setFilter] = useState('all');
+  const [period, setPeriod] = useState('all');
   const [hppTotal, setHppTotal] = useState(0);
+  const [detail, setDetail] = useState(null); // 'total' | 'received' | 'hpp'
   useEffect(() => {
-    axios.get(`${API}/api/reports/financial`).then(r => setHppTotal(r.data?.total_cogs || 0)).catch(() => {});
-  }, []);
+    axios.get(`${API}/api/reports/financial?period=${period}`).then(r => setHppTotal(r.data?.total_cogs || 0)).catch(() => {});
+  }, [period]);
+
+  const cutoffMs = period === 'today' ? 0 : period === 'week' ? 7 * 864e5 : period === 'month' ? 30 * 864e5 : period === 'year' ? 365 * 864e5 : null;
+  const nowMs = Date.now();
+  const purchasesInPeriod = purchases.filter(p => {
+    if (cutoffMs === null) return true;
+    if (cutoffMs === 0) { const d = new Date(p.ordered_at); return d.toDateString() === new Date().toDateString(); }
+    return (nowMs - new Date(p.ordered_at).getTime()) <= cutoffMs;
+  });
 
   // Listen for restock alert clicks via custom event
   useEffect(() => {
@@ -271,7 +282,7 @@ export default function PurchaseManagement() {
     } catch { toast.error('Gagal hapus'); }
   };
 
-  const filtered = purchases.filter(p => filter === 'all' || p.status === filter);
+  const filtered = purchasesInPeriod.filter(p => filter === 'all' || p.status === filter);
 
   return (
     <div className="space-y-5">
@@ -285,23 +296,16 @@ export default function PurchaseManagement() {
         </button>
       </div>
 
-      {/* Stat cards */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <p className="text-xs text-[#9A3412]">Stat card di bawah bisa diklik untuk lihat rincian.</p>
+        <PeriodTabs value={period} onChange={setPeriod} />
+      </div>
+
+      {/* Stat cards — semua bisa diklik */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div className="bg-white rounded-2xl border border-[#FED7AA] p-4">
-          <p className="text-xs text-[#92400E] font-semibold">Total Nilai Pembelian</p>
-          <p className="font-heading font-bold text-xl text-[#7C2D12] mt-1">Rp {purchases.reduce((s, p) => s + Number(p.total || 0), 0).toLocaleString('id-ID')}</p>
-          <p className="text-[10px] text-[#9A3412] mt-0.5">{purchases.length} PO total</p>
-        </div>
-        <div className="bg-white rounded-2xl border border-[#FED7AA] p-4">
-          <p className="text-xs text-[#92400E] font-semibold">Sudah Diterima (masuk stok)</p>
-          <p className="font-heading font-bold text-xl text-green-700 mt-1">Rp {purchases.filter(p => p.status === 'received').reduce((s, p) => s + Number(p.total || 0), 0).toLocaleString('id-ID')}</p>
-          <p className="text-[10px] text-[#9A3412] mt-0.5">{purchases.filter(p => p.status === 'received').length} PO diterima</p>
-        </div>
-        <div className="bg-white rounded-2xl border border-[#FED7AA] p-4">
-          <p className="text-xs text-[#92400E] font-semibold">HPP Total (barang terjual)</p>
-          <p className="font-heading font-bold text-xl text-red-500 mt-1">Rp {Number(hppTotal).toLocaleString('id-ID')}</p>
-          <p className="text-[10px] text-[#9A3412] mt-0.5">Sama dengan HPP di Lap. Keuangan</p>
-        </div>
+        <KpiCard icon={Package} color="orange" title="Total Nilai Pembelian" value={`Rp ${purchasesInPeriod.reduce((s, p) => s + Number(p.total || 0), 0).toLocaleString('id-ID')}`} sub={`${purchasesInPeriod.length} PO total`} onClick={purchasesInPeriod.length ? () => setDetail('total') : null} />
+        <KpiCard icon={CheckCircle2} color="green" title="Sudah Diterima (masuk stok)" value={`Rp ${purchasesInPeriod.filter(p => p.status === 'received').reduce((s, p) => s + Number(p.total || 0), 0).toLocaleString('id-ID')}`} sub={`${purchasesInPeriod.filter(p => p.status === 'received').length} PO diterima`} onClick={purchasesInPeriod.filter(p => p.status === 'received').length ? () => setDetail('received') : null} />
+        <KpiCard icon={Package} color="red" title="HPP Total (barang terjual)" value={`Rp ${Number(hppTotal).toLocaleString('id-ID')}`} sub="Sama dengan HPP di Lap. Keuangan" onClick={() => setDetail('hpp')} />
       </div>
       <div className="rounded-xl bg-blue-50 border border-blue-200 p-3 text-[11px] text-blue-900">
         ℹ️ <strong>Total Pembelian</strong> = biaya restock yang kamu beli. <strong>HPP</strong> = biaya barang yang sudah <strong>terjual</strong> (angka di Lap. Keuangan). Wajar beda — yang dibeli belum tentu semua sudah terjual.
@@ -310,7 +314,7 @@ export default function PurchaseManagement() {
       <div className="flex gap-2">
         {['all', 'ordered', 'received'].map(f => (
           <button key={f} onClick={() => setFilter(f)} className={`px-4 py-2 rounded-full text-xs font-bold ${filter === f ? 'bg-gradient-to-r from-[#F97316] to-[#EA580C] text-white shadow' : 'bg-white border border-[#FED7AA] text-[#7C2D12]'}`}>
-            {f === 'all' ? `Semua (${purchases.length})` : f === 'ordered' ? `Pending (${purchases.filter(p => p.status === 'ordered').length})` : `Diterima (${purchases.filter(p => p.status === 'received').length})`}
+            {f === 'all' ? `Semua (${purchasesInPeriod.length})` : f === 'ordered' ? `Pending (${purchasesInPeriod.filter(p => p.status === 'ordered').length})` : `Diterima (${purchasesInPeriod.filter(p => p.status === 'received').length})`}
           </button>
         ))}
       </div>
@@ -332,6 +336,43 @@ export default function PurchaseManagement() {
       {showForm && (
         <PurchaseForm products={products} prefill={prefill} editing={editing} onSave={handleSave} onCancel={() => { setShowForm(false); setPrefill(null); setEditing(null); }} />
       )}
+
+      <DetailModal open={detail === 'total'} onClose={() => setDetail(null)} title="Semua Pembelian" subtitle={`${purchasesInPeriod.length} PO · Total Rp ${purchasesInPeriod.reduce((s, p) => s + Number(p.total || 0), 0).toLocaleString('id-ID')}`}>
+        <POList items={purchasesInPeriod} />
+      </DetailModal>
+      <DetailModal open={detail === 'received'} onClose={() => setDetail(null)} title="Pembelian Sudah Diterima" subtitle="Sudah masuk stok produk">
+        <POList items={purchasesInPeriod.filter(p => p.status === 'received')} />
+      </DetailModal>
+      <DetailModal open={detail === 'hpp'} onClose={() => setDetail(null)} title="Tentang HPP" subtitle="Kenapa HPP beda dari Total Pembelian?">
+        <div className="space-y-3 text-sm text-[#451A03]">
+          <div className="p-3 rounded-xl bg-[#FDF8F0] border border-[#FED7AA]">
+            <p className="font-bold text-[#7C2D12] mb-1">HPP (Harga Pokok Penjualan)</p>
+            <p>= biaya modal barang yang <strong>sudah TERJUAL</strong> (bukan yang tinggal di freezer). Rumus: Σ (harga modal produk × qty yang terjual).</p>
+          </div>
+          <div className="p-3 rounded-xl bg-blue-50 border border-blue-200">
+            <p className="font-bold text-blue-900 mb-1">Total Nilai Pembelian</p>
+            <p>= biaya semua PO yang kamu bikin (belum tentu semuanya sudah terjual).</p>
+          </div>
+          <p className="text-xs text-[#92400E]">Rincian per produk yang terjual bisa dilihat di <strong>Laporan Keuangan → baris HPP (klik "Rincian ›")</strong>.</p>
+        </div>
+      </DetailModal>
+    </div>
+  );
+}
+
+function POList({ items }) {
+  if (!items.length) return <p className="text-center text-[#92400E] py-6 text-sm">Tidak ada data.</p>;
+  return (
+    <div className="space-y-2">
+      {items.map(p => (
+        <div key={p.id} className="flex items-center justify-between gap-3 p-3 bg-[#FDF8F0] rounded-xl">
+          <div className="min-w-0">
+            <p className="font-bold text-[#7C2D12] text-sm">#{p.purchase_number}</p>
+            <p className="text-[11px] text-[#92400E]">{p.supplier || '-'} · {new Date(p.ordered_at).toLocaleDateString('id-ID')} · {p.status === 'received' ? '✅ Diterima' : '⏳ Pending'}</p>
+          </div>
+          <span className="font-bold text-[#7C2D12] text-sm whitespace-nowrap">Rp {Number(p.total || 0).toLocaleString('id-ID')}</span>
+        </div>
+      ))}
     </div>
   );
 }
