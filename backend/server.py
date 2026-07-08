@@ -275,7 +275,8 @@ class ResetPasscodeReq(BaseModel):
     phone: str
 
 class BuyerPushSub(BaseModel):
-    token: str
+    token: Optional[str] = None
+    phone: Optional[str] = None
     endpoint: str
     keys: Dict[str, str]
     user_agent: Optional[str] = None
@@ -1803,13 +1804,39 @@ async def create_purchase(p: PurchaseCreate, _auth: bool = Depends(require_selle
 
 @api_router.put("/purchases/{pid}")
 async def update_purchase(pid: str, update: PurchaseUpdate, _auth: bool = Depends(require_seller)):
+    existing = await db.purchases.find_one({"id": pid}, {"_id": 0})
+    if not existing:
+        raise HTTPException(404, "Pembelian tidak ditemukan")
     upd = update.model_dump(exclude_unset=True)
-    if "items" in upd and upd["items"] is not None:
-        upd["total"] = sum(i["subtotal"] for i in upd["items"])
+    new_items = upd.get("items")
+    affected = []
+    # Kalau purchase SUDAH diterima & item-nya diubah → sesuaikan stok berdasarkan selisih (delta),
+    # supaya stok tetap akurat (mis. seller salah input qty lalu edit).
+    if existing.get("status") == "received" and new_items is not None:
+        old_map = {}
+        for it in existing.get("items", []):
+            old_map[it["product_id"]] = old_map.get(it["product_id"], 0) + int(it.get("quantity", 0))
+        new_map = {}
+        for it in new_items:
+            new_map[it["product_id"]] = new_map.get(it["product_id"], 0) + int(it.get("quantity", 0))
+        for prod_id in set(old_map) | set(new_map):
+            delta = new_map.get(prod_id, 0) - old_map.get(prod_id, 0)
+            if delta != 0:
+                prod = await db.products.find_one({"id": prod_id}, {"_id": 0})
+                if prod:
+                    new_stock = max(0, int(prod.get("stock", 0)) + delta)
+                    await db.products.update_one({"id": prod_id}, {"$set": {"stock": new_stock, "updated_at": now_iso()}})
+                    affected.append(prod_id)
+    if new_items is not None:
+        upd["total"] = sum(i["subtotal"] for i in new_items)
     upd["updated_at"] = now_iso()
     await db.purchases.update_one({"id": pid}, {"$set": upd})
     doc = await db.purchases.find_one({"id": pid}, {"_id": 0})
     await manager.broadcast({"type": "purchase_updated", "data": doc})
+    for prod_id in set(affected):
+        prod = await db.products.find_one({"id": prod_id}, {"_id": 0})
+        if prod:
+            await manager.broadcast({"type": "product_updated", "data": prod})
     return doc
 
 @api_router.post("/purchases/{pid}/receive")
@@ -1839,8 +1866,24 @@ async def receive_purchase(pid: str, received_at: Optional[str] = None, _auth: b
 
 @api_router.delete("/purchases/{pid}")
 async def delete_purchase(pid: str, _auth: bool = Depends(require_seller)):
+    p = await db.purchases.find_one({"id": pid}, {"_id": 0})
+    if not p:
+        return {"success": True}
+    affected = []
+    # Kalau pembelian SUDAH diterima, stok pernah ditambahkan → kembalikan (reverse) supaya akurat.
+    if p.get("status") == "received":
+        for item in p.get("items", []):
+            prod = await db.products.find_one({"id": item["product_id"]}, {"_id": 0})
+            if prod:
+                new_stock = max(0, int(prod.get("stock", 0)) - int(item.get("quantity", 0)))
+                await db.products.update_one({"id": item["product_id"]}, {"$set": {"stock": new_stock, "updated_at": now_iso()}})
+                affected.append(item["product_id"])
     await db.purchases.delete_one({"id": pid})
     await manager.broadcast({"type": "purchase_deleted", "data": {"id": pid}})
+    for prod_id in set(affected):
+        prod = await db.products.find_one({"id": prod_id}, {"_id": 0})
+        if prod:
+            await manager.broadcast({"type": "product_updated", "data": prod})
     return {"success": True}
 
 # ─── Smart Insights ──────────────────────────────────────────────────────────
@@ -2071,12 +2114,18 @@ async def push_subscribe(sub: PushSubscription, x_seller_pin: Optional[str] = He
 
 @api_router.post("/push/buyer/subscribe")
 async def buyer_push_subscribe(sub: BuyerPushSub):
-    """Buyer subscribe ke push notif. Auth pakai token (= user id), bukan PIN seller."""
+    """Buyer subscribe ke push notif. Bisa via token (user login) ATAU nomor WA (guest)."""
     if not WEBPUSH_AVAILABLE:
         raise HTTPException(501, "Web Push tidak tersedia di server")
-    user = await db.users.find_one({"id": sub.token}, {"_id": 0})
-    if not user:
-        raise HTTPException(401, "Sesi tidak valid. Login ulang ya.")
+    phone = None
+    if sub.token:
+        user = await db.users.find_one({"id": sub.token}, {"_id": 0})
+        if user:
+            phone = user.get("phone")
+    if not phone and sub.phone:
+        phone = normalize_phone(sub.phone)
+    if not phone or len(phone) < 10:
+        raise HTTPException(400, "Butuh login atau nomor WhatsApp yang valid untuk aktifkan notifikasi.")
     doc = {
         "id": str(uuid.uuid4()),
         "endpoint": sub.endpoint,
@@ -2084,7 +2133,7 @@ async def buyer_push_subscribe(sub: BuyerPushSub):
         "user_agent": sub.user_agent or "",
         "label": sub.label or "Buyer Device",
         "role": "buyer",
-        "phone": user["phone"],
+        "phone": phone,
         "created_at": now_iso(),
         "last_seen": now_iso(),
     }
