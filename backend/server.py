@@ -355,12 +355,13 @@ class SettingsUpdate(BaseModel):
     message_template: Optional[str] = None
 
 class FinancialEntryCreate(BaseModel):
-    type: str
+    type: str  # 'expense' (masuk P&L) | 'topup_saldo' (rekening→saldo, non-P&L) | 'saldo_usage' (saldo→rekening, non-P&L)
     description: str
     amount: float
     category: str
     date: str
     note: Optional[str] = None
+    cash_source: Optional[str] = "rekening"  # 'rekening' | 'saldo_ongkir' — dari kantong mana uangnya keluar
 
 class ReviewCreate(BaseModel):
     order_id: str
@@ -399,6 +400,7 @@ class StoreConfigUpdate(BaseModel):
     restock_safety_days: Optional[int] = None
     checkout_mode: Optional[str] = None
     kas_awal: Optional[float] = None
+    modal_awal_barang: Optional[float] = None
     qris_image_url: Optional[str] = None
     payment_texts: Optional[Dict[str, str]] = None
     auto_chat_config: Optional[Dict[str, Any]] = None
@@ -569,7 +571,8 @@ DEFAULT_STORE_CONFIG = {
     "wa_notif_enabled": True,
     "low_stock_threshold": 10,
     "checkout_mode": "single",  # "single" (satu halaman) | "wizard" (step-by-step)
-    "kas_awal": 0,  # Kas awal / modal awal untuk laporan keuangan (Kas Akhir = Kas Awal + Laba Bersih)
+    "kas_awal": 0,  # Kas awal berupa UANG TUNAI murni (bukan barang)
+    "modal_awal_barang": 0,  # Nilai BARANG saat pertama kali stok awal dibeli (mis. 11jt)
     "pwa_install": {
         "buyer_enabled": True,
         "buyer_delay_seconds": 30,
@@ -2415,12 +2418,17 @@ async def dashboard_inventory(_auth: bool = Depends(require_seller)):
         if ts < cutoff_30:
             continue
         for it in o.get("items", []):
-            velocity[it["product_id"]] = velocity.get(it["product_id"], 0) + it.get("quantity", 0)
+            pid = it.get("product_id")
+            if pid:
+                velocity[pid] = velocity.get(pid, 0) + it.get("quantity", 0)
 
     total = len(products)
     low_stock = [p for p in products if 0 < p.get("stock", 0) <= low_stock_threshold]
     out_of_stock = [p for p in products if p.get("stock", 0) <= 0]
     stock_value = sum((p.get("cost_price") or p.get("price", 0)) * p.get("stock", 0) for p in products)
+    # Nilai stok murni harga modal (cost). Produk tanpa cost dihitung 0 di sini & ditandai.
+    stock_value_cost_only = sum((p.get("cost_price") or 0) * p.get("stock", 0) for p in products)
+    missing_cost = [p for p in products if not p.get("cost_price") and p.get("stock", 0) > 0]
 
     top_movers = sorted(products, key=lambda p: -velocity.get(p["id"], 0))[:5]
     slow_movers = [p for p in products if velocity.get(p["id"], 0) == 0 and p.get("stock", 0) > 0]
@@ -2436,11 +2444,16 @@ async def dashboard_inventory(_auth: bool = Depends(require_seller)):
         cat_break[cat]["value"] += (p.get("cost_price") or p.get("price", 0)) * p.get("stock", 0)
 
     def _strip(p):
+        cost = p.get("cost_price") or 0
+        stock = p.get("stock", 0)
         return {
             "id": p["id"], "name": p["name"], "image_url": p.get("image_url", ""),
-            "stock": p.get("stock", 0), "price": p.get("price", 0),
-            "cost_price": p.get("cost_price", 0), "sold_count": p.get("sold_count", 0),
-            "category": p.get("category"), "velocity_30d": round(velocity.get(p["id"], 0) / 30.0, 2),
+            "stock": stock, "price": p.get("price", 0),
+            "cost_price": cost, "sold_count": p.get("sold_count", 0),
+            "category": cat_name_map.get(p.get("category"), p.get("category")) or "Lainnya",
+            "velocity_30d": round(velocity.get(p["id"], 0) / 30.0, 2),
+            "value": cost * stock,
+            "value_source": "cost" if cost else "missing",
         }
 
     return {
@@ -2449,8 +2462,13 @@ async def dashboard_inventory(_auth: bool = Depends(require_seller)):
             "low_stock_count": len(low_stock),
             "out_of_stock_count": len(out_of_stock),
             "stock_value": stock_value,
+            "stock_value_cost_only": stock_value_cost_only,
+            "missing_cost_count": len(missing_cost),
+            "total_stock_units": sum(p.get("stock", 0) for p in products),
             "low_stock_threshold": low_stock_threshold,
         },
+        "all_products": sorted([_strip(p) for p in products], key=lambda x: -x["value"]),
+        "missing_cost_items": [_strip(p) for p in missing_cost],
         "low_stock_items": [_strip(p) for p in sorted(low_stock, key=lambda p: p.get("stock", 0))],
         "out_of_stock_items": [_strip(p) for p in out_of_stock],
         "top_movers": [_strip(p) for p in top_movers],
@@ -2875,7 +2893,24 @@ async def get_financial_report():
 
     cfg = await db.store_config.find_one({"_id": "main"}) or {}
     kas_awal = float(cfg.get("kas_awal") or 0)
-    kas_akhir = kas_awal + net_profit
+    modal_awal_barang = float(cfg.get("modal_awal_barang") or 0)
+
+    # ─── Nilai stok sekarang (murni harga modal) ───
+    stock_value_now = sum((p.get("cost_price") or 0) * p.get("stock", 0) for p in products)
+
+    # ─── Kantong kas (Skenario B+C) ───
+    all_entries = await db.financial_entries.find({}, {"_id": 0}).to_list(2000)
+    topup_total = sum(e["amount"] for e in all_entries if e.get("type") == "topup_saldo")
+    saldo_usage_total = sum(e["amount"] for e in all_entries if e.get("type") == "saldo_usage")
+    expense_from_saldo = sum(e["amount"] for e in all_entries
+                             if e.get("type") == "expense" and e.get("cash_source") == "saldo_ongkir")
+
+    # Identitas: Stok + Kas = (Kas Awal + Modal Awal Barang) + Laba Bersih
+    total_kas = kas_awal + modal_awal_barang + net_profit - stock_value_now
+    # Saldo ongkir = top-up − biaya yang keluar dari saldo (mis. biaya admin) − pemakaian yang diganti customer
+    saldo_ongkir_calc = topup_total - expense_from_saldo - saldo_usage_total
+    rekening_calc = total_kas - saldo_ongkir_calc
+    kas_akhir = total_kas  # kompatibilitas nama lama
 
     return {
         "total_income": total_income,
@@ -2888,7 +2923,16 @@ async def get_financial_report():
         "net_profit": net_profit,
         "margin": margin,
         "kas_awal": kas_awal,
+        "modal_awal_barang": modal_awal_barang,
+        "stock_value_now": stock_value_now,
         "kas_akhir": kas_akhir,
+        "total_kas": total_kas,
+        "saldo_ongkir_calc": saldo_ongkir_calc,
+        "rekening_calc": rekening_calc,
+        "topup_total": topup_total,
+        "saldo_usage_total": saldo_usage_total,
+        "expense_from_saldo": expense_from_saldo,
+        "all_entries": all_entries,
         "monthly": monthly,
         "transactions": completed[:50],
         "expense_entries": entries,
