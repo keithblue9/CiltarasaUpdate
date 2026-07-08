@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, ShoppingCart, Check, AlertCircle, Star, Flame, Sparkles, TrendingUp, Award } from 'lucide-react';
+import { Search, ShoppingCart, Check, AlertCircle, Star, Flame } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { toast } from 'sonner';
 import ProductDetailModal from './ProductDetailModal';
@@ -198,6 +198,19 @@ export default function Catalog() {
                 />
               </div>
               <select
+                data-testid="catalog-category"
+                value={category}
+                onChange={e => setCategory(e.target.value)}
+                className="px-4 py-3 rounded-full border border-[#FED7AA] bg-white text-[#7C2D12] focus:outline-none focus:ring-2 focus:ring-[#F97316] font-body font-bold text-sm"
+              >
+                <option value="all">✨ Semua Kategori</option>
+                {categories.map(cat => (
+                  <option key={cat.id} value={cat.id}>
+                    {cat.icon ? `${cat.icon} ` : ''}{cat.name}
+                  </option>
+                ))}
+              </select>
+              <select
                 data-testid="catalog-sort"
                 value={sort}
                 onChange={e => setSort(e.target.value)}
@@ -210,31 +223,6 @@ export default function Catalog() {
                 <option value="price-desc">💎 Harga: Termahal</option>
                 <option value="name">🔤 Nama A-Z</option>
               </select>
-            </div>
-
-            {/* Category chips */}
-            <div className="flex gap-2 mb-8 overflow-x-auto pb-2 scrollbar-hide">
-              <button
-                data-testid="category-tab-all"
-                onClick={() => setCategory('all')}
-                className={`flex items-center gap-1.5 px-4 py-2 rounded-full font-bold text-xs whitespace-nowrap transition-all ${
-                  category === 'all' ? 'bg-gradient-to-r from-[#F97316] to-[#EA580C] text-white shadow-md' : 'bg-white text-[#7C2D12] border border-[#FED7AA] hover:bg-[#FED7AA]'
-                }`}
-              >
-                <Sparkles size={12} /> Semua
-              </button>
-              {categories.map(cat => (
-                <button
-                  key={cat.id}
-                  data-testid={`category-tab-${cat.id}`}
-                  onClick={() => setCategory(cat.id)}
-                  className={`flex items-center gap-1.5 px-4 py-2 rounded-full font-bold text-xs whitespace-nowrap transition-all ${
-                    category === cat.id ? 'bg-gradient-to-r from-[#F97316] to-[#EA580C] text-white shadow-md' : 'bg-white text-[#7C2D12] border border-[#FED7AA] hover:bg-[#FED7AA]'
-                  }`}
-                >
-                  <span>{cat.icon}</span> {cat.name}
-                </button>
-              ))}
             </div>
 
             {/* Products Grid */}
