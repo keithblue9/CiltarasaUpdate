@@ -34,7 +34,7 @@ function attachSellerInterceptor(getPin) {
       cfg.headers['X-Seller-PIN'] = getPin();
     }
     // Analytics GET (PIN-guarded)
-    if (method === 'get' && (url.includes('/api/analytics/stats') || url.includes('/api/dashboard/') || url.includes('/api/admin/customers') || url.includes('/api/push/subscriptions') || url.includes('/api/ai/'))) {
+    if (method === 'get' && (url.includes('/api/analytics/stats') || url.includes('/api/dashboard/') || url.includes('/api/admin/customers') || url.includes('/api/push/subscriptions') || url.includes('/api/ai/') || url.includes('/api/reports/'))) {
       cfg.headers = cfg.headers || {};
       cfg.headers['X-Seller-PIN'] = getPin();
     }

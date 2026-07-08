@@ -16,19 +16,27 @@ export default function OngkirReport() {
   const [period, setPeriod] = useState('month');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [detail, setDetail] = useState(null); // 'topup' | 'usage' | 'admin' | null
 
   const load = async (p = period) => {
     setLoading(true);
+    setError(false);
     try {
       const r = await axios.get(`${API}/api/reports/ongkir-history?period=${p}`);
       setData(r.data);
-    } catch (e) { console.warn('[OngkirReport] load failed:', e); }
+    } catch (e) { console.warn('[OngkirReport] load failed:', e); setError(true); }
     setLoading(false);
   };
   useEffect(() => { load(period); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [period]);
 
-  if (loading || !data) return <div className="flex justify-center py-20"><RefreshCw size={32} className="text-[#D97706] animate-spin" /></div>;
+  if (loading) return <div className="flex justify-center py-20"><RefreshCw size={32} className="text-[#D97706] animate-spin" /></div>;
+  if (error || !data) return (
+    <div className="text-center py-10">
+      <p className="text-sm text-red-600 mb-3">Gagal memuat data saldo ongkir.</p>
+      <button onClick={() => load(period)} className="bg-[#D97706] text-white font-bold px-4 py-2 rounded-full text-sm">Coba Lagi</button>
+    </div>
+  );
 
   const entries = data.entries || [];
   const usages = entries.filter(e => e.type === 'saldo_usage');
