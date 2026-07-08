@@ -1337,6 +1337,33 @@ async def update_order_status(oid: str, update: OrderStatusUpdate, _auth: bool =
         update_fields["delivery_fee"] = delivery_fee
         update_fields["total"] = new_total
 
+        # ─── Auto-catat pemakaian saldo ongkir (non-P&L) ke financial_entries ───
+        # Hanya sekali per order (cek existing supaya edit ongkir tidak dobel).
+        existing = await db.financial_entries.find_one({"order_id": oid, "type": "saldo_usage"}, {"_id": 0})
+        if existing:
+            # Update kalau ongkir berubah
+            if float(existing.get("amount") or 0) != delivery_fee:
+                await db.financial_entries.update_one(
+                    {"id": existing["id"]},
+                    {"$set": {"amount": delivery_fee, "note": f"Ongkir order #{order.get('order_number','')} (diedit)"}}
+                )
+        else:
+            await db.financial_entries.insert_one({
+                "id": str(uuid.uuid4()),
+                "type": "saldo_usage",
+                "description": f"Ongkir order #{order.get('order_number','')}",
+                "amount": delivery_fee,
+                "category": "delivery",
+                "date": ts[:10],
+                "note": f"Auto-catat saat status → siap",
+                "cash_source": "saldo_ongkir",
+                "order_id": oid,
+                "order_number": order.get("order_number", ""),
+                "customer_name": order.get("customer_name", ""),
+                "customer_phone": order.get("customer_phone", ""),
+                "created_at": ts,
+            })
+
     # ─── BUG FIX #11: Restore stock saat order dibatalkan ───
     # Hanya restore jika transisi dari status non-cancelled ke cancelled & belum direstore
     stock_restored = order.get("stock_restored", False)
@@ -1781,11 +1808,32 @@ async def analytics_stats(
     }
 
 
+def _period_cutoff(period: Optional[str]) -> Optional[datetime]:
+    """Helper: konversi period string → cutoff datetime (UTC). None = semua data."""
+    if not period or period == "all":
+        return None
+    now = datetime.now(timezone.utc)
+    if period == "today":
+        return now.replace(hour=0, minute=0, second=0, microsecond=0)
+    if period == "week":
+        return now - timedelta(days=7)
+    if period == "month":
+        return now - timedelta(days=30)
+    if period == "year":
+        return now - timedelta(days=365)
+    return None
+
+
 # ─── Purchases (Restock) ─────────────────────────────────────────────────────
 @api_router.get("/purchases")
-async def get_purchases(status: Optional[str] = None):
+async def get_purchases(status: Optional[str] = None, period: Optional[str] = None):
     q = {} if not status else {"status": status}
-    return await db.purchases.find(q, {"_id": 0}).sort("ordered_at", -1).to_list(500)
+    docs = await db.purchases.find(q, {"_id": 0}).sort("ordered_at", -1).to_list(500)
+    cutoff = _period_cutoff(period)
+    if cutoff:
+        cut_iso = cutoff.isoformat()
+        docs = [d for d in docs if (d.get("ordered_at") or "") >= cut_iso]
+    return docs
 
 @api_router.post("/purchases")
 async def create_purchase(p: PurchaseCreate, _auth: bool = Depends(require_seller)):
@@ -2393,8 +2441,9 @@ async def dashboard_general(period: str = "30d", start: Optional[str] = None, en
 
 
 @api_router.get("/dashboard/inventory")
-async def dashboard_inventory(_auth: bool = Depends(require_seller)):
-    """Inventory health: total products, low stock, OOS, stock value, movers, category breakdown."""
+async def dashboard_inventory(period: Optional[str] = None, _auth: bool = Depends(require_seller)):
+    """Inventory health: total products, low stock, OOS, stock value, movers, category breakdown.
+    period mempengaruhi laju penjualan (velocity) — stok & nilai selalu 'sekarang'."""
     products = await db.products.find({}, {"_id": 0}).to_list(1000)
     orders = await db.orders.find({"status": {"$nin": ["dibatalkan"]}}, {"_id": 0}).to_list(5000)
     cfg = await db.store_config.find_one({"_id": "main"}) or {}
@@ -2408,14 +2457,15 @@ async def dashboard_inventory(_auth: bool = Depends(require_seller)):
             cat_name_map[c.get("name", "")] = c.get("name", "")
 
     now = datetime.now(timezone.utc)
-    cutoff_30 = now - timedelta(days=30)
+    vel_cutoff = _period_cutoff(period) or (now - timedelta(days=30))
+    vel_days = max(1, (now - vel_cutoff).days)
     velocity = {}
     for o in orders:
         try:
             ts = datetime.fromisoformat(o.get("created_at", "").replace("Z", "+00:00"))
         except Exception:
             continue
-        if ts < cutoff_30:
+        if ts < vel_cutoff:
             continue
         for it in o.get("items", []):
             pid = it.get("product_id")
@@ -2451,7 +2501,7 @@ async def dashboard_inventory(_auth: bool = Depends(require_seller)):
             "stock": stock, "price": p.get("price", 0),
             "cost_price": cost, "sold_count": p.get("sold_count", 0),
             "category": cat_name_map.get(p.get("category"), p.get("category")) or "Lainnya",
-            "velocity_30d": round(velocity.get(p["id"], 0) / 30.0, 2),
+            "velocity_30d": round(velocity.get(p["id"], 0) / vel_days, 2),
             "value": cost * stock,
             "value_source": "cost" if cost else "missing",
         }
@@ -2742,8 +2792,38 @@ async def create_review(r: ReviewCreate):
 
 # ─── Financial ────────────────────────────────────────────────────────────────
 @api_router.get("/financial-entries")
-async def get_financial_entries():
-    return await db.financial_entries.find({}, {"_id": 0}).sort("date", -1).to_list(1000)
+async def get_financial_entries(period: Optional[str] = None):
+    q = {}
+    cutoff = _period_cutoff(period)
+    if cutoff:
+        q["date"] = {"$gte": cutoff.date().isoformat()}
+    return await db.financial_entries.find(q, {"_id": 0}).sort("date", -1).to_list(2000)
+
+
+@api_router.get("/reports/ongkir-history")
+async def get_ongkir_history(period: Optional[str] = None, _auth: bool = Depends(require_seller)):
+    """History pemakaian saldo ongkir per order (auto-catat saat status → siap)
+    + biaya admin top-up yang keluar dari saldo. Semua non-P&L (netral / bukan biaya beneran)
+    kecuali admin fee (yang memang beneran biaya)."""
+    q = {"$or": [{"type": "saldo_usage"}, {"type": "topup_saldo"},
+                 {"type": "expense", "cash_source": "saldo_ongkir"}]}
+    cutoff = _period_cutoff(period)
+    if cutoff:
+        q["date"] = {"$gte": cutoff.date().isoformat()}
+    entries = await db.financial_entries.find(q, {"_id": 0}).sort("date", -1).to_list(3000)
+
+    topup = sum(e["amount"] for e in entries if e.get("type") == "topup_saldo")
+    usage = sum(e["amount"] for e in entries if e.get("type") == "saldo_usage")
+    admin_fee = sum(e["amount"] for e in entries if e.get("type") == "expense")
+    saldo_left = topup - usage - admin_fee
+
+    return {
+        "topup_total": topup,
+        "usage_total": usage,
+        "admin_fee_total": admin_fee,
+        "saldo_current": saldo_left,
+        "entries": entries,
+    }
 
 @api_router.post("/financial-entries")
 async def create_financial_entry(entry: FinancialEntryCreate, _auth: bool = Depends(require_seller)):
@@ -2832,8 +2912,13 @@ async def get_sales_report(period: str = "month"):
     }
 
 @api_router.get("/reports/financial")
-async def get_financial_report():
-    completed = await db.orders.find({"status": "selesai"}, {"_id": 0}).to_list(1000)
+async def get_financial_report(period: Optional[str] = None):
+    cutoff = _period_cutoff(period)
+    if cutoff:
+        cut_iso = cutoff.isoformat()
+        completed = await db.orders.find({"status": "selesai", "created_at": {"$gte": cut_iso}}, {"_id": 0}).to_list(2000)
+    else:
+        completed = await db.orders.find({"status": "selesai"}, {"_id": 0}).to_list(2000)
     total_income = sum(o.get("total", 0) for o in completed)
     total_delivery = sum(float(o.get("delivery_fee") or 0) for o in completed)
     # Product revenue = total - delivery (so margin% reflects actual product margin)
@@ -2867,7 +2952,13 @@ async def get_financial_report():
     hpp_breakdown_list = sorted(hpp_breakdown.values(), key=lambda x: -x["subtotal"])
 
     gross_profit = product_revenue - total_cogs
-    entries = await db.financial_entries.find({"type": "expense"}, {"_id": 0}).to_list(1000)
+    # Load all financial entries (period-filtered)
+    if cutoff:
+        cut_iso_date = cutoff.date().isoformat()
+        all_entries = await db.financial_entries.find({"date": {"$gte": cut_iso_date}}, {"_id": 0}).to_list(3000)
+    else:
+        all_entries = await db.financial_entries.find({}, {"_id": 0}).to_list(3000)
+    entries = [e for e in all_entries if e.get("type", "expense") == "expense"]
     total_expenses = sum(e["amount"] for e in entries)
     net_profit = gross_profit - total_expenses
     # Margin% computed against product revenue (excluding ongkir which is pass-through)
@@ -2899,7 +2990,6 @@ async def get_financial_report():
     stock_value_now = sum((p.get("cost_price") or 0) * p.get("stock", 0) for p in products)
 
     # ─── Kantong kas (Skenario B+C) ───
-    all_entries = await db.financial_entries.find({}, {"_id": 0}).to_list(2000)
     topup_total = sum(e["amount"] for e in all_entries if e.get("type") == "topup_saldo")
     saldo_usage_total = sum(e["amount"] for e in all_entries if e.get("type") == "saldo_usage")
     expense_from_saldo = sum(e["amount"] for e in all_entries
