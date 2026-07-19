@@ -269,7 +269,7 @@ function QrisFlow({ qrisImageUrl, texts, qrisStage, setQrisStage, proofUrl, setP
 }
 
 export default function Checkout() {
-  const { cart, cartTotal, clearCart, settings, storeConfig, authUser, authToken } = useApp();
+  const { cart, cartTotal, clearCart, settings, storeConfig, authUser, authToken, getItemPrice, products, addToCart } = useApp();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
 
@@ -312,6 +312,30 @@ export default function Checkout() {
     payment_bank_id: '', payment_type: '', payment_proof_url: '',
   }));
   const [qrisStage, setQrisStage] = useState('pending');
+  const [upsellIds, setUpsellIds] = useState([]); // FITUR #15: id produk pelengkap yang disarankan
+
+  // FITUR #15: ambil saran produk pelengkap berdasarkan isi keranjang saat ini.
+  // Cuma jalan kalau upsell_enabled aktif di config seller.
+  useEffect(() => {
+    if (storeConfig?.upsell_enabled === false || cart.length === 0) { setUpsellIds([]); return; }
+    const ids = cart.map(c => c.product.id).join(',');
+    let cancelled = false;
+    axios.get(`${API}/api/upsell-suggestions`, { params: { product_ids: ids } })
+      .then(r => { if (!cancelled) setUpsellIds((r.data?.suggestions || []).map(s => s.product_id)); })
+      .catch(() => { if (!cancelled) setUpsellIds([]); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cart.map(c => c.product.id).join(','), storeConfig?.upsell_enabled]);
+
+  // Resolve id -> objek produk lengkap (dari context, biar harga/stok selalu up-to-date),
+  // saring yang udah masuk keranjang atau kebetulan lagi kosong stoknya.
+  const upsellProducts = useMemo(() => {
+    const cartIds = new Set(cart.map(c => c.product.id));
+    return upsellIds
+      .map(id => products.find(p => p.id === id))
+      .filter(p => p && !cartIds.has(p.id) && p.active !== false && (p.stock || 0) > 0)
+      .slice(0, 3);
+  }, [upsellIds, products, cart]);
 
   // Init delivery_method on first load (or when options change)
   useEffect(() => {
@@ -473,7 +497,7 @@ export default function Checkout() {
     setLoading(true);
     try {
       const items = cart.map(({ product, qty }) => {
-        const price = product.final_price || product.price;
+        const price = getItemPrice(product);
         return { product_id: product.id, product_name: product.name, price, quantity: qty, subtotal: price * qty, image_url: product.image_url || '' };
       });
       const orderTotal = cartTotal + (Number(form.delivery_fee) || 0);
@@ -695,10 +719,40 @@ export default function Checkout() {
             {cart.map(({ product, qty }) => (
               <div key={product.id} className="flex justify-between text-sm text-[#451A03]">
                 <span>{product.name} x{qty}</span>
-                <span className="font-semibold">{formatRp(product.price * qty)}</span>
+                <span className="font-semibold">{formatRp(getItemPrice(product) * qty)}</span>
               </div>
             ))}
           </div>
+          {/* FITUR #12: transparansi — buyer lihat jelas kalau harganya sudah termasuk diskon tier */}
+          {(authUser?.tier?.discount_pct || 0) > 0 && (
+            <div className="mb-3 flex items-center gap-1.5 text-xs font-bold text-amber-800 bg-amber-100 rounded-lg px-3 py-2">
+              {authUser.tier.emoji || '🏆'} Harga {authUser.tier.tier_name || 'Member'} sudah diterapkan (-{authUser.tier.discount_pct}%)
+            </div>
+          )}
+
+          {/* FITUR #15: saran produk pelengkap — "sering dibeli bareng" / terlaris kategori sama */}
+          {upsellProducts.length > 0 && (
+            <div className="mb-4">
+              <p className="text-xs font-bold text-[#78350F] mb-2">🛍️ Yuk tambah juga:</p>
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {upsellProducts.map(p => (
+                  <div key={p.id} data-testid={`upsell-suggestion-${p.id}`} className="flex-shrink-0 w-28 bg-white rounded-xl border border-[#FED7AA] p-2">
+                    <SmartImage src={p.image_url} alt={p.name} className="w-full h-16 rounded-lg object-cover mb-1" />
+                    <p className="text-[10px] font-semibold text-[#451A03] line-clamp-2 leading-tight h-7">{p.name}</p>
+                    <p className="text-[10px] font-bold text-[#D97706] mt-0.5">{formatRp(getItemPrice(p))}</p>
+                    <button
+                      type="button"
+                      data-testid={`upsell-add-${p.id}`}
+                      onClick={() => { addToCart(p, 1); toast.success(`${p.name} ditambahkan ke keranjang`); }}
+                      className="w-full mt-1 bg-[#D97706] text-white text-[10px] font-bold py-1 rounded-lg hover:bg-[#B45309]"
+                    >
+                      + Tambah
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="border-t border-[#FED7AA] pt-3 space-y-1.5">
             <div className="flex justify-between text-sm text-[#451A03]">
               <span>Subtotal</span>
