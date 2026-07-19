@@ -1385,7 +1385,11 @@ async def get_unpaid_later_orders(days_threshold: int = None):
 @api_router.get("/orders/unpaid-reminders")
 async def orders_unpaid_reminders(_auth: bool = Depends(require_seller)):
     """Daftar order 'Bayar Nanti' yang belum lunas & sudah lewat ambang hari,
-    dipakai widget reminder di dashboard seller."""
+    dipakai widget reminder di dashboard seller. Setiap kali endpoint ini dibuka
+    (mis. seller buka Dashboard), sekalian trigger cek-&-kirim push untuk order
+    yang baru lewat ambang batas — supaya notif nggak nunggu jadwal loop
+    berikutnya kalau server sempat 'tidur' (Render free tier)."""
+    await check_and_send_unpaid_reminders()
     cfg = await db.store_config.find_one({"_id": "main"}) or {}
     days_threshold = int(cfg.get("unpaid_reminder_days") or 2)
     orders = await get_unpaid_later_orders(days_threshold)
@@ -1400,46 +1404,47 @@ async def orders_unpaid_reminders(_auth: bool = Depends(require_seller)):
         out.append({**o, "days_waiting": days_waiting})
     return {"count": len(out), "days_threshold": days_threshold, "enabled": bool(cfg.get("unpaid_reminder_enabled", True)), "orders": out}
 
+async def check_and_send_unpaid_reminders():
+    """FITUR #6: cek order 'Bayar Nanti' yang BARU lewat ambang batas & belum
+    pernah diingatkan (per-order, bukan gate waktu global) -> kirim SATU push
+    berisi order-order baru itu, lalu tandai reminder_sent supaya tidak dobel.
+    Dipanggil dari 2 tempat: loop background (tiap 30 menit) DAN setiap kali
+    endpoint /orders/unpaid-reminders diakses (dashboard dibuka) -> jaminan
+    ganda supaya notif nggak pernah telat walau salah satu jalur meleset."""
+    try:
+        cfg = await db.store_config.find_one({"_id": "main"}) or {}
+        if not cfg.get("unpaid_reminder_enabled", True):
+            return
+        days_threshold = int(cfg.get("unpaid_reminder_days") or 2)
+        orders = await get_unpaid_later_orders(days_threshold)
+        new_ones = [o for o in orders if not o.get("reminder_sent")]
+        if not new_ones:
+            return
+        total = sum(o.get("total", 0) for o in new_ones)
+        preview = ", ".join(o.get("order_number", "") for o in new_ones[:3])
+        more = f" +{len(new_ones)-3} lagi" if len(new_ones) > 3 else ""
+        await broadcast_push({
+            "title": f"🕒 {len(new_ones)} Pesanan Baru Lewat Batas Bayar",
+            "body": f"{preview}{more}\nTotal: {fmt_rp_id(total)}. Cek Dashboard buat detail.",
+            "tag": f"unpaid-reminder-{now_iso()}",
+            "url": "/#/seller",
+            "alert_type": "unpaid_reminder",
+            "requireInteraction": False,
+        })
+        ids = [o["id"] for o in new_ones]
+        await db.orders.update_many({"id": {"$in": ids}}, {"$set": {"reminder_sent": True}})
+    except Exception as e:
+        logger.warning(f"check_and_send_unpaid_reminders error: {e}")
+
 async def unpaid_reminder_loop():
-    """Background task: cek order 'Bayar Nanti' yang belum lunas tiap beberapa jam,
-    kirim SATU push notif ringkasan ke seller per ~hari (bukan per-order, biar nggak spam)."""
+    """Background task: jaring pengaman kalau seller nggak buka dashboard dalam
+    waktu lama. Cek tiap 30 menit -> jauh lebih cepat dari versi lama (6 jam +
+    jeda 20 jam), supaya order yang lewat batas nggak numpuk lama sebelum
+    diketahui."""
     await asyncio.sleep(60)  # kasih waktu app selesai startup dulu
     while True:
-        try:
-            cfg = await db.store_config.find_one({"_id": "main"}) or {}
-            if cfg.get("unpaid_reminder_enabled", True):
-                days_threshold = int(cfg.get("unpaid_reminder_days") or 2)
-                orders = await get_unpaid_later_orders(days_threshold)
-                if orders:
-                    meta = await db.system_meta.find_one({"_id": "unpaid_reminder"}) or {}
-                    last_sent = meta.get("last_sent")
-                    should_send = True
-                    if last_sent:
-                        try:
-                            last_dt = datetime.fromisoformat(last_sent.replace("Z", "+00:00"))
-                            should_send = (datetime.now(timezone.utc) - last_dt) >= timedelta(hours=20)
-                        except Exception:
-                            should_send = True
-                    if should_send:
-                        total = sum(o.get("total", 0) for o in orders)
-                        preview = ", ".join(o.get("order_number", "") for o in orders[:3])
-                        more = f" +{len(orders)-3} lagi" if len(orders) > 3 else ""
-                        await broadcast_push({
-                            "title": f"🕒 {len(orders)} Pesanan Belum Lunas",
-                            "body": f"{preview}{more}\nTotal: {fmt_rp_id(total)}. Yuk ingatkan buyer-nya.",
-                            "tag": "unpaid-reminder-digest",
-                            "url": "/#/seller",
-                            "alert_type": "unpaid_reminder",
-                            "requireInteraction": False,
-                        })
-                        await db.system_meta.update_one(
-                            {"_id": "unpaid_reminder"},
-                            {"$set": {"last_sent": now_iso()}},
-                            upsert=True,
-                        )
-        except Exception as e:
-            logger.warning(f"unpaid_reminder_loop error: {e}")
-        await asyncio.sleep(6 * 60 * 60)  # cek tiap 6 jam
+        await check_and_send_unpaid_reminders()
+        await asyncio.sleep(30 * 60)  # cek tiap 30 menit
 
 @api_router.get("/orders/{oid}")
 async def get_order(oid: str):
