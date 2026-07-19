@@ -258,26 +258,22 @@ export default function DashboardOverview({ onTabChange }) {
             <p className="text-sm text-center text-[#9A3412] py-4">✅ Semua pesanan Bayar Nanti sudah lunas!</p>
           ) : (
             <div className="space-y-2 max-h-72 overflow-y-auto">
-              {unpaidReminders.orders.slice(0, 8).map(o => {
-                const waMsg = `Halo ${o.customer_name}, mau ingatkan pesanan ${o.order_number} (Total ${formatRp(o.total)}) masih menunggu pembayaran ya. Ditunggu konfirmasinya 🙏`;
-                return (
-                  <div key={o.id} data-testid={`unpaid-reminder-${o.id}`} className="flex items-center gap-3 p-2.5 rounded-xl border border-red-200 bg-red-50">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-bold text-[#7C2D12]">{o.order_number} — {o.customer_name}</p>
-                      <p className="text-[10px] text-[#9A3412] mt-0.5">{formatRp(o.total)} · nunggu {o.days_waiting ?? '?'} hari</p>
-                    </div>
-                    <a
-                      href={`https://wa.me/${o.customer_phone}?text=${encodeURIComponent(waMsg)}`}
-                      target="_blank" rel="noopener noreferrer"
-                      data-testid={`unpaid-reminder-wa-${o.id}`}
-                      onClick={(e) => e.stopPropagation()}
-                      className="flex-shrink-0 bg-green-600 text-white text-[10px] font-extrabold px-3 py-1.5 rounded-full shadow hover:bg-green-700"
-                    >
-                      💬 Ingatkan
-                    </a>
+              {unpaidReminders.orders.slice(0, 8).map(o => (
+                <div key={o.id} data-testid={`unpaid-reminder-${o.id}`} className="flex items-center gap-3 p-2.5 rounded-xl border border-red-200 bg-red-50">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-bold text-[#7C2D12]">{o.order_number} — {o.customer_name}</p>
+                    <p className="text-[10px] text-[#9A3412] mt-0.5">{formatRp(o.total)} · nunggu {o.days_waiting ?? '?'} hari</p>
                   </div>
-                );
-              })}
+                  <button
+                    type="button"
+                    data-testid={`unpaid-reminder-view-${o.id}`}
+                    onClick={() => onTabChange('orders')}
+                    className="flex-shrink-0 bg-red-600 text-white text-[10px] font-extrabold px-3 py-1.5 rounded-full shadow hover:bg-red-700"
+                  >
+                    Lihat →
+                  </button>
+                </div>
+              ))}
               {unpaidReminders.count > 8 && (
                 <p className="text-[10px] text-center text-[#9A3412] italic pt-1">+{unpaidReminders.count - 8} lainnya — cek di Pesanan Masuk</p>
               )}
