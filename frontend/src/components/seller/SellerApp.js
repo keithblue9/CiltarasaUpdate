@@ -10,7 +10,7 @@ import ReportsPage from './ReportsPage';
 import { StoreProfile, StoreCerita, CategoriesConfig, DeliveryConfig, PaymentsConfig, HomepageTextsConfig, HeroSlideshowConfig, FunFactsConfig, OnboardingTextsConfig } from './StoreConfigPages';
 import SeoThemeConfig from './SeoThemeConfig';
 import DiscountManagement from './DiscountManagement';
-import { HowToOrderConfig, ResetCustomersConfig, ChangePinConfig, TrafficStats, InvoiceConfig, DashboardWidgetsConfig, MaintenanceConfig, PwaInstallConfig, CustomersConfig, CheckoutModeConfig } from './AdminPages';
+import { HowToOrderConfig, ResetCustomersConfig, ChangePinConfig, TrafficStats, InvoiceConfig, DashboardWidgetsConfig, MaintenanceConfig, PwaInstallConfig, CustomersConfig, CheckoutModeConfig, MemberTiersConfig } from './AdminPages';
 import SellerPushSettings from './SellerPushSettings';
 import SellerPwaInstallBanner from './SellerPwaInstallBanner';
 import PendingOrdersAlert from './PendingOrdersAlert';
@@ -29,12 +29,12 @@ function attachSellerInterceptor(getPin) {
   _sellerInterceptorId = axios.interceptors.request.use(cfg => {
     const url = cfg.url || '';
     const method = (cfg.method || 'get').toLowerCase();
-    if (method !== 'get' && (url.includes('/api/products') || url.includes('/api/purchases') || url.includes('/api/discounts') || url.includes('/api/settings') || url.includes('/api/store-config') || url.includes('/api/financial-entries') || url.includes('/api/admin/reset-passcode') || url.includes('/api/admin/reset-customers') || url.includes('/api/admin/change-pin') || url.includes('/api/media/upload') || url.includes('/api/push/') || url.includes('/api/maintenance') || url.includes('/api/ai/') || /\/api\/orders\/[^/]+\/status/.test(url))) {
+    if (method !== 'get' && (url.includes('/api/products') || url.includes('/api/purchases') || url.includes('/api/discounts') || url.includes('/api/settings') || url.includes('/api/store-config') || url.includes('/api/financial-entries') || url.includes('/api/admin/reset-passcode') || url.includes('/api/admin/reset-customers') || url.includes('/api/admin/change-pin') || url.includes('/api/admin/customers') || url.includes('/api/media/upload') || url.includes('/api/push/') || url.includes('/api/maintenance') || url.includes('/api/ai/') || /\/api\/orders\/[^/]+\/status/.test(url))) {
       cfg.headers = cfg.headers || {};
       cfg.headers['X-Seller-PIN'] = getPin();
     }
     // Analytics GET (PIN-guarded)
-    if (method === 'get' && (url.includes('/api/analytics/stats') || url.includes('/api/dashboard/') || url.includes('/api/admin/customers') || url.includes('/api/push/subscriptions') || url.includes('/api/ai/') || url.includes('/api/reports/'))) {
+    if (method === 'get' && (url.includes('/api/analytics/stats') || url.includes('/api/dashboard/') || url.includes('/api/admin/customers') || url.includes('/api/push/subscriptions') || url.includes('/api/ai/') || url.includes('/api/reports/') || url.includes('/api/orders/unpaid-reminders'))) {
       cfg.headers = cfg.headers || {};
       cfg.headers['X-Seller-PIN'] = getPin();
     }
@@ -119,6 +119,7 @@ export default function SellerApp() {
     'pwa-install': <PwaInstallConfig />,
     discounts: <DiscountManagement />,
     customers: <CustomersConfig />,
+    'member-tiers': <MemberTiersConfig />,
     juragan: <JuraganPage />,
     'checkout-mode': <CheckoutModeConfig />,
     'change-pin': <ChangePinConfig onPinChanged={() => handleLogout()} />,

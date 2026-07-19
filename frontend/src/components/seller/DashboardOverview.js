@@ -103,21 +103,78 @@ function StockThresholdEditor({ threshold, safetyDays, onSaved }) {
   );
 }
 
+function UnpaidReminderSettings({ enabled, days, onSaved }) {
+  const [editing, setEditing] = useState(false);
+  const [en, setEn] = useState(enabled);
+  const [d, setD] = useState(days);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { setEn(enabled); setD(days); }, [enabled, days]);
+
+  const save = async () => {
+    const dn = Number(d);
+    if (!Number.isInteger(dn) || dn < 1 || dn > 30) { toast.error('Hari harus 1-30'); return; }
+    setSaving(true);
+    try {
+      await axios.put(`${API}/api/store-config`, { unpaid_reminder_enabled: en, unpaid_reminder_days: dn });
+      toast.success('✅ Setting reminder disimpan');
+      setEditing(false);
+      onSaved?.();
+    } catch {
+      toast.error('Gagal menyimpan setting reminder');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!editing) {
+    return (
+      <button
+        data-testid="open-unpaid-reminder-settings"
+        onClick={() => setEditing(true)}
+        className="ml-auto flex items-center gap-1.5 bg-white/25 hover:bg-white/40 text-white text-[10px] font-bold px-2.5 py-1 rounded-full transition-all"
+        title="Atur reminder Bayar Nanti"
+      >
+        <Settings size={11} /> {en ? `Aktif · ${days}hari` : 'Nonaktif'}
+      </button>
+    );
+  }
+
+  return (
+    <div className="ml-auto flex items-center gap-1.5 bg-white/95 rounded-full px-2 py-1 text-[10px]">
+      <label className="flex items-center gap-1 text-[#7C2D12] font-bold cursor-pointer">
+        <input type="checkbox" checked={en} onChange={e => setEn(e.target.checked)} className="accent-red-600" /> Aktif
+      </label>
+      <span className="text-[#7C2D12]">≥</span>
+      <input
+        type="number" min={1} max={30} value={d} onChange={e => setD(e.target.value)}
+        className="w-9 px-1.5 py-0.5 rounded border border-[#FED7AA] text-[#451A03] font-bold text-center focus:outline-none focus:border-[#D97706]"
+      />
+      <span className="text-[#7C2D12]">hari</span>
+      <button onClick={save} disabled={saving} className="ml-1 p-1 rounded-full bg-green-500 text-white hover:bg-green-600 disabled:opacity-60" title="Simpan"><Check size={11} /></button>
+      <button onClick={() => { setEditing(false); setEn(enabled); setD(days); }} className="p-1 rounded-full bg-gray-400 text-white hover:bg-gray-500" title="Batal"><X size={11} /></button>
+    </div>
+  );
+}
+
 export default function DashboardOverview({ onTabChange }) {
   const { products, wsEvent, fetchInsights, insights } = useApp();
   const [report, setReport] = useState(null);
   const [orders, setOrders] = useState([]);
+  const [unpaidReminders, setUnpaidReminders] = useState({ count: 0, orders: [], days_threshold: 2 });
   const [loading, setLoading] = useState(true);
 
   const load = async () => {
     setLoading(true);
     try {
-      const [r, o] = await Promise.all([
+      const [r, o, u] = await Promise.all([
         axios.get(`${API}/api/reports/sales?period=week`),
         axios.get(`${API}/api/orders`),
+        axios.get(`${API}/api/orders/unpaid-reminders`).catch(() => ({ data: { count: 0, orders: [] } })),
       ]);
       setReport(r.data);
       setOrders(o.data.slice(0, 5));
+      setUnpaidReminders(u.data || { count: 0, orders: [] });
       fetchInsights();
     } catch (err) { console.warn('[DashboardOverview] load failed:', err); }
     setLoading(false);
@@ -181,6 +238,52 @@ export default function DashboardOverview({ onTabChange }) {
         <KpiCard title="Pesanan Hari Ini" value={todayOrders.length} icon={<ShoppingBag size={24} className="text-blue-600" />} color="bg-blue-50" sub={`${todayOrders.filter(o=>o.status!=='dibatalkan').length} aktif`} />
         <KpiCard title="Menunggu Konfirmasi" value={pendingOrders} icon={<Clock size={24} className="text-orange-600" />} color="bg-orange-50" />
         <KpiCard title="Stok Hampir Habis" value={lowStock} icon={<AlertTriangle size={24} className="text-red-500" />} color="bg-red-50" sub="produk < 10 unit" />
+      </div>
+
+      {/* FITUR #6: Reminder pesanan "Bayar Nanti" yang belum lunas — langsung kelihatan, tanpa klik-klik */}
+      <div data-testid="unpaid-reminder-card" className="bg-white rounded-2xl border border-red-200 overflow-hidden">
+        <div className="px-5 py-3 bg-gradient-to-r from-red-500 to-rose-500 text-white flex items-center gap-2 flex-wrap">
+          <Clock size={16} />
+          <h3 className="font-bold text-sm">
+            {unpaidReminders.count > 0 ? `🕒 ${unpaidReminders.count} Pesanan "Bayar Nanti" Belum Lunas` : '🕒 Bayar Nanti Belum Lunas'}
+          </h3>
+          <UnpaidReminderSettings
+            enabled={unpaidReminders.enabled ?? true}
+            days={unpaidReminders.days_threshold ?? 2}
+            onSaved={load}
+          />
+        </div>
+        <div className="p-4">
+          {unpaidReminders.count === 0 ? (
+            <p className="text-sm text-center text-[#9A3412] py-4">✅ Semua pesanan Bayar Nanti sudah lunas!</p>
+          ) : (
+            <div className="space-y-2 max-h-72 overflow-y-auto">
+              {unpaidReminders.orders.slice(0, 8).map(o => {
+                const waMsg = `Halo ${o.customer_name}, mau ingatkan pesanan ${o.order_number} (Total ${formatRp(o.total)}) masih menunggu pembayaran ya. Ditunggu konfirmasinya 🙏`;
+                return (
+                  <div key={o.id} data-testid={`unpaid-reminder-${o.id}`} className="flex items-center gap-3 p-2.5 rounded-xl border border-red-200 bg-red-50">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-bold text-[#7C2D12]">{o.order_number} — {o.customer_name}</p>
+                      <p className="text-[10px] text-[#9A3412] mt-0.5">{formatRp(o.total)} · nunggu {o.days_waiting ?? '?'} hari</p>
+                    </div>
+                    <a
+                      href={`https://wa.me/${o.customer_phone}?text=${encodeURIComponent(waMsg)}`}
+                      target="_blank" rel="noopener noreferrer"
+                      data-testid={`unpaid-reminder-wa-${o.id}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="flex-shrink-0 bg-green-600 text-white text-[10px] font-extrabold px-3 py-1.5 rounded-full shadow hover:bg-green-700"
+                    >
+                      💬 Ingatkan
+                    </a>
+                  </div>
+                );
+              })}
+              {unpaidReminders.count > 8 && (
+                <p className="text-[10px] text-center text-[#9A3412] italic pt-1">+{unpaidReminders.count - 8} lainnya — cek di Pesanan Masuk</p>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Revenue Chart */}

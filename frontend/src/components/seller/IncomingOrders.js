@@ -188,6 +188,8 @@ export default function IncomingOrders() {
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [ongkirModal, setOngkirModal] = useState(null);
   const [proofModal, setProofModal] = useState(null); // { proof_url, order }
+  const [selectedIds, setSelectedIds] = useState(() => new Set()); // FITUR #4: bulk action
+  const [bulkBusy, setBulkBusy] = useState(false);
   const API_URL = process.env.REACT_APP_BACKEND_URL;
 
   const load = async () => {
@@ -204,6 +206,7 @@ export default function IncomingOrders() {
   };
 
   useEffect(() => { load(); }, []);
+  useEffect(() => { setSelectedIds(new Set()); }, [statusFilter, searchQ]); // FITUR #4: reset pilihan saat filter berubah
   useEffect(() => {
     if (wsEvent?.type === 'order_created') {
       // ✅ Foreground notification: in-page sound + vibrate (OS won't play push sound when app is open)
@@ -269,6 +272,53 @@ export default function IncomingOrders() {
     .filter(o => statusFilter === 'all' || o.status === statusFilter)
     .filter(o => !searchQ || (o.order_number || '').toLowerCase().includes(searchQ.toLowerCase()) || (o.customer_name || '').toLowerCase().includes(searchQ.toLowerCase()));
 
+  // ─── FITUR #4: Bulk action — pilih banyak pesanan sekaligus, majukan status bareng ───
+  // Hanya aktif kalau statusFilter spesifik (bukan "Semua"), supaya semua order yang
+  // ditampilkan punya "next status" yang sama (mis. semua "Diproses" -> "Siap").
+  const bulkEligible = statusFilter !== 'all' && STATUS_MAP[statusFilter]?.next;
+  const bulkTarget = bulkEligible ? STATUS_MAP[statusFilter] : null;
+  const selectableIds = bulkEligible ? filtered.map(o => o.id) : [];
+  const allSelected = selectableIds.length > 0 && selectableIds.every(id => selectedIds.has(id));
+
+  const toggleSelect = (id) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const toggleSelectAll = () => {
+    setSelectedIds(prev => {
+      if (allSelected) return new Set();
+      return new Set(selectableIds);
+    });
+  };
+
+  const handleBulkAdvance = async () => {
+    if (!bulkTarget || selectedIds.size === 0) return;
+    const ids = Array.from(selectedIds);
+    setBulkBusy(true);
+    let ok = 0, fail = 0;
+    // Sequential, bukan Promise.all — supaya nggak bikin lonjakan request bareng
+    // dan push notif ke buyer terkirim rapi satu-satu (bukan race).
+    for (const id of ids) {
+      try {
+        const res = await axios.put(`${API}/api/orders/${id}/status`, { status: bulkTarget.next });
+        setOrders(prev => prev.map(o => o.id === id ? res.data : o));
+        ok++;
+      } catch {
+        fail++;
+      }
+    }
+    setBulkBusy(false);
+    setSelectedIds(new Set());
+    if (fail === 0) {
+      toast.success(`✅ ${ok} pesanan ditandai "${STATUS_MAP[bulkTarget.next]?.label}"`);
+    } else {
+      toast.error(`${ok} berhasil, ${fail} gagal. Coba lagi untuk yang gagal.`);
+    }
+  };
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -296,6 +346,33 @@ export default function IncomingOrders() {
         </div>
       </div>
 
+      {/* FITUR #4: Bulk action bar — muncul saat filter status spesifik & ada order yg bisa dimajukan */}
+      {bulkEligible && !loading && filtered.length > 0 && (
+        <div className="flex items-center gap-3 px-1">
+          <label className="flex items-center gap-2 text-xs font-semibold text-[#78350F] cursor-pointer select-none">
+            <input
+              data-testid="bulk-select-all"
+              type="checkbox"
+              checked={allSelected}
+              onChange={toggleSelectAll}
+              className="w-4 h-4 accent-[#D97706]"
+            />
+            Pilih semua ({selectableIds.length})
+          </label>
+          {selectedIds.size > 0 && (
+            <button
+              data-testid="bulk-advance-btn"
+              onClick={handleBulkAdvance}
+              disabled={bulkBusy}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#D97706] text-white hover:bg-[#B45309] text-xs font-bold transition-all disabled:opacity-60"
+            >
+              {bulkBusy ? <RefreshCw size={13} className="animate-spin" /> : <ChevronDown size={13} />}
+              {bulkBusy ? 'Memproses...' : `${bulkTarget.nextLabel} (${selectedIds.size})`}
+            </button>
+          )}
+        </div>
+      )}
+
       {loadError && !loading && (
         <div className="flex items-center justify-between gap-3 p-3 rounded-xl bg-red-50 border border-red-200 text-sm flex-wrap">
           <span className="text-red-700 font-semibold">⚠️ Gagal memuat pesanan. Cek koneksi — server kadang lambat saat baru "bangun". Coba lagi ya.</span>
@@ -312,9 +389,19 @@ export default function IncomingOrders() {
           {filtered.map(order => {
             const st = STATUS_MAP[order.status];
             return (
-              <div key={order.id} data-testid={`order-row-${order.id}`} className="bg-white rounded-2xl border border-[#FED7AA] p-4">
+              <div key={order.id} data-testid={`order-row-${order.id}`} className={`bg-white rounded-2xl border p-4 transition-all ${selectedIds.has(order.id) ? 'border-[#D97706] ring-2 ring-[#FED7AA]' : 'border-[#FED7AA]'}`}>
                 <div className="flex items-start justify-between gap-3 flex-wrap">
-                  <div>
+                  <div className="flex items-start gap-3">
+                    {bulkEligible && (
+                      <input
+                        data-testid={`bulk-checkbox-${order.id}`}
+                        type="checkbox"
+                        checked={selectedIds.has(order.id)}
+                        onChange={() => toggleSelect(order.id)}
+                        className="w-4 h-4 mt-1 accent-[#D97706] flex-shrink-0"
+                      />
+                    )}
+                    <div>
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-bold text-[#78350F]">{order.order_number}</span>
                       <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${st?.color}`}>{st?.label}</span>
@@ -360,6 +447,7 @@ export default function IncomingOrders() {
                       </div>
                     )}
                     <p className="text-xs text-[#92400E] mt-0.5">{order.items?.length} item · {new Date(order.created_at).toLocaleString('id-ID',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</p>
+                    </div>
                   </div>
                   <div className="flex flex-col items-end gap-2">
                     <span className="font-bold text-[#D97706] text-lg">{formatRp(order.total)}</span>

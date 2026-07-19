@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Save, AlertTriangle, ListOrdered, Trash2, Plus, RotateCcw, ShieldAlert, KeyRound, Eye, EyeOff, Lock, TrendingUp, Users, Smartphone, Globe, Monitor, RefreshCw, Target, FileText, Type, ImagePlus } from 'lucide-react';
+import { Save, AlertTriangle, ListOrdered, Trash2, Plus, RotateCcw, ShieldAlert, KeyRound, Eye, EyeOff, Lock, TrendingUp, Users, Smartphone, Globe, Monitor, RefreshCw, Target, FileText, Type, ImagePlus, Award, Package } from 'lucide-react';
 import SmartImage from '../shared/SmartImage';
 import ImageUrlInput from '../shared/ImageUrlInput';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
@@ -1100,6 +1100,9 @@ export function CustomersConfig() {
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
   const [resetting, setResetting] = useState('');
+  const [tierSaving, setTierSaving] = useState('');
+  const { storeConfig } = useApp();
+  const tierOptions = (storeConfig?.member_tiers || []).filter(t => t.active !== false);
 
   const load = async () => {
     setLoading(true);
@@ -1125,6 +1128,21 @@ export function CustomersConfig() {
       toast.error(e.response?.data?.detail || 'Gagal reset passcode');
     } finally {
       setResetting('');
+    }
+  };
+
+  // FITUR #12: seller set tier customer secara manual (auto / tier spesifik / tanpa diskon)
+  const handleTierChange = async (c, value) => {
+    setTierSaving(c.phone);
+    try {
+      const res = await axios.put(`${API}/api/admin/customers/tier`, { phone: c.phone, tier_override: value });
+      setCustomers(prev => prev.map(x => x.phone === c.phone ? { ...x, tier_override: res.data.tier_override } : x));
+      toast.success('Tier customer diupdate. Refresh untuk lihat efeknya.');
+      load();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Gagal update tier');
+    } finally {
+      setTierSaving('');
     }
   };
 
@@ -1161,21 +1179,64 @@ export function CustomersConfig() {
         ) : (
           <div className="space-y-2">
             {filtered.map(c => (
-              <div key={c.phone} className="flex items-center justify-between gap-3 p-3 rounded-xl border border-[#FED7AA] bg-white flex-wrap">
-                <div className="min-w-0">
-                  <p className="font-bold text-[#7C2D12] text-sm truncate">{c.name || 'Tanpa Nama'}</p>
-                  <p className="text-xs text-[#9A3412]">+{c.phone}</p>
-                  <span className={`inline-block mt-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${c.has_passcode ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                    {c.has_passcode ? '🔒 Punya passcode' : '⚠️ Belum set passcode'}
-                  </span>
+              <div key={c.phone} className="flex flex-col gap-2 p-3 rounded-xl border border-[#FED7AA] bg-white">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="font-bold text-[#7C2D12] text-sm truncate">{c.name || 'Tanpa Nama'}</p>
+                      {c.tier?.tier_id && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
+                          {c.tier.emoji || '🏆'} {c.tier.tier_name} -{c.tier.discount_pct}%
+                          {c.tier.source === 'manual' && <span className="opacity-70">(manual)</span>}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-[#9A3412]">+{c.phone}</p>
+                    <div className="flex items-center gap-2 flex-wrap mt-1">
+                      <span className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-full ${c.has_passcode ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                        {c.has_passcode ? '🔒 Punya passcode' : '⚠️ Belum set passcode'}
+                      </span>
+                      <span className="text-[10px] text-[#9A3412]">{c.order_count || 0}x order · Rp {(c.total_spent || 0).toLocaleString('id-ID')}</span>
+                    </div>
+                    {/* FITUR #9: Produk favorit pelanggan */}
+                    {c.top_products?.length > 0 && (
+                      <div className="flex items-center gap-1 flex-wrap mt-1.5">
+                        <Package size={11} className="text-[#9A3412]" />
+                        {c.top_products.map((p, i) => (
+                          <span key={i} className="text-[10px] bg-[#FEF3C7] text-[#78350F] px-1.5 py-0.5 rounded-full">
+                            {p.name} ({p.qty}x)
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => handleReset(c)}
+                    disabled={!c.has_passcode || resetting === c.phone}
+                    className="flex items-center gap-1.5 bg-red-50 text-red-600 border border-red-200 font-bold px-3 py-2 rounded-lg hover:bg-red-100 disabled:opacity-40 text-xs whitespace-nowrap"
+                  >
+                    <KeyRound size={14} /> {resetting === c.phone ? 'Mereset...' : 'Reset Passcode'}
+                  </button>
                 </div>
-                <button
-                  onClick={() => handleReset(c)}
-                  disabled={!c.has_passcode || resetting === c.phone}
-                  className="flex items-center gap-1.5 bg-red-50 text-red-600 border border-red-200 font-bold px-3 py-2 rounded-lg hover:bg-red-100 disabled:opacity-40 text-xs whitespace-nowrap"
-                >
-                  <KeyRound size={14} /> {resetting === c.phone ? 'Mereset...' : 'Reset Passcode'}
-                </button>
+                {/* FITUR #12: override tier manual */}
+                {tierOptions.length > 0 && (
+                  <div className="flex items-center gap-2 pt-2 border-t border-[#FED7AA]">
+                    <Award size={13} className="text-[#9A3412]" />
+                    <span className="text-[10px] text-[#9A3412] font-semibold">Tier:</span>
+                    <select
+                      value={c.tier_override || 'auto'}
+                      onChange={e => handleTierChange(c, e.target.value)}
+                      disabled={tierSaving === c.phone}
+                      className="text-xs border border-[#FED7AA] rounded-lg px-2 py-1 bg-white text-[#451A03] disabled:opacity-50"
+                    >
+                      <option value="auto">Otomatis</option>
+                      {tierOptions.map(t => (
+                        <option key={t.id} value={t.id}>{t.emoji || '🏆'} {t.name} (-{t.discount_pct}%)</option>
+                      ))}
+                      <option value="none">Tanpa diskon (paksa)</option>
+                    </select>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -1199,16 +1260,18 @@ export function CustomersConfig() {
 export function CheckoutModeConfig() {
   const { storeConfig, refreshStoreConfig } = useApp();
   const [mode, setMode] = useState('single');
+  const [upsellEnabled, setUpsellEnabled] = useState(true);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     setMode(storeConfig?.checkout_mode === 'wizard' ? 'wizard' : 'single');
+    setUpsellEnabled(storeConfig?.upsell_enabled !== false);
   }, [storeConfig]);
 
   const handleSave = async () => {
     setSaving(true);
     try {
-      await axios.put(`${API}/api/store-config`, { checkout_mode: mode });
+      await axios.put(`${API}/api/store-config`, { checkout_mode: mode, upsell_enabled: upsellEnabled });
       await refreshStoreConfig();
       toast.success('Mode checkout tersimpan! ✅');
     } catch {
@@ -1271,11 +1334,154 @@ export function CheckoutModeConfig() {
         </div>
       </Section>
 
+      {/* FITUR #15: toggle upsell produk pelengkap di checkout */}
+      <Section title="Upsell Produk Pelengkap" icon={Package}>
+        <label className="flex items-center justify-between gap-3 p-3 rounded-xl border border-[#FED7AA] bg-white cursor-pointer">
+          <div>
+            <p className="font-semibold text-sm text-[#7C2D12]">🛍️ Tampilkan saran "Yuk tambah juga" di checkout</p>
+            <p className="text-xs text-[#9A3412] mt-0.5">Sistem otomatis nyaranin produk yang sering dibeli bareng, atau produk terlaris di kategori yang sama.</p>
+          </div>
+          <input
+            type="checkbox"
+            checked={upsellEnabled}
+            onChange={e => setUpsellEnabled(e.target.checked)}
+            className="w-5 h-5 accent-[#D97706] flex-shrink-0"
+          />
+        </label>
+      </Section>
+
       <div className="rounded-xl bg-blue-50 border border-blue-200 p-4 text-xs text-blue-900">
         <p className="font-bold mb-1">ℹ️ Catatan:</p>
         <ul className="list-disc list-inside space-y-1 text-[11px]">
           <li>Isi form, opsi pengiriman, dan pembayaran <strong>sama persis</strong> di kedua mode — cuma cara tampilnya beda.</li>
           <li>Perubahan langsung berlaku untuk semua buyer setelah disimpan.</li>
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+// ─── FITUR #12: Tingkatan Member (Harga Grosir/Reseller) ────────────────────
+function slugifyTierId(name) {
+  return (name || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || `tier-${Date.now()}`;
+}
+
+export function MemberTiersConfig() {
+  const { storeConfig, refreshStoreConfig } = useApp();
+  const [tiers, setTiers] = useState([]);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { setTiers(storeConfig?.member_tiers || []); }, [storeConfig]);
+
+  const updateTier = (idx, field, val) => {
+    setTiers(prev => prev.map((t, i) => i === idx ? { ...t, [field]: val } : t));
+  };
+  const addTier = () => {
+    setTiers(prev => [...prev, { id: `tier-baru-${prev.length + 1}`, name: 'Tier Baru', emoji: '🏆', min_orders: 5, min_spent: 0, discount_pct: 10, active: true }]);
+  };
+  const removeTier = (idx) => {
+    if (!window.confirm('Hapus tier ini? Customer yang di-override manual ke tier ini akan otomatis fallback ke perhitungan normal.')) return;
+    setTiers(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleSave = async () => {
+    // Validasi ringan sebelum simpan
+    for (const t of tiers) {
+      if (!t.name?.trim()) { toast.error('Nama tier tidak boleh kosong'); return; }
+      if (Number(t.discount_pct) < 0 || Number(t.discount_pct) > 90) { toast.error(`Diskon "${t.name}" harus 0-90%`); return; }
+      if (Number(t.min_orders) < 0) { toast.error(`Min order "${t.name}" tidak valid`); return; }
+    }
+    // Auto-slug id kosong / bentrok
+    const seen = new Set();
+    const cleaned = tiers.map(t => {
+      let id = t.id && !seen.has(t.id) ? t.id : slugifyTierId(t.name);
+      while (seen.has(id)) id = `${id}-2`;
+      seen.add(id);
+      return { ...t, id, min_orders: Number(t.min_orders) || 0, min_spent: Number(t.min_spent) || 0, discount_pct: Number(t.discount_pct) || 0 };
+    });
+    setSaving(true);
+    try {
+      await axios.put(`${API}/api/store-config`, { member_tiers: cleaned });
+      await refreshStoreConfig();
+      toast.success('Tingkatan member tersimpan! ✅');
+    } catch {
+      toast.error('Gagal menyimpan');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="font-heading text-2xl font-bold text-[#7C2D12]">Tingkatan Member</h1>
+          <p className="text-xs text-[#9A3412] mt-0.5">Harga grosir/reseller otomatis buat pelanggan setia — berdasarkan jumlah order. Transparan: buyer lihat badge tier-nya sendiri.</p>
+        </div>
+        <button onClick={handleSave} disabled={saving} className="flex items-center gap-2 bg-gradient-to-r from-[#F97316] to-[#EA580C] text-white font-bold px-5 py-2.5 rounded-full shadow disabled:opacity-60">
+          <Save size={16} /> {saving ? 'Menyimpan...' : 'Simpan'}
+        </button>
+      </div>
+
+      <Section title="Daftar Tier" icon={Award} action={
+        <button onClick={addTier} className="flex items-center gap-1 text-xs font-bold text-[#EA580C] bg-white px-3 py-1.5 rounded-full border border-[#F97316]">
+          <Plus size={14} /> Tambah Tier
+        </button>
+      }>
+        {tiers.length === 0 ? (
+          <p className="text-sm text-gray-500 py-6 text-center">Belum ada tier. Klik "Tambah Tier" untuk mulai bikin harga khusus pelanggan setia.</p>
+        ) : (
+          <div className="space-y-3">
+            {tiers.map((t, idx) => (
+              <div key={idx} className="p-3 rounded-xl border border-[#FED7AA] bg-white space-y-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <input
+                    type="text" value={t.emoji || ''} onChange={e => updateTier(idx, 'emoji', e.target.value)}
+                    placeholder="🏆" maxLength={2}
+                    className="w-12 px-2 py-1.5 rounded-lg border border-[#FED7AA] text-center"
+                  />
+                  <input
+                    type="text" value={t.name || ''} onChange={e => updateTier(idx, 'name', e.target.value)}
+                    placeholder="Nama tier (mis. Reseller)"
+                    className="flex-1 min-w-[120px] px-3 py-1.5 rounded-lg border border-[#FED7AA] font-semibold text-[#451A03]"
+                  />
+                  <label className="flex items-center gap-1.5 text-xs font-semibold text-[#7C2D12]">
+                    <input type="checkbox" checked={t.active !== false} onChange={e => updateTier(idx, 'active', e.target.checked)} className="accent-[#D97706]" /> Aktif
+                  </label>
+                  <button onClick={() => removeTier(idx)} className="p-1.5 rounded-lg text-red-500 hover:bg-red-50"><Trash2 size={16} /></button>
+                </div>
+                <div className="flex items-center gap-3 flex-wrap text-xs">
+                  <label className="flex items-center gap-1.5">
+                    <span className="text-[#9A3412]">Min. order:</span>
+                    <input type="number" min={0} value={t.min_orders ?? 0} onChange={e => updateTier(idx, 'min_orders', e.target.value)}
+                      className="w-16 px-2 py-1 rounded border border-[#FED7AA] text-center" />
+                  </label>
+                  <label className="flex items-center gap-1.5">
+                    <span className="text-[#9A3412]">Min. belanja (Rp):</span>
+                    <input type="number" min={0} value={t.min_spent ?? 0} onChange={e => updateTier(idx, 'min_spent', e.target.value)}
+                      className="w-24 px-2 py-1 rounded border border-[#FED7AA] text-center" />
+                  </label>
+                  <label className="flex items-center gap-1.5">
+                    <span className="text-[#9A3412]">Diskon:</span>
+                    <input type="number" min={0} max={90} value={t.discount_pct ?? 0} onChange={e => updateTier(idx, 'discount_pct', e.target.value)}
+                      className="w-16 px-2 py-1 rounded border border-[#FED7AA] text-center" />
+                    <span className="text-[#9A3412]">%</span>
+                  </label>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Section>
+
+      <div className="rounded-xl bg-blue-50 border border-blue-200 p-4 text-xs text-blue-900">
+        <p className="font-bold mb-1">ℹ️ Cara kerja:</p>
+        <ul className="list-disc list-inside space-y-1 text-[11px]">
+          <li>Buyer yang <strong>login</strong> dan sudah pernah order &ge; syarat di atas otomatis dapat harga tier ini (dicek tiap kali buka app).</li>
+          <li>Kalau ada beberapa tier yang syaratnya kepenuhi, sistem pilih yang <strong>diskonnya terbesar</strong>.</li>
+          <li>Kamu bisa override manual per-customer di halaman <strong>Customer & Passcode</strong> (mis. teman dekat, belum pernah order tapi mau dikasih harga khusus).</li>
+          <li>Diskon tier <strong>tidak ditumpuk</strong> dengan diskon produk yang sedang aktif — buyer otomatis dapat yang paling murah di antara keduanya.</li>
+          <li>Guest (belum login) tidak dapat harga tier — perlu akun untuk riwayat order tercatat.</li>
         </ul>
       </div>
     </div>

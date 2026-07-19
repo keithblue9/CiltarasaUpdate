@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Package, ShoppingBag, BarChart2, LogOut, X, Wifi, WifiOff, Store, BookOpen, FolderTree, Truck, CreditCard, Tag, Settings, Type, ImagePlus, Sparkles, ListOrdered, ShieldAlert, LogIn, KeyRound, TrendingUp, FileText, BarChart3, Bell, Power, Smartphone, Palette, Users } from 'lucide-react';
+import { LayoutDashboard, Package, ShoppingBag, BarChart2, LogOut, X, Wifi, WifiOff, Store, BookOpen, FolderTree, Truck, CreditCard, Tag, Settings, Type, ImagePlus, Sparkles, ListOrdered, ShieldAlert, LogIn, KeyRound, TrendingUp, FileText, BarChart3, Bell, Power, Smartphone, Palette, Users, Award } from 'lucide-react';
 import { LogoWithText } from '../shared/Logo';
 import { useApp } from '../../context/AppContext';
 
@@ -31,6 +31,7 @@ const configTabs = [
   { id: 'invoice', label: 'Wording Invoice & Resi', icon: FileText },
   { id: 'dashboard-widgets', label: 'Widget Dashboard', icon: BarChart3 },
   { id: 'discounts', label: 'Diskon Produk', icon: Tag },
+  { id: 'member-tiers', label: 'Tingkatan Member', icon: Award },
   { id: 'customers', label: 'Customer & Passcode', icon: Users },
   { id: 'change-pin', label: 'Ubah PIN Akses', icon: KeyRound },
   { id: 'reset-customers', label: 'Reset Pelanggan', icon: ShieldAlert },
