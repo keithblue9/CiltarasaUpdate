@@ -10,6 +10,7 @@ import re
 import random
 import secrets
 import httpx
+import asyncio
 from pathlib import Path
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
@@ -151,6 +152,91 @@ STATUS_DESC = {
     "dibatalkan": "Maaf, pesanan dibatalkan. Hubungi kami untuk info lebih lanjut 🙏",
 }
 STATUS_KEYS = ["menunggu", "diproses", "siap", "selesai", "dibatalkan"]
+
+# ─── FITUR #1: Notif stok menipis/habis otomatis ke seller ─────────────────
+async def check_low_stock_notify(product_id: str):
+    """Cek stok produk setelah berubah (order/restock/edit manual); kirim push
+    ke seller SEKALI saat stok pertama kali tembus ambang batas (low) atau
+    habis (out). Auto-reset flag saat stok balik di atas ambang batas lagi,
+    supaya notif berikutnya (kalau menipis lagi) tetap terkirim."""
+    try:
+        prod = await db.products.find_one({"id": product_id}, {"_id": 0})
+        if not prod or prod.get("active") is False:
+            return
+        cfg = await db.store_config.find_one({"_id": "main"}) or {}
+        threshold = int(cfg.get("low_stock_threshold") or 10)
+        stock = int(prod.get("stock") or 0)
+        prev_flag = prod.get("low_stock_notified")  # None | "low" | "out"
+        new_flag = "out" if stock <= 0 else ("low" if stock <= threshold else None)
+        if new_flag == prev_flag:
+            return  # sudah pernah dinotif di level ini, atau sama-sama aman — skip
+        await db.products.update_one({"id": product_id}, {"$set": {"low_stock_notified": new_flag}})
+        if new_flag == "out":
+            await broadcast_push({
+                "title": f"🚫 Stok Habis: {prod.get('name','Produk')}",
+                "body": "Stok produk ini sudah 0. Segera restock biar buyer nggak kecewa.",
+                "tag": f"lowstock-{product_id}",
+                "url": "/#/seller",
+                "alert_type": "low_stock",
+                "requireInteraction": False,
+            })
+        elif new_flag == "low":
+            await broadcast_push({
+                "title": f"⚠️ Stok Menipis: {prod.get('name','Produk')}",
+                "body": f"Tersisa {stock} unit (ambang batas: {threshold}). Waktunya restock.",
+                "tag": f"lowstock-{product_id}",
+                "url": "/#/seller",
+                "alert_type": "low_stock",
+                "requireInteraction": False,
+            })
+        # new_flag None = balik aman di atas threshold → flag sudah direset, tak perlu notif
+    except Exception as e:
+        logger.warning(f"check_low_stock_notify failed for {product_id}: {e}")
+
+# ─── FITUR #12: Harga Grosir/Member — otomatis (riwayat order) + override manual ───
+def compute_effective_tier(order_count: int, total_spent: float, tier_override: Optional[str], tiers: list) -> dict:
+    """Tentukan tier customer: manual override (kalau di-set seller) > otomatis dari
+    riwayat order. tiers = config dari store_config['member_tiers'], tiap item:
+    {id, name, emoji, min_orders, min_spent, discount_pct, active}. Return dict
+    transparan (dipakai buat badge ke buyer maupun tampilan di dashboard seller)."""
+    active_tiers = [t for t in (tiers or []) if t.get("active", True)]
+    by_id = {t.get("id"): t for t in active_tiers}
+
+    if tier_override:
+        if tier_override == "none":
+            return {"tier_id": None, "tier_name": None, "emoji": None, "discount_pct": 0, "source": "manual_none"}
+        t = by_id.get(tier_override)
+        if t:
+            return {"tier_id": t["id"], "tier_name": t.get("name"), "emoji": t.get("emoji", "🏆"),
+                    "discount_pct": float(t.get("discount_pct") or 0), "source": "manual"}
+        # override merujuk tier yang udah dihapus/nonaktif -> fallback ke otomatis di bawah
+
+    qualifying = [t for t in active_tiers if order_count >= int(t.get("min_orders") or 0)
+                  and total_spent >= float(t.get("min_spent") or 0)]
+    if not qualifying:
+        return {"tier_id": None, "tier_name": None, "emoji": None, "discount_pct": 0, "source": "auto"}
+    best = max(qualifying, key=lambda t: float(t.get("discount_pct") or 0))
+    return {"tier_id": best["id"], "tier_name": best.get("name"), "emoji": best.get("emoji", "🏆"),
+            "discount_pct": float(best.get("discount_pct") or 0), "source": "auto"}
+
+async def compute_customer_stats_single(phone: str) -> dict:
+    """Versi ringan compute_effective_tier untuk satu customer (dipakai /auth/me)."""
+    orders = await db.orders.find({"customer_phone": phone, "status": {"$ne": "dibatalkan"}}, {"_id": 0, "total": 1}).to_list(2000)
+    order_count = len(orders)
+    total_spent = sum(float(o.get("total") or 0) for o in orders)
+    return {"order_count": order_count, "total_spent": total_spent}
+
+async def _attach_tier(user: dict) -> dict:
+    """FITUR #12: lengkapi objek user dengan info tier/diskon. Dipakai di SEMUA
+    endpoint yang mengembalikan data user (login, set-passcode, profile, /auth/me)
+    supaya badge tier & harga diskon langsung tampil habis login — tanpa perlu
+    refresh halaman dulu (transparan sesuai kesepakatan)."""
+    if not user:
+        return user
+    cfg = await db.store_config.find_one({"_id": "main"}) or {}
+    stats = await compute_customer_stats_single(user.get("phone"))
+    user["tier"] = compute_effective_tier(stats["order_count"], stats["total_spent"], user.get("tier_override"), cfg.get("member_tiers") or [])
+    return user
 
 def render_chat_template(tpl: str, order: dict, store_name: str = "Ciltarasa", app_url: str = "", bank_accounts: list = None) -> str:
     """Render auto-chat template dengan placeholder dari order. Mendukung: {order_id}, {customer_name}, {customer_phone}, {customer_address}, {delivery}, {items_detail}, {total}, {subtotal}, {notes}, {status}, {status_desc}, {status_emoji}, {store_name}, {timestamp}, {app_url}, {track_link}, {payment_method}, {payment_account}."""
@@ -398,6 +484,10 @@ class StoreConfigUpdate(BaseModel):
     wa_notif_enabled: Optional[bool] = None
     low_stock_threshold: Optional[int] = None
     restock_safety_days: Optional[int] = None
+    unpaid_reminder_enabled: Optional[bool] = None
+    unpaid_reminder_days: Optional[int] = None
+    member_tiers: Optional[List[Dict[str, Any]]] = None
+    upsell_enabled: Optional[bool] = None
     checkout_mode: Optional[str] = None
     kas_awal: Optional[float] = None
     modal_awal_barang: Optional[float] = None
@@ -581,6 +671,12 @@ DEFAULT_STORE_CONFIG = {
         "seller_delay_seconds": 10,
     },
     "restock_safety_days": 2,
+    "unpaid_reminder_enabled": True,  # FITUR #6: reminder otomatis order "Bayar Nanti" belum lunas
+    "unpaid_reminder_days": 2,  # setelah berapa hari belum ada bukti transfer -> mulai diingatkan
+    "member_tiers": [  # FITUR #12: harga grosir/member otomatis (dari riwayat order) + override manual
+        {"id": "reseller", "name": "Reseller", "emoji": "🏆", "min_orders": 5, "discount_pct": 10, "active": True},
+    ],
+    "upsell_enabled": True,  # FITUR #15: saran produk pelengkap di checkout
     "qris_image_url": "",
     "payment_texts": {
         "bank_transfer_title": "Transfer Bank",
@@ -740,6 +836,14 @@ async def seed_database():
         backfill = {}
         if "checkout_mode" not in existing:
             backfill["checkout_mode"] = DEFAULT_STORE_CONFIG.get("checkout_mode", "single")
+        if "unpaid_reminder_enabled" not in existing:
+            backfill["unpaid_reminder_enabled"] = DEFAULT_STORE_CONFIG.get("unpaid_reminder_enabled", True)
+        if "unpaid_reminder_days" not in existing:
+            backfill["unpaid_reminder_days"] = DEFAULT_STORE_CONFIG.get("unpaid_reminder_days", 2)
+        if "member_tiers" not in existing:
+            backfill["member_tiers"] = DEFAULT_STORE_CONFIG.get("member_tiers", [])
+        if "upsell_enabled" not in existing:
+            backfill["upsell_enabled"] = DEFAULT_STORE_CONFIG.get("upsell_enabled", True)
         if "qris_image_url" not in existing:
             backfill["qris_image_url"] = DEFAULT_STORE_CONFIG.get("qris_image_url", "")
         if "payment_texts" not in existing or not existing.get("payment_texts"):
@@ -1050,7 +1154,7 @@ async def set_passcode(req: SetPasscodeReq):
         upsert=True,
     )
     fresh = await db.users.find_one({"phone": phone}, {"_id": 0})
-    return {"success": True, "user": _safe_user(fresh), "token": fresh["id"]}
+    return {"success": True, "user": await _attach_tier(_safe_user(fresh)), "token": fresh["id"]}
 
 
 @api_router.post("/auth/login")
@@ -1064,7 +1168,7 @@ async def login(req: LoginReq):
     if not _verify_pc(req.passcode, user.get("passcode_hash")):
         raise HTTPException(400, "Passcode salah.")
     await db.users.update_one({"phone": phone}, {"$set": {"verified": True, "updated_at": now_iso()}})
-    return {"success": True, "user": _safe_user(user), "token": user["id"]}
+    return {"success": True, "user": await _attach_tier(_safe_user(user)), "token": user["id"]}
 
 
 @api_router.post("/auth/change-passcode")
@@ -1097,14 +1201,14 @@ async def update_profile(req: ProfileUpdateReq):
         upd["delivery_option_id"] = req.delivery_option_id
     await db.users.update_one({"id": req.token}, {"$set": upd})
     fresh = await db.users.find_one({"id": req.token}, {"_id": 0})
-    return {"success": True, "user": _safe_user(fresh)}
+    return {"success": True, "user": await _attach_tier(_safe_user(fresh))}
 
 @api_router.get("/auth/me")
 async def auth_me(token: str):
     user = await db.users.find_one({"id": token}, {"_id": 0, "otp_code": 0, "otp_expires_at": 0, "passcode_hash": 0})
     if not user:
         raise HTTPException(404, "User tidak ditemukan")
-    return user
+    return await _attach_tier(user)
 
 # ─── Product Endpoints ────────────────────────────────────────────────────────
 @api_router.get("/products")
@@ -1147,6 +1251,52 @@ async def get_products():
         p["rating_count"] = s["count"] if s else 0
     return products
 
+# ─── FITUR #15: Upsell "produk pelengkap" di checkout ──────────────────────
+@api_router.get("/upsell-suggestions")
+async def upsell_suggestions(product_ids: str = ""):
+    """Saran produk pelengkap: utamakan 'sering dibeli bareng' dari riwayat order
+    (co-occurrence). Kalau data historis kurang, fallback ke produk terlaris di
+    kategori yang sama. product_ids = id produk yang sudah ada di keranjang,
+    dipisah koma."""
+    cfg = await db.store_config.find_one({"_id": "main"}) or {}
+    if not cfg.get("upsell_enabled", True):
+        return {"suggestions": []}
+    cart_ids = [x.strip() for x in (product_ids or "").split(",") if x.strip()]
+    if not cart_ids:
+        return {"suggestions": []}
+
+    all_products = await db.products.find({}, {"_id": 0}).to_list(1000)
+    all_map = {p["id"]: p for p in all_products}
+    candidates = {p["id"]: p for p in all_products if p.get("active", True) and (p.get("stock") or 0) > 0}
+
+    # 1. Co-occurrence dari order historis yang mengandung salah satu produk di cart
+    orders = await db.orders.find(
+        {"items.product_id": {"$in": cart_ids}, "status": {"$ne": "dibatalkan"}},
+        {"_id": 0, "items": 1}
+    ).to_list(1000)
+    co_counts = {}
+    for o in orders:
+        ids_in_order = {it.get("product_id") for it in (o.get("items") or []) if it.get("product_id")}
+        for pid in (ids_in_order - set(cart_ids)):
+            if pid in candidates:
+                co_counts[pid] = co_counts.get(pid, 0) + 1
+
+    ranked = sorted(co_counts.items(), key=lambda kv: -kv[1])
+    suggestions = [{"product_id": pid, "reason": "Sering dibeli bareng ini"} for pid, _ in ranked[:3]]
+
+    # 2. Fallback: produk terlaris di kategori yang sama, kalau co-occurrence kurang dari 3
+    if len(suggestions) < 3:
+        cart_categories = {all_map[pid].get("category") for pid in cart_ids if pid in all_map}
+        existing_ids = {s["product_id"] for s in suggestions} | set(cart_ids)
+        fallback = [p for p in candidates.values() if p["id"] not in existing_ids and p.get("category") in cart_categories]
+        fallback.sort(key=lambda p: -(p.get("sold_count") or 0))
+        for p in fallback:
+            if len(suggestions) >= 3:
+                break
+            suggestions.append({"product_id": p["id"], "reason": "Produk terlaris di kategori ini"})
+
+    return {"suggestions": suggestions}
+
 @api_router.get("/products/{pid}")
 async def get_product(pid: str):
     p = await db.products.find_one({"id": pid}, {"_id": 0})
@@ -1180,6 +1330,8 @@ async def update_product(pid: str, update: ProductUpdate, _auth: bool = Depends(
         upd["image_url"] = gdrive_to_direct(upd["image_url"])
     upd["updated_at"] = now_iso()
     await db.products.update_one({"id": pid}, {"$set": upd})
+    if "stock" in upd:
+        await check_low_stock_notify(pid)
     doc = await db.products.find_one({"id": pid}, {"_id": 0})
     if doc:
         await manager.broadcast({"type": "product_updated", "data": doc})
@@ -1211,6 +1363,83 @@ async def track_orders(order_id: Optional[str] = None, phone: Optional[str] = No
     else:
         return []
     return await db.orders.find(query, {"_id": 0}).sort("created_at", -1).to_list(10)
+
+# ─── FITUR #6: Reminder pesanan "Bayar Nanti" yang belum lunas ─────────────
+async def get_unpaid_later_orders(days_threshold: int = None):
+    """Order dengan payment_type='later' (Bayar Nanti), belum ada bukti transfer,
+    status masih aktif, dan sudah lewat N hari sejak dibuat. COD dikecualikan
+    karena cash dibayar langsung di tempat, tidak butuh bukti transfer."""
+    if days_threshold is None:
+        cfg = await db.store_config.find_one({"_id": "main"}) or {}
+        days_threshold = int(cfg.get("unpaid_reminder_days") or 2)
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days_threshold)).isoformat()
+    query = {
+        "payment_type": "later",
+        "payment_method": {"$ne": "cod"},
+        "status": {"$nin": ["selesai", "dibatalkan"]},
+        "$or": [{"payment_proof_url": None}, {"payment_proof_url": ""}, {"payment_proof_url": {"$exists": False}}],
+        "created_at": {"$lte": cutoff},
+    }
+    return await db.orders.find(query, {"_id": 0}).sort("created_at", 1).to_list(200)
+
+@api_router.get("/orders/unpaid-reminders")
+async def orders_unpaid_reminders(_auth: bool = Depends(require_seller)):
+    """Daftar order 'Bayar Nanti' yang belum lunas & sudah lewat ambang hari,
+    dipakai widget reminder di dashboard seller."""
+    cfg = await db.store_config.find_one({"_id": "main"}) or {}
+    days_threshold = int(cfg.get("unpaid_reminder_days") or 2)
+    orders = await get_unpaid_later_orders(days_threshold)
+    out = []
+    now = datetime.now(timezone.utc)
+    for o in orders:
+        try:
+            created = datetime.fromisoformat(o["created_at"].replace("Z", "+00:00"))
+            days_waiting = (now - created).days
+        except Exception:
+            days_waiting = None
+        out.append({**o, "days_waiting": days_waiting})
+    return {"count": len(out), "days_threshold": days_threshold, "enabled": bool(cfg.get("unpaid_reminder_enabled", True)), "orders": out}
+
+async def unpaid_reminder_loop():
+    """Background task: cek order 'Bayar Nanti' yang belum lunas tiap beberapa jam,
+    kirim SATU push notif ringkasan ke seller per ~hari (bukan per-order, biar nggak spam)."""
+    await asyncio.sleep(60)  # kasih waktu app selesai startup dulu
+    while True:
+        try:
+            cfg = await db.store_config.find_one({"_id": "main"}) or {}
+            if cfg.get("unpaid_reminder_enabled", True):
+                days_threshold = int(cfg.get("unpaid_reminder_days") or 2)
+                orders = await get_unpaid_later_orders(days_threshold)
+                if orders:
+                    meta = await db.system_meta.find_one({"_id": "unpaid_reminder"}) or {}
+                    last_sent = meta.get("last_sent")
+                    should_send = True
+                    if last_sent:
+                        try:
+                            last_dt = datetime.fromisoformat(last_sent.replace("Z", "+00:00"))
+                            should_send = (datetime.now(timezone.utc) - last_dt) >= timedelta(hours=20)
+                        except Exception:
+                            should_send = True
+                    if should_send:
+                        total = sum(o.get("total", 0) for o in orders)
+                        preview = ", ".join(o.get("order_number", "") for o in orders[:3])
+                        more = f" +{len(orders)-3} lagi" if len(orders) > 3 else ""
+                        await broadcast_push({
+                            "title": f"🕒 {len(orders)} Pesanan Belum Lunas",
+                            "body": f"{preview}{more}\nTotal: {fmt_rp_id(total)}. Yuk ingatkan buyer-nya.",
+                            "tag": "unpaid-reminder-digest",
+                            "url": "/#/seller",
+                            "alert_type": "unpaid_reminder",
+                            "requireInteraction": False,
+                        })
+                        await db.system_meta.update_one(
+                            {"_id": "unpaid_reminder"},
+                            {"$set": {"last_sent": now_iso()}},
+                            upsert=True,
+                        )
+        except Exception as e:
+            logger.warning(f"unpaid_reminder_loop error: {e}")
+        await asyncio.sleep(6 * 60 * 60)  # cek tiap 6 jam
 
 @api_router.get("/orders/{oid}")
 async def get_order(oid: str):
@@ -1252,6 +1481,7 @@ async def create_order(order: OrderCreate):
                 {"id": item.product_id},
                 {"$inc": {"stock": -item.quantity, "sold_count": item.quantity}}
             )
+            await check_low_stock_notify(item.product_id)
     await manager.broadcast({"type": "order_created", "data": doc})
     # ─── Web Push notification ke semua seller device subscribers ───
     try:
@@ -1374,6 +1604,7 @@ async def update_order_status(oid: str, update: OrderStatusUpdate, _auth: bool =
                     {"id": item["product_id"]},
                     {"$inc": {"stock": int(item.get("quantity", 0)), "sold_count": -int(item.get("quantity", 0))}}
                 )
+                await check_low_stock_notify(item["product_id"])
         update_fields["stock_restored"] = True
 
     await db.orders.update_one({"id": oid}, {"$set": update_fields})
@@ -1557,19 +1788,62 @@ async def reset_customers(req: ResetCustomersReq, _auth: bool = Depends(require_
 
 @api_router.get("/admin/customers")
 async def admin_list_customers(_auth: bool = Depends(require_seller)):
-    """Daftar customer untuk dashboard seller (buat tombol reset passcode dll)."""
+    """Daftar customer untuk dashboard seller — termasuk statistik order, produk
+    favorit (FITUR #9), dan tingkatan member/diskon (FITUR #12)."""
     users = await db.users.find({}, {"_id": 0}).sort("created_at", -1).to_list(2000)
+    cfg = await db.store_config.find_one({"_id": "main"}) or {}
+    tiers = cfg.get("member_tiers") or []
+    # Ambil semua order sekali jalan (bukan per-customer), lebih efisien untuk skala UMKM.
+    orders = await db.orders.find({"status": {"$ne": "dibatalkan"}}, {"_id": 0, "customer_phone": 1, "total": 1, "items": 1}).to_list(5000)
+    stats_by_phone = {}
+    for o in orders:
+        ph = o.get("customer_phone")
+        if not ph:
+            continue
+        s = stats_by_phone.setdefault(ph, {"order_count": 0, "total_spent": 0, "product_counts": {}})
+        s["order_count"] += 1
+        s["total_spent"] += float(o.get("total") or 0)
+        for it in (o.get("items") or []):
+            name = it.get("product_name") or "Produk"
+            s["product_counts"][name] = s["product_counts"].get(name, 0) + int(it.get("quantity") or 0)
+
     out = []
     for u in users:
+        ph = u.get("phone")
+        s = stats_by_phone.get(ph, {"order_count": 0, "total_spent": 0, "product_counts": {}})
+        top_products = sorted(s["product_counts"].items(), key=lambda kv: -kv[1])[:3]
+        tier_info = compute_effective_tier(s["order_count"], s["total_spent"], u.get("tier_override"), tiers)
         out.append({
             "id": u.get("id"),
-            "phone": u.get("phone"),
+            "phone": ph,
             "name": u.get("name", ""),
             "has_passcode": bool(u.get("passcode_hash")),
             "address": u.get("address", ""),
             "created_at": u.get("created_at"),
+            "order_count": s["order_count"],
+            "total_spent": s["total_spent"],
+            "top_products": [{"name": n, "qty": q} for n, q in top_products],
+            "tier_override": u.get("tier_override"),
+            "tier": tier_info,
         })
     return {"count": len(out), "customers": out}
+
+
+class TierOverrideReq(BaseModel):
+    phone: str
+    tier_override: Optional[str] = None  # None/"auto" = otomatis; tier id spesifik; "none" = paksa tanpa diskon
+
+@api_router.put("/admin/customers/tier")
+async def set_customer_tier(req: TierOverrideReq, _auth: bool = Depends(require_seller)):
+    """FITUR #12: seller override tier customer secara manual (mis. teman dekat
+    dikasih harga reseller meski belum pernah order, atau sebaliknya)."""
+    phone = normalize_phone(req.phone)
+    user = await db.users.find_one({"phone": phone}, {"_id": 0})
+    if not user:
+        raise HTTPException(404, "Customer tidak ditemukan")
+    val = req.tier_override if req.tier_override and req.tier_override != "auto" else None
+    await db.users.update_one({"phone": phone}, {"$set": {"tier_override": val, "updated_at": now_iso()}})
+    return {"success": True, "phone": phone, "tier_override": val}
 
 
 @api_router.post("/admin/reset-passcode")
@@ -1880,6 +2154,7 @@ async def update_purchase(pid: str, update: PurchaseUpdate, _auth: bool = Depend
                 if prod:
                     new_stock = max(0, int(prod.get("stock", 0)) + delta)
                     await db.products.update_one({"id": prod_id}, {"$set": {"stock": new_stock, "updated_at": now_iso()}})
+                    await check_low_stock_notify(prod_id)
                     affected.append(prod_id)
     if new_items is not None:
         upd["total"] = sum(i["subtotal"] for i in new_items)
@@ -1908,6 +2183,7 @@ async def receive_purchase(pid: str, received_at: Optional[str] = None, _auth: b
             {"$inc": {"stock": item["quantity"]},
              "$set": {"cost_price": item["unit_cost"], "updated_at": now_iso()}}
         )
+        await check_low_stock_notify(item["product_id"])
     await db.purchases.update_one({"id": pid}, {"$set": {"status": "received", "received_at": ts, "updated_at": now_iso()}})
     doc = await db.purchases.find_one({"id": pid}, {"_id": 0})
     await manager.broadcast({"type": "purchase_updated", "data": doc})
@@ -1931,6 +2207,7 @@ async def delete_purchase(pid: str, _auth: bool = Depends(require_seller)):
             if prod:
                 new_stock = max(0, int(prod.get("stock", 0)) - int(item.get("quantity", 0)))
                 await db.products.update_one({"id": item["product_id"]}, {"$set": {"stock": new_stock, "updated_at": now_iso()}})
+                await check_low_stock_notify(item["product_id"])
                 affected.append(item["product_id"])
     await db.purchases.delete_one({"id": pid})
     await manager.broadcast({"type": "purchase_deleted", "data": {"id": pid}})
@@ -3296,7 +3573,11 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup():
     await seed_database()
+    app.state.unpaid_reminder_task = asyncio.create_task(unpaid_reminder_loop())
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
+    task = getattr(app.state, "unpaid_reminder_task", None)
+    if task:
+        task.cancel()
     client.close()
