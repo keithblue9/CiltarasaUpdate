@@ -5,6 +5,18 @@ const API = process.env.REACT_APP_BACKEND_URL;
 const WS_URL = API.replace('https://', 'wss://').replace('http://', 'ws://');
 const AppCtx = createContext(null);
 
+// FITUR #12: harga buyer final = yang PALING MENGUNTUNGKAN antara diskon produk
+// yang sudah ada (final_price) vs diskon tier/member — TIDAK ditumpuk, biar margin
+// seller aman. Dipakai di Catalog, Cart, Checkout supaya harga konsisten di semua
+// tempat (satu sumber kebenaran, jangan dihitung ulang beda-beda di tiap komponen).
+function getBuyerItemPrice(product, authUser) {
+  const preTierFinal = product.final_price || product.price;
+  const tierPct = authUser?.tier?.discount_pct || 0;
+  if (!tierPct) return preTierFinal;
+  const tierPrice = product.price * (1 - tierPct / 100);
+  return Math.min(preTierFinal, tierPrice);
+}
+
 function cartReducer(state, action) {
   switch (action.type) {
     case 'ADD': {
@@ -243,8 +255,9 @@ export function AppProvider({ children }) {
     wsConnected,
     wsEvent,
     cart,
-    cartTotal: cart.reduce((s, i) => s + (i.product.final_price || i.product.price) * i.qty, 0),
+    cartTotal: cart.reduce((s, i) => s + getBuyerItemPrice(i.product, authUser) * i.qty, 0),
     cartCount: cart.reduce((s, i) => s + i.qty, 0),
+    getItemPrice: (product) => getBuyerItemPrice(product, authUser),
     addToCart: (product, qty = 1) => dispatch({ type: 'ADD', product, qty }),
     removeFromCart: (id) => dispatch({ type: 'REMOVE', id }),
     setCartQty: (id, qty) => dispatch({ type: 'SET_QTY', id, qty }),
