@@ -9,11 +9,14 @@ import SmartImage from '../shared/SmartImage';
 const formatRp = (n) => `Rp ${Number(n).toLocaleString('id-ID')}`;
 
 function ProductCard({ product, onAdd, onOpen, staggerIdx }) {
+  const { authUser, getItemPrice } = useApp();
   const isOOS = !product.active || product.stock === 0;
   const isLow = product.stock > 0 && product.stock < 10;
-  const finalPrice = product.final_price || product.price;
-  const hasDiscount = product.discount && finalPrice < product.price;
-  const isFlashSale = product.discount?.is_flash_sale;
+  const preTierFinal = product.final_price || product.price;
+  const finalPrice = getItemPrice(product);
+  const usingTierPrice = (authUser?.tier?.discount_pct || 0) > 0 && finalPrice < preTierFinal;
+  const hasDiscount = finalPrice < product.price;
+  const isFlashSale = product.discount?.is_flash_sale && !usingTierPrice;
   const discountPct = hasDiscount ? Math.round((1 - finalPrice / product.price) * 100) : 0;
   const isHot = (product.sold_count || 0) > 100;
   const [added, setAdded] = useState(false);
@@ -40,6 +43,10 @@ function ProductCard({ product, onAdd, onOpen, staggerIdx }) {
           {isFlashSale ? (
             <span className="bg-gradient-to-r from-red-600 to-orange-500 text-white text-[10px] font-extrabold px-2 py-0.5 rounded-md shadow flex items-center gap-0.5 animate-pulse">
               <Flame size={10} className="fill-yellow-300 text-yellow-300" /> FLASH -{discountPct}%
+            </span>
+          ) : usingTierPrice ? (
+            <span className="bg-gradient-to-r from-amber-600 to-yellow-500 text-white text-[10px] font-extrabold px-2 py-0.5 rounded-md shadow flex items-center gap-0.5">
+              {authUser?.tier?.emoji || '🏆'} Harga {authUser?.tier?.tier_name || 'Member'}
             </span>
           ) : hasDiscount && (
             <span className="bg-red-500 text-white text-[10px] font-extrabold px-2 py-0.5 rounded-md shadow flex items-center gap-0.5">

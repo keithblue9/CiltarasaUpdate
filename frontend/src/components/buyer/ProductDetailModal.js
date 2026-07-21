@@ -9,15 +9,18 @@ const API = process.env.REACT_APP_BACKEND_URL;
 const fmtRp = (n) => `Rp ${Number(n).toLocaleString('id-ID')}`;
 
 export default function ProductDetailModal({ product, onClose }) {
-  const { addToCart } = useApp();
+  const { addToCart, authUser, getItemPrice } = useApp();
   const [activeMedia, setActiveMedia] = useState(0);
   const [qty, setQty] = useState(1);
   const [reviews, setReviews] = useState([]);
   const [added, setAdded] = useState(false);
 
   const media = (product.media_urls && product.media_urls.length > 0) ? product.media_urls : [product.image_url];
-  const finalPrice = product.final_price || product.price;
-  const hasDiscount = product.discount && finalPrice < product.price;
+  const tierPct = authUser?.tier?.discount_pct || 0;
+  const preTierFinal = product.final_price || product.price;
+  const finalPrice = getItemPrice(product);
+  const usingTierPrice = tierPct > 0 && finalPrice < preTierFinal;
+  const hasDiscount = finalPrice < product.price;
   const discountPct = hasDiscount ? Math.round((1 - finalPrice / product.price) * 100) : 0;
 
   useEffect(() => {
@@ -101,6 +104,11 @@ export default function ProductDetailModal({ product, onClose }) {
                 </div>
                 {hasDiscount && (
                   <p className="text-xs text-red-600 font-bold mt-1">💸 Hemat {fmtRp(product.price - finalPrice)}!</p>
+                )}
+                {usingTierPrice && (
+                  <p className="text-xs text-amber-700 font-bold mt-1">
+                    {authUser?.tier?.emoji || '🏆'} Harga khusus {authUser?.tier?.tier_name || 'Member'} kamu (-{tierPct}%)
+                  </p>
                 )}
               </div>
 

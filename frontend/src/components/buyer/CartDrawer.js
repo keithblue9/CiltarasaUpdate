@@ -7,7 +7,7 @@ import SmartImage from '../shared/SmartImage';
 const formatRp = (n) => `Rp ${Number(n).toLocaleString('id-ID')}`;
 
 export default function CartDrawer({ open, onClose }) {
-  const { cart, cartTotal, removeFromCart, setCartQty } = useApp();
+  const { cart, cartTotal, removeFromCart, setCartQty, getItemPrice } = useApp();
   const navigate = useNavigate();
 
   const handleCheckout = () => {
@@ -54,8 +54,8 @@ export default function CartDrawer({ open, onClose }) {
             </div>
           ) : (
             cart.map(({ product, qty }) => {
-              const finalPrice = product.final_price || product.price;
-              const hasDiscount = product.final_price && product.final_price < product.price;
+              const finalPrice = getItemPrice(product);
+              const hasDiscount = finalPrice < product.price;
               return (
               <div key={product.id} data-testid={`cart-item-${product.id}`} className="flex gap-3 bg-[#FDF8F0] rounded-xl p-3 border border-[#FED7AA]">
                 <SmartImage src={product.image_url} alt={product.name} className="w-16 h-16 rounded-lg object-cover flex-shrink-0" />
