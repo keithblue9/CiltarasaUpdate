@@ -1487,6 +1487,11 @@ async def create_order(order: OrderCreate):
                 {"$inc": {"stock": -item.quantity, "sold_count": item.quantity}}
             )
             await check_low_stock_notify(item.product_id)
+            # Broadcast produk terbaru supaya angka stok di katalog buyer & dashboard
+            # seller langsung ke-update realtime (tanpa perlu refresh halaman).
+            updated_prod = await db.products.find_one({"id": item.product_id}, {"_id": 0})
+            if updated_prod:
+                await manager.broadcast({"type": "product_updated", "data": updated_prod})
     await manager.broadcast({"type": "order_created", "data": doc})
     # ─── Web Push notification ke semua seller device subscribers ───
     try:
@@ -1602,6 +1607,7 @@ async def update_order_status(oid: str, update: OrderStatusUpdate, _auth: bool =
     # ─── BUG FIX #11: Restore stock saat order dibatalkan ───
     # Hanya restore jika transisi dari status non-cancelled ke cancelled & belum direstore
     stock_restored = order.get("stock_restored", False)
+    restored_product_ids = []
     if new_status == "dibatalkan" and prev_status != "dibatalkan" and not stock_restored:
         for item in order.get("items", []):
             if item.get("product_id"):
@@ -1610,9 +1616,15 @@ async def update_order_status(oid: str, update: OrderStatusUpdate, _auth: bool =
                     {"$inc": {"stock": int(item.get("quantity", 0)), "sold_count": -int(item.get("quantity", 0))}}
                 )
                 await check_low_stock_notify(item["product_id"])
+                restored_product_ids.append(item["product_id"])
         update_fields["stock_restored"] = True
 
     await db.orders.update_one({"id": oid}, {"$set": update_fields})
+    # Broadcast produk yang stoknya balik supaya angka stok update realtime di semua device
+    for pid in restored_product_ids:
+        rp = await db.products.find_one({"id": pid}, {"_id": 0})
+        if rp:
+            await manager.broadcast({"type": "product_updated", "data": rp})
     doc = await db.orders.find_one({"id": oid}, {"_id": 0})
     await manager.broadcast({"type": "order_updated", "data": doc})
     # ─── Web Push ke buyer saat status pesanan berubah ───
